@@ -5,7 +5,7 @@ from typing import Any, TextIO
 
 from jevscan.cli.terminal import BOLD, CYAN, DIM, GREEN, KIND_STYLE, LEVEL_MARKER, LEVEL_STYLE, RED, YELLOW, Terminal
 
-REPORT_SCHEMA_VERSION = 3
+REPORT_SCHEMA_VERSION = 4
 
 
 class Reporter:
@@ -27,7 +27,11 @@ class Reporter:
         self.terminal = Terminal(stream, width)
         if self.format == "json":
             self.stream.write(
-                '{"schema_version":3,"metadata":' + json.dumps(metadata, ensure_ascii=False) + ',"events":['
+                '{"schema_version":'
+                + str(REPORT_SCHEMA_VERSION)
+                + ',"metadata":'
+                + json.dumps(metadata, ensure_ascii=False)
+                + ',"events":['
             )
         elif self.format == "jsonl":
             self._line({"event": "start", "schema_version": REPORT_SCHEMA_VERSION, **metadata})
@@ -93,19 +97,22 @@ class Reporter:
         return f"score={answer['score']:.3f}/{scale}  conf={answer['confidence']:.3f}"
 
     def _evaluation(self, event: dict[str, Any]) -> None:
+        tentative = {finding["rule"]: finding for finding in event["tentative_findings"]}
         rows = [
             (name, answer)
             for name, answer in event["answers"].items()
-            if self.verbose or event["statuses"][name] in {"warning", "error"}
+            if self.verbose or event["statuses"][name] in {"warning", "error"} or name in tentative
         ]
         if not rows or not self._admit():
             return
         self._target_header(event["target"], event["cached"])
-        findings = {finding["rule"]: finding for finding in event["findings"]}
+        findings = {finding["rule"]: finding for finding in [*event["findings"], *event["tentative_findings"]]}
         width = max(len(name) for name, _ in rows)
         for name, answer in rows:
             status = event["statuses"][name]
             text = self._answer_text(answer, event["scales"].get(name))
+            if name in tentative:
+                text += f"  [uncertain {tentative[name]['severity']}]"
             self.terminal.row(LEVEL_MARKER[status], f"{name:<{width}}", text, LEVEL_STYLE[status])
             if name in findings:
                 self.terminal.write(findings[name]["message"], 10, DIM)
@@ -113,7 +120,7 @@ class Reporter:
 
     def _review_detail(self, event: dict[str, Any], name: str, status: str) -> None:
         reason = event["uncertainty_reasons"].get(name)
-        if self.verbose and status == "unknown" and reason:
+        if status == "unknown" and reason:
             self.terminal.write("Uncertain: " + reason.replace("_", " "), 10, DIM)
         review = event["reviews"].get(name)
         if not review:
@@ -156,12 +163,21 @@ class Reporter:
         status = "incomplete" if summary["incomplete"] else "complete"
         findings = summary["findings"]
         style = RED if summary["incomplete"] or findings["error"] else YELLOW if findings["warning"] else GREEN
+        if style == GREEN and summary["uncertain"]:
+            style = CYAN
         self.stream.write("\n")
         self.terminal.write(
             f"{status}: {findings['warning']} warnings, {findings['error']} errors; "
             f"{summary['uncertain']} uncertain checks; {summary['not_applicable']} not applicable",
             style=BOLD + style,
         )
+        tentative = summary["tentative_findings"]
+        if any(tentative.values()):
+            self.terminal.write(
+                f"Uncertain findings: {tentative['warning']} warnings, {tentative['error']} errors "
+                "(included in uncertain checks; not confirmed, do not trigger --fail-on)",
+                style=CYAN,
+            )
         self.terminal.write(
             f"files={summary['files_parsed']}/{summary['files_discovered']}  units={summary['units_found']}  "
             f"evaluated={summary['units_evaluated']} units/{summary['file_targets_evaluated']} files  "

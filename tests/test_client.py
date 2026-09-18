@@ -140,8 +140,13 @@ def test_choice_and_score_thresholds(unit: Unit) -> None:
     }
     result = validate_response(json.dumps(body), questions)
     checks = {name: Check(name, Target.from_unit(unit), name, rule) for name, rule in rules.items()}
-    findings = [assess(checks[name], answer).finding for name, answer in result.answers.items()]
-    assert [finding.severity for finding in findings if finding] == [Severity.ERROR, Severity.WARNING]
+    decisions = {name: assess(checks[name], answer) for name, answer in result.answers.items()}
+    assert decisions["choice"].finding is not None
+    assert decisions["choice"].finding.severity == Severity.ERROR
+    # The signal reaches error, but confidence supports only warning. Do not hide the indicated error.
+    assert decisions["score"].status == "unknown" and decisions["score"].finding is None
+    assert decisions["score"].tentative_finding is not None
+    assert decisions["score"].tentative_finding.severity == Severity.ERROR
     body["answers"]["choice"].update(choice="unknown", confidence=0.99, probabilities={"bad": 0.01, "unknown": 0.99})
     body["answers"]["score"].update(score=0.8, confidence=0.4)
     result = validate_response(json.dumps(body), questions)
@@ -211,3 +216,110 @@ def test_inverse_noul_and_descending_score_levels(unit: Unit, basic_rule: Rule) 
     )
     for key, rule in (("n", noul), ("s", score)):
         assert assess(Check(key, Target.from_unit(unit), key, rule), response.answers[key]).status == "error"
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize(
+    "score,confidence,status,tentative",
+    [
+        (0.9, 0.4, "unknown", None),
+        (1.0, 0.59, "unknown", "warning"),
+        (1.66, 0.58, "unknown", "warning"),
+        (1.0, 0.6, "warning", None),
+        (2.0, 0.69, "unknown", "error"),
+        (2.8, 0.3, "unknown", "error"),
+        (2.0, 0.7, "error", None),
+    ],
+)
+def test_signal_severity_is_independent_of_confidence(unit, descending, score, confidence, status, tentative):
+    from jevscan.core.protocol import ScoreAnswer
+
+    threshold = "max_score" if descending else "min_score"
+    rule = Rule.model_validate({
+        "applies_to": ["function"],
+        "question": {
+            "type": "score",
+            "instructions": "How bad?",
+            "criteria": ["Clear", "Local", "Obscured", "Tangled"],
+        },
+        "report": {
+            "message": "Review flow.",
+            "levels": {
+                "warning": {threshold: 2.0 if descending else 1.0, "min_confidence": 0.6},
+                "error": {threshold: 1.0 if descending else 2.0, "min_confidence": 0.7},
+            },
+        },
+    })
+    answer = ScoreAnswer(
+        type="score",
+        score=3 - score if descending else score,
+        confidence=confidence,
+        probabilities={"0": 0.1, "1": 0.2, "2": 0.3, "3": 0.4},
+    )
+    decision = assess(Check("q", Target.from_unit(unit), "flow", rule), answer)
+    assert decision.status == status
+    assert (str(decision.tentative_finding.severity) if decision.tentative_finding else None) == tentative
+    if tentative:
+        assert decision.finding is None and decision.reason == "low_confidence"
+
+
+@pytest.mark.parametrize(
+    "selected,probability,confidence,tentative",
+    [
+        ("bad", 0.95, 0.2, "error"),
+        ("bad", 0.8, 0.4, "warning"),
+        ("bad", 0.55, 0.4, None),
+        ("clean", 0.95, 0.2, None),
+        ("missing", 0.95, 0.9, None),
+        ("na", 0.95, 0.2, None),
+    ],
+)
+def test_only_eligible_choice_signals_have_tentative_severity(unit, selected, probability, confidence, tentative):
+    from jevscan.core.protocol import ChoiceAnswer
+
+    labels = {"bad": "Defect", "clean": "Justified", "missing": "Missing evidence", "na": "Not applicable"}
+    rule = Rule.model_validate({
+        "applies_to": ["function"],
+        "question": {"type": "choice", "instructions": "Classify the check.", "criteria": labels},
+        "report": {
+            "message": "Defect.",
+            "choices": ["bad"],
+            "uncertain_choices": ["missing"],
+            "not_applicable_choices": ["na"],
+            "levels": {
+                "warning": {"min_probability": 0.6, "min_confidence": 0.5},
+                "error": {"min_probability": 0.9, "min_confidence": 0.7},
+            },
+        },
+    })
+    answer = ChoiceAnswer(
+        type="choice",
+        choice=selected,
+        confidence=confidence,
+        probabilities={key: probability if key == selected else (1 - probability) / 3 for key in labels},
+    )
+    decision = assess(Check("q", Target.from_unit(unit), "contract", rule), answer)
+    assert decision.status == "unknown" and decision.finding is None
+    assert (str(decision.tentative_finding.severity) if decision.tentative_finding else None) == tentative
+
+
+def test_ambiguous_noul_requires_a_directional_signal_for_tentative_severity(unit, basic_rule):
+    from jevscan.core.protocol import NoulAnswer
+
+    for expected in (True, False):
+        rule = Rule.model_validate({
+            **basic_rule.model_dump(),
+            "report": {
+                "message": "Cohesion",
+                "expected": expected,
+                "uncertain_range": [0.4, 0.6],
+                "levels": {"warning": {"min_probability": 0.5}, "error": {"min_probability": 0.9}},
+            },
+        })
+        check = Check("q", Target.from_unit(unit), "cohesion", rule)
+        for value in (0.45, 0.5, 0.55):
+            decision = assess(check, NoulAnswer(type="noul", noul=value))
+            assert decision.status == "unknown" and decision.reason == "probability_ambiguous"
+            assert decision.finding is None
+            probability = value if expected else 1 - value
+            assert bool(decision.tentative_finding) is (probability >= 0.5)

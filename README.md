@@ -2,7 +2,7 @@
 
 A configuration-driven semantic code-quality scanner for **Python, Rust, Perl, TypeScript, and JavaScript**. Tree-sitter extracts code; Jev answers independent typed questions about it. jevscan does not execute or import the source being scanned.
 
-**0.2.0rc2** adds a bounded evidence-enrichment pass to file/unit evaluation: uncertain checks can request relevant local evidence and then be reassessed once. This is a release candidate, not a claim of calibrated semantic accuracy. See [verification](docs/VERIFICATION.md) for tested behavior and remaining limits.
+**0.2.0rc3** makes evidence enrichment selective and priority-ordered, and displays tentative warning/error signals even without `-v`. It retains the bounded file/unit evaluation and one-pass evidence retrieval from RC2. This is a release candidate, not a claim of calibrated semantic accuracy. See [verification](docs/VERIFICATION.md) for tested behavior and remaining limits.
 
 ## Install and run
 
@@ -25,7 +25,7 @@ uv run jevscan src --format jsonl -o report.jsonl
 An installed wheel works without this checkout:
 
 ```bash
-uv tool install ./dist/py3_jevscan-0.2.0rc2-py3-none-any.whl
+uv tool install ./dist/py3_jevscan-0.2.0rc3-py3-none-any.whl
 ```
 
 The pinned `tree-sitter==0.25.2` and `tree-sitter-language-pack==0.13.0` bundle the native grammars. A scan never downloads grammars. Updating those pins requires rerunning parser integration tests.
@@ -78,18 +78,29 @@ src/service.py
           need to be maintained in sync.
 ```
 
-The default text report shows **yellow `!` warnings and red `x` errors**. `-v` / `--verbose` adds green `·` OK answers cyan `?` uncertain answers, and dim `-` not-applicable answers. An uncertainty answer is not a clean bill of health. Score rows include their rubric maximum, for example `score=1.140/3`; probabilities/confidence remain the provider's values, not measured correctness rates.
+The default text report shows confirmed **yellow `!` warnings and red `x` errors**, plus **cyan `?` tentative warnings/errors** when a signal crosses a configured severity threshold but lacks confidence. Tentative rows carry `[uncertain warning]` or `[uncertain error]`, the configured message, and the uncertainty reason. A stronger error signal is not downgraded to warning just because confidence passes only the lower gate. `-v` / `--verbose` adds green OK results, below-threshold uncertainty, and not-applicable results. Score rows include their rubric maximum, for example `score=1.660/3`; confidence is not severity.
+
+```text
+    M 194 Enricher._select
+        ? unclear-control-flow  score=1.660/3  conf=0.580  [uncertain warning]
+          Interleaved concerns or nesting appear to obscure the main execution path.
+          Uncertain: low confidence
+```
+
+For Noul, an answer inside `uncertain_range` remains uncertain. It is shown by default only if it also reaches a configured directional warning/error probability threshold; `0.48` remains verbose-only with the default positive rule, while `0.51` becomes a tentative warning, not a confirmed finding. A selected `insufficient_context` or `not_applicable` Choice is never labelled a defect merely because its probability is high.
+
+The summary separates confirmed counts from tentative counts. Tentative findings remain included in `uncertain` and **do not trigger `--fail-on`**. JSON/JSONL likewise keep `findings` and `tentative_findings` separate.
 
 All text, including explanatory messages and long names, wraps to terminal width with continuation indentation. ANSI color is automatic for terminals; `COLOR=yes|no` overrides detection and `NO_COLOR` disables it. Text files are plain unless color is explicitly forced. Display limits count targets **after** severity filtering; `--max-display 0` means unlimited. Diagnostics and the summary are never hidden. Offline inventory lists units even without `-v`.
 
-JSON and JSONL use **report schema 3** and always contain all completed answers, target metadata, statuses, findings, per-rule evidence/model/cache provenance, explicit skipped rules, and a final summary. The additive `reviews` and `uncertainty_reasons` maps preserve initial judgments, routing/selection results, source hashes/ranges, omissions, and final outcomes; the new `not_applicable` status is distinct from OK. They are unaffected by verbosity, color, or display limits. A file's results are grouped when its evaluation finishes; files can finish in any order. JSONL flushes each event and preserves already-written events during an interrupted scan.
+JSON and JSONL use **report schema 4** and always contain all completed answers, target metadata, statuses, findings, per-rule evidence/model/cache provenance, explicit skipped rules, and a final summary. The additive `reviews` and `uncertainty_reasons` maps preserve initial judgments, routing/selection results, source hashes/ranges, omissions, and final outcomes; the new `not_applicable` status is distinct from OK. They are unaffected by verbosity, color, or display limits. A file's results are grouped when its evaluation finishes; files can finish in any order. JSONL flushes each event and preserves already-written events during an interrupted scan.
 
 Exit codes:
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Complete scan, no findings at the selected severity; or complete offline inventory |
-| `1` | Findings meet `--fail-on` (`warning` by default) |
+| `0` | Complete scan, no confirmed findings at the selected severity; or complete offline inventory |
+| `1` | Confirmed findings meet `--fail-on` (`warning` by default) |
 | `2` | Invalid configuration, operational failure, omitted targets, or reduced requested context |
 | `130` | Interrupted with Ctrl-C |
 
@@ -97,11 +108,15 @@ Exit codes:
 
 ## Evidence enrichment
 
+Only actionable uncertainty requests a review by default: **missing evidence first, reduced context second, applicability third**. Scheduling considers all pending judgments in a file before consuming review/call budgets; result display order remains unchanged. Reduced context is actionable even when low confidence is also present. Ordinary low-confidence scores and ambiguous Nouls stay uncertain without another API prediction. The applicability route is eligible only for rules declaring `not_applicable_choices`.
+
+Each rule can override `enrich_on`; the default is `[missing_evidence, reduced_context, applicability]`. For a demonstrably context-sensitive custom rule, opt into `low_confidence` or `low_choice_probability`; `weak_defect_signal` and `probability_ambiguous` are also explicit opt-ins. Such reviews follow evidence/applicability reviews. `enrich_on: []` requests no reviews. Existing `enrich: false` and `--no-enrichment` still take precedence. None of these settings changes severity/confidence thresholds.
+
 An uncertain answer does not automatically mean that callers are missing. The default workflow is:
 
 ```text
 primary judgment
-  → uncertain only: closed evidence-routing Choice
+  → actionable uncertainty only: closed evidence-routing Choice
   → missing source only: bounded local candidate discovery
   → independent relevance Noul per candidate (batched)
   → selected complete source + original evidence
@@ -148,7 +163,7 @@ rules:
           min_confidence: 0.70
 ```
 
-The most severe matching level wins. Changing only reporting thresholds/messages reuses eligible cached raw answers. Changing questions, source, evidence, or model changes the request identity.
+The most severe matching signal level wins; its own confidence gate determines whether it is confirmed or tentative. Changing only reporting thresholds/messages reuses eligible cached raw answers. Changing questions, source, evidence, or model changes the request identity.
 
 See [the complete rule/configuration guide and migration instructions](docs/CONFIGURATION.md), [standalone example](examples/standalone.yaml), and [inherited example](examples/extends-default.yaml). Configuration versions 1 and 2 are rejected with a migration message rather than silently reinterpreted.
 

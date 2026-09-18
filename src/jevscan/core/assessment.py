@@ -15,6 +15,7 @@ class Assessment:
     status: Status
     reason: str = ""
     finding: Finding | None = None
+    tentative_finding: Finding | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,9 +38,8 @@ def _reading(report: ReportPolicy, answer: Answer) -> Reading:
     return Reading(answer.score, None, answer.confidence)
 
 
-def _matches(level: ReportThreshold, reading: Reading) -> bool:
-    if level.min_confidence is not None and (reading.confidence is None or reading.confidence < level.min_confidence):
-        return False
+def _matches_signal(level: ReportThreshold, reading: Reading) -> bool:
+    """Severity measures the indicated problem, not confidence in the indication."""
     if level.min_probability is not None:
         assert reading.probability is not None
         return reading.probability >= level.min_probability
@@ -63,28 +63,45 @@ def _uncertainty(report: ReportPolicy, reading: Reading, answer: Answer) -> str:
     return ""
 
 
+def _probability_ambiguous(report: ReportPolicy, answer: Answer) -> bool:
+    if not isinstance(answer, NoulAnswer) or report.uncertain_range is None:
+        return False
+    lower, upper = report.uncertain_range
+    return lower <= answer.noul < upper
+
+
+def _at_level(check: Check, reading: Reading, severity: Severity, reason: str) -> Assessment:
+    finding = Finding(
+        check.rule_id,
+        severity,
+        check.rule.report.message,
+        check.target,
+        reading.value,
+        reading.probability,
+        reading.confidence,
+    )
+    if reason:
+        return Assessment("unknown", reason, tentative_finding=finding)
+    return Assessment("error" if severity == Severity.ERROR else "warning", finding=finding)
+
+
 def assess(check: Check, answer: Answer, context_complete: bool = True) -> Assessment:
     report = check.rule.report
     reading = _reading(report, answer)
     if isinstance(answer, ChoiceAnswer) and answer.choice in report.uncertain_choices:
         return Assessment("unknown", "missing_evidence")
-    if isinstance(answer, NoulAnswer) and report.uncertain_range is not None:
-        lower, upper = report.uncertain_range
-        if lower <= answer.noul < upper:
-            return Assessment("unknown", "probability_ambiguous")
+    ambiguity = "probability_ambiguous" if _probability_ambiguous(report, answer) else ""
     for severity, level in ((Severity.ERROR, report.levels.error), (Severity.WARNING, report.levels.warning)):
-        if reading.eligible and _matches(level, reading):
-            finding = Finding(
-                check.rule_id,
-                severity,
-                report.message,
-                check.target,
-                reading.value,
-                reading.probability,
-                reading.confidence,
-            )
-            return Assessment("error" if severity == Severity.ERROR else "warning", finding=finding)
-    reason = _uncertainty(report, reading, answer)
+        if not reading.eligible or not _matches_signal(level, reading):
+            continue
+        reason = ambiguity
+        if level.min_confidence is not None and (
+            reading.confidence is None or reading.confidence < level.min_confidence
+        ):
+            reason = "low_confidence"
+        # The strongest indicated level wins. Low confidence does not turn an error into a warning.
+        return _at_level(check, reading, severity, reason)
+    reason = ambiguity or _uncertainty(report, reading, answer)
     if reason or not context_complete:
         return Assessment("unknown", reason or "reduced_context")
     if isinstance(answer, ChoiceAnswer) and answer.choice in report.not_applicable_choices:

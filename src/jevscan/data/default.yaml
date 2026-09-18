@@ -30,7 +30,9 @@ evaluation:
   max_questions: 64
   oversized_context: reduce  # reduce surrounding evidence only; never truncate a target
 
-# At most one enrichment round per uncertain check. Files under the project root
+# At most one enrichment round per admitted check, ordered by evidence need.
+# Ordinary low confidence and ambiguous Nouls do not request enrichment by default.
+# Files under the project root
 # obey the same source filters and gitignore rules, including test files.
 enrichment:
   enabled: true
@@ -51,6 +53,7 @@ cache:
 
 rules:
   mixed-responsibilities:
+    enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: owner
     applies_to: [function, method, closure]
@@ -71,6 +74,7 @@ rules:
           min_probability: 0.90
 
   unclear-control-flow:
+    enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: owner
     applies_to: [function, method, closure]
@@ -96,6 +100,7 @@ rules:
           min_confidence: 0.70
 
   mixed-abstraction-levels:
+    enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: owner
     applies_to: [function, method, closure]
@@ -116,6 +121,7 @@ rules:
           min_probability: 0.90
 
   redundant-validation:
+    enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: file
     applies_to: [function, method, closure]
@@ -143,6 +149,7 @@ rules:
           min_confidence: 0.70
 
   hidden-invariant-failure:
+    enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: file
     applies_to: [function, method, closure]
@@ -171,6 +178,7 @@ rules:
           min_confidence: 0.70
 
   unhelpful-decomposition:
+    enrich_on: [missing_evidence, reduced_context, applicability]
     require_members: true
     target: unit
     context: file
@@ -200,6 +208,7 @@ rules:
           min_confidence: 0.70
 
   fragmented-ownership:
+    enrich_on: [missing_evidence, reduced_context]
     target: file
     context: file
     question:
@@ -219,6 +228,7 @@ rules:
           min_probability: 0.92
 
   incohesive-owner:
+    enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: file
     applies_to: [class, impl, package, module]
@@ -238,6 +248,7 @@ rules:
           min_probability: 0.90
 
   duplicated-behavior:
+    enrich_on: [missing_evidence, reduced_context]
     target: file
     context: file
     question:

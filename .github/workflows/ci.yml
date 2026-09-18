@@ -98,11 +98,11 @@ jobs:
           import jevscan
           import yaml
           assert 'site-packages' in str(Path(jevscan.__file__)), jevscan.__file__
-          assert jevscan.__version__ == '0.2.0rc2'
+          assert jevscan.__version__ == '0.2.0rc3'
           config = yaml.safe_load(Path('resolved.yaml').read_text())
           assert config['version'] == 3 and len(config['rules']) == 9
           report = json.loads(Path('inventory.json').read_text())
-          assert report['schema_version'] == 3
+          assert report['schema_version'] == 4
           assert not report['summary']['incomplete'], report['summary']
           assert report['summary']['units_found'] > 0
           languages = {event['language'] for event in report['events'] if event['event'] == 'file'}

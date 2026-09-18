@@ -106,7 +106,7 @@ Raw-answer cache keys include endpoint, canonical request body, package version,
 
 ## Machine reports
 
-Report schema **3** is separate from configuration schema **3**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/diagnostic/evaluation events, and a final `summary`, flushing each event.
+Report schema **4** is separate from configuration schema **3**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/diagnostic/evaluation events, and a final `summary`, flushing each event.
 
 An `evaluation` event contains:
 
@@ -116,12 +116,15 @@ An `evaluation` event contains:
 | `answers` | Raw typed answers keyed by YAML rule ID |
 | `statuses` | `ok`, `unknown`, `not_applicable`, `warning`, or `error` per answer |
 | `uncertainty_reasons`, `reviews` | Decision reasons and an auditable, bounded enrichment history |
-| `findings` | Matching warning/error findings, each with `target` |
+| `findings` | Confidence-qualified warning/error findings, each with `target`; these alone determine `--fail-on` |
+| `tentative_findings` | Indicated warning/error signals that remain `unknown`; same item structure, never duplicated in `findings` |
 | `evidence` | Per-rule included ranges, original-file omissions, requested context, `context_complete`, `target_complete` |
 | `models` | Model returned for each rule, including separate batches |
 | `cached_rules`, `cached` | Per-rule cache provenance; whole-target cache flag is true only when all checks completed from cache |
 | `scales` | Score rubric maximum, where applicable |
 | `skipped_rules` | Rules with no result and the explicit reason |
+
+`summary.tentative_findings` counts tentative warnings/errors separately; they are already included in `summary.uncertain`. Reviews distinguish the admitted `trigger` from the `initial_reason`. Ordinary intrinsic ambiguity does not request enrichment by default; no review entry means no review was requested, not that a model approved the evidence.
 
 The raw source evidence is not copied into machine reports, but target/declaration metadata may still be sensitive. Verbosity, terminal colors, and text display limits never remove machine-report answers. Completion describes software coverage, not proof of semantic correctness; low-confidence and insufficient-evidence judgments remain distinguishable from clean results.
 

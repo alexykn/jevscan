@@ -300,3 +300,63 @@ def test_many_owner_envelopes_keep_correct_sources_when_reused(basic_rule: Rule)
         assert isinstance(request, Request)
         assert request.evidence.state["documents"][0]["content"].startswith(f"class C{index}:")
         assert {check.target.qualified_name for check in request.checks} == {f"C{index}", f"C{index}.value"}
+
+
+async def test_tentative_severity_reclassifies_from_cache_without_double_counting(tmp_path, basic_rule):
+    rule = Rule.model_validate({
+        "applies_to": ["function"],
+        "question": {
+            "type": "score",
+            "instructions": "How bad?",
+            "criteria": ["Clear", "Local", "Obscured", "Tangled"],
+        },
+        "report": {
+            "message": "Review flow.",
+            "levels": {
+                "warning": {"min_score": 1.0, "min_confidence": 0.6},
+                "error": {"min_score": 2.0, "min_confidence": 0.7},
+            },
+        },
+    })
+    config = configured(basic_rule).model_copy(update={"rules": {"flow": rule}})
+    source = "def work(): return 1\n"
+    calls = []
+
+    def raw_score(request):
+        calls.append(request)
+        questions = json.loads(request.content)["questions"]
+        return httpx.Response(
+            200,
+            json={
+                "model": "test",
+                "answers": {
+                    key: {
+                        "type": "score",
+                        "score": 2.4,
+                        "confidence": 0.65,
+                        "probabilities": {"0": 0.01, "1": 0.04, "2": 0.49, "3": 0.46},
+                    }
+                    for key in questions
+                },
+            },
+        )
+
+    async with AnswerCache(tmp_path / "answers.sqlite3", 3600) as cache:
+        for confidence, expected in ((0.7, "unknown"), (0.65, "error")):
+            doc = rule.model_dump()
+            doc["report"]["levels"]["error"]["min_confidence"] = confidence
+            current = config.model_copy(update={"rules": {"flow": Rule.model_validate(doc)}})
+            sink, summary = Sink(), Summary("live")
+            async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(raw_score)) as client:
+                await evaluate_file(planned(source, current), client, cache, sink, summary)
+            event = next(event for event in sink.events if event["event"] == "evaluation")
+            assert event["statuses"]["flow"] == expected and summary.checks_evaluated == 1
+            assert summary.uncertain == (expected == "unknown")
+            assert summary.tentative_findings["error"] == (expected == "unknown")
+            assert summary.findings["error"] == (expected == "error")
+            assert summary.findings["warning"] == 0
+            assert bool(event["tentative_findings"]) is (expected == "unknown")
+            assert summary.exit_code("warning") == summary.exit_code("error") == (expected == "error")
+            if expected == "error":
+                assert event["cached"] and summary.cache_hits == 1
+    assert len(calls) == 1
