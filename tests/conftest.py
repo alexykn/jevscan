@@ -14,8 +14,8 @@ def basic_rule() -> Rule:
         "report": {
             "message": "Mixed responsibilities.",
             "levels": {
-                "warning": {"min_probability": 0.60},
-                "error": {"min_probability": 0.85},
+                "warning": {"min_probability": 0.85},
+                "error": {"min_probability": 0.99},
             },
         },
     })
