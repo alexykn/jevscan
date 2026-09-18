@@ -88,7 +88,7 @@ jobs:
           cp -R tests/fixtures "$work/fixtures"
           cd "$work"
           "$root/.venv/bin/jevscan" --version
-          "$root/.venv/bin/jevscan" --show-config > resolved.yaml
+          "$root/.venv/bin/jevscan" --show-config > resolved.toml
           "$root/.venv/bin/jevscan" --list-rules > rules.txt
           "$root/.venv/bin/jevscan" fixtures --offline --format json > inventory.json
           "$root/.venv/bin/jevscan" fixtures --offline -v > inventory.txt
@@ -96,13 +96,14 @@ jobs:
           import json
           from pathlib import Path
           import jevscan
-          import yaml
+          import tomllib
           assert 'site-packages' in str(Path(jevscan.__file__)), jevscan.__file__
-          assert jevscan.__version__ == '0.2.0rc3'
-          config = yaml.safe_load(Path('resolved.yaml').read_text())
-          assert config['version'] == 3 and len(config['rules']) == 9
+          assert jevscan.__version__ == '0.2.0rc4'
+          config = tomllib.loads(Path('resolved.toml').read_text())
+          assert config['version'] == 4 and len(config['rules']) == 9
+          assert {rule['name'] for rule in config['rules']} == {f'JEV{i:02}' for i in range(1, 10)}
           report = json.loads(Path('inventory.json').read_text())
-          assert report['schema_version'] == 4
+          assert report['schema_version'] == 5
           assert not report['summary']['incomplete'], report['summary']
           assert report['summary']['units_found'] > 0
           languages = {event['language'] for event in report['events'] if event['event'] == 'file'}

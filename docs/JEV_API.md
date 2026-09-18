@@ -80,9 +80,9 @@ A schematic request with two independent method judgments:
 
 The placeholder source/ranges above illustrate the shape; actual spans come from Tree-sitter, and actual source is sent without clipping. Byte ranges are UTF-8 offsets into the original file, zero-based and end-exclusive. Lines are one-based and inclusive. A method's span remains its own even when the evidence document is the entire file or class.
 
-`Check` owns the binding between request key, target, and YAML rule ID. Each question says that `source` in its instructions/criteria means only that target. It can use the rest of the supplied document as evidence, but must not assign a class-wide concern indiscriminately to every method. The fixed policy also says source strings/comments are evidence, not instructions; this is a guardrail, not a proven prompt-injection defense.
+`Check` owns the binding between request key, target, and TOML rule ID. Each question says that `source` in its instructions/criteria means only that target. It can use the rest of the supplied document as evidence, but must not assign a class-wide concern indiscriminately to every method. The fixed policy also says source strings/comments are evidence, not instructions; this is a guardrail, not a proven prompt-injection defense.
 
-No absolute home directory is added to an ordinary project-relative path merely to describe file identity. Source outside the selected project root may retain the discovery layer's absolute display path. Primary envelopes do not read cross-file source. RC2 enrichment can conditionally discover and supply allowed source from the resolved project root; see the data-sharing contract below.
+No absolute home directory is added to an ordinary project-relative path merely to describe file identity. Source outside the selected project root may retain the discovery layer's absolute display path. Primary envelopes do not read cross-file source. Enrichment can conditionally discover and supply allowed source from the resolved project root; see the data-sharing contract below.
 
 ## Planning and budgets
 
@@ -106,14 +106,15 @@ Raw-answer cache keys include endpoint, canonical request body, package version,
 
 ## Machine reports
 
-Report schema **4** is separate from configuration schema **3**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/diagnostic/evaluation events, and a final `summary`, flushing each event.
+Report schema **5** is separate from configuration schema **4**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/diagnostic/evaluation events, and a final `summary`, flushing each event.
 
 An `evaluation` event contains:
 
 | Field | Meaning |
 | --- | --- |
 | `target` | Complete unit/file identity and source span |
-| `answers` | Raw typed answers keyed by YAML rule ID |
+| `answers` | Raw typed answers keyed by TOML rule name |
+| `rule_metadata` | Per-rule title and ruleset membership, separate from identity |
 | `statuses` | `ok`, `unknown`, `not_applicable`, `warning`, or `error` per answer |
 | `uncertainty_reasons`, `reviews` | Decision reasons and an auditable, bounded enrichment history |
 | `findings` | Confidence-qualified warning/error findings, each with `target`; these alone determine `--fail-on` |
@@ -133,12 +134,14 @@ The raw source evidence is not copied into machine reports, but target/declarati
 Automated tests use the actual HTTPX client with MockTransport and the real bundled grammar packages. They verify request construction, multiple target bindings, exact byte accounting, shuffled responses, bounded size recovery, caching, and failure transitions. They do not establish Jev's long-context accuracy, real account rate limits, latency, or current availability. No live authenticated Jev call was made for this release candidate. See [verification](VERIFICATION.md).
 
 
-## RC2: composing Jev with bounded evidence retrieval
+## Enrichment and source sharing
 
-The HTTP contract remains the same. `core/inference.py` is now the single validated and cached prediction owner for primary, routing, selection, and reassessment calls. `RequestBudget` applies the same context/aggregate token estimates, question-count cap, and exact serialized byte ceiling in every phase. Auxiliary answers are validated against the exact submitted question IDs and criteria; unknown routes or candidate IDs are response-contract failures.
+The HTTP contract is unchanged. `core/inference.py` is the shared validated/cached prediction owner. `RequestBudget` enforces context, aggregate, byte, and question-count limits in all phases. Auxiliary answers must match the submitted IDs and primitive contracts.
 
-Routing uses a closed Choice over `sufficient`, `not_applicable`, `unavailable`, `callers`, `definitions`, `tests`, and `enclosing_context`. Candidates come from local syntax and immutable file snapshots. Selection is one independent Noul per candidate, packed into requests that fit: several pieces may be relevant, or none. Question instructions identify the candidate and bind the original target/rubric explicitly; IDs alone carry no semantics. Code admits selected complete source spans, unions overlaps, and preserves all initially supplied evidence. It never asks Jev to fabricate snippets or file paths.
+The routing request contains a disposition Choice and four independent family Nouls, not a seven-way mutually exclusive route. Only a confident `local_evidence` disposition admits qualifying families. Candidates come from allowed local source and immutable per-file snapshots. Each candidate's relevance is a separate Noul; all families share candidate and evidence budgets. The final assessment sees the original bound question and additional source, not previous verdicts or routing/relevance scores.
 
-The final request repeats the original bound question with augmented documents, source identity/relationships, and explicit retrieval coverage. Neither the original judgment nor routing/selection scores are passed as facts to the final judge. They are retained in the local report audit instead. One reassessment is the terminal step even if still uncertain. This is application-managed state across ordinary stateless requests, not a persistent provider session or a native arbitrary tool-calling API.
+Report reviews record disposition, all family probabilities, admitted families, per-family coverage, candidate memberships, selected source, omissions, and stopping outcomes. The resulting `retrieval_coverage` contains `families`, `candidate_families`, and combined-pool omission counts. Family membership is lexical/provenance information, not a resolved contract.
 
-See [ENRICHMENT.md](ENRICHMENT.md) for primary-source research and rationale. The no-cross-file limitation of primary envelopes is superseded only by explicitly listed supplemental candidates, not a claim that all external references have been resolved.
+Configuration version 4 is additive TOML. Rule names (JEV01–JEV09 for built-ins) are stable identifiers. Titles/rulesets are report metadata, not model instructions. Disabling a rule or set prevents creating those questions; selection may also change request batching/cache identities.
+
+Source outside the scanned subdirectory can be selected only under the resolved project root and filters. Selected evidence does not imply all callers have been seen or that per-file snapshots form an atomic repository revision. See [ENRICHMENT.md](ENRICHMENT.md) for the precise algorithm, research basis, and live-acceptance boundary.

@@ -1,0 +1,25 @@
+# Select only custom checks; built-in definitions remain available.
+version = 4
+[lint]
+select = ["TEAM"]
+
+[rulesets.TEAM]
+description = "Custom code-review checks"
+
+[[rules]]
+name = "TEAM01"
+title = "mixed-responsibilities"
+ruleset = "TEAM"
+applies_to = ["function", "method"]
+require_body = true
+context = "file"
+[rules.question]
+type = "noul"
+instructions = "Does this operation interleave independently meaningful responsibilities that obscure its main purpose?"
+[rules.report]
+message = "Review independently meaningful responsibilities in this operation."
+uncertain_range = [0.4, 0.6]
+[rules.report.levels.warning]
+min_probability = 0.75
+[rules.report.levels.error]
+min_probability = 0.95

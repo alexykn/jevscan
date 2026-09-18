@@ -82,14 +82,15 @@ class Planner:
     def _checks(self, config: Config) -> tuple[Check, ...]:
         targets = [self.context.file, *(Target.from_unit(unit) for unit in self.context.parsed.units)]
         checks = []
+        rules = sorted(config.selected_rules().items())
         owners_with_members = {
             unit.parent_id
             for unit in self.context.parsed.units
             if unit.kind in CALLABLE_KINDS and unit.has_implementation
         }
         for target in targets:
-            for name, rule in sorted(config.rules.items()):
-                if not rule.enabled or rule.target != target.scope or target.language not in rule.languages:
+            for name, rule in rules:
+                if rule.target != target.scope or target.language not in rule.languages:
                     continue
                 if target.scope == "unit":
                     unit = self.context.units[target.id]

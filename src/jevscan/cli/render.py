@@ -5,7 +5,7 @@ from typing import Any, TextIO
 
 from jevscan.cli.terminal import BOLD, CYAN, DIM, GREEN, KIND_STYLE, LEVEL_MARKER, LEVEL_STYLE, RED, YELLOW, Terminal
 
-REPORT_SCHEMA_VERSION = 4
+REPORT_SCHEMA_VERSION = 5
 
 
 class Reporter:
@@ -107,13 +107,16 @@ class Reporter:
             return
         self._target_header(event["target"], event["cached"])
         findings = {finding["rule"]: finding for finding in [*event["findings"], *event["tentative_findings"]]}
-        width = max(len(name) for name, _ in rows)
+        labels = {
+            name: " ".join(part for part in (name, event["rule_metadata"][name]["title"]) if part) for name, _ in rows
+        }
+        width = max(len(label) for label in labels.values())
         for name, answer in rows:
             status = event["statuses"][name]
             text = self._answer_text(answer, event["scales"].get(name))
             if name in tentative:
                 text += f"  [uncertain {tentative[name]['severity']}]"
-            self.terminal.row(LEVEL_MARKER[status], f"{name:<{width}}", text, LEVEL_STYLE[status])
+            self.terminal.row(LEVEL_MARKER[status], f"{labels[name]:<{width}}", text, LEVEL_STYLE[status])
             if name in findings:
                 self.terminal.write(findings[name]["message"], 10, DIM)
             self._review_detail(event, name, status)

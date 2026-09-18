@@ -8,13 +8,13 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-import yaml
 from pydantic import ValidationError
 
 from jevscan import __version__
 from jevscan.cli.args import parser
 from jevscan.cli.render import Reporter
-from jevscan.core.config import Config, ConfigError, LoadedConfig, default_yaml, load_config
+from jevscan.cli.terminal import safe_text
+from jevscan.core.config import Config, ConfigError, LoadedConfig, initial_toml, load_config, resolved_toml
 from jevscan.core.languages import language_for
 from jevscan.core.scanner import run_scan, worker_count
 
@@ -33,10 +33,9 @@ def _overrides(loaded: LoadedConfig, args: Any) -> LoadedConfig:
         if value is not None:
             document["jev"][key] = value
     if args.rule:
-        unknown = set(args.rule) - document["rules"].keys()
-        if unknown:
-            raise ConfigError(f"unknown rule IDs: {', '.join(sorted(unknown))}")
-        document["rules"] = {name: rule for name, rule in document["rules"].items() if name in args.rule}
+        document["lint"]["select"] = args.rule
+    if args.ignore:
+        document["lint"]["ignore"] = [*document["lint"]["ignore"], *args.ignore]
     try:
         config = Config.model_validate(document)
     except ValidationError as exc:
@@ -45,11 +44,12 @@ def _overrides(loaded: LoadedConfig, args: Any) -> LoadedConfig:
 
 
 def _list_rules(config: Config) -> None:
+    selected = config.selected_rules()
     for name, rule in config.rules.items():
         warning = rule.report.levels.warning.model_dump(exclude_none=True)
         error = rule.report.levels.error.model_dump(exclude_none=True)
         print(
-            f"{name}\tenabled={rule.enabled}\ttype={rule.question.type}\t"
+            f"{name}\ttitle={safe_text(rule.title).replace(chr(10), ' ')}\truleset={rule.ruleset}\tenabled={name in selected}\ttype={rule.question.type}\t"
             f"target={rule.target} context={rule.context} applies_to={','.join(rule.applies_to)}\twarning={warning}\terror={error}"
         )
 
@@ -69,7 +69,7 @@ def _validate_output(output: Path | None, paths: list[Path], config_source: str)
 def _validate_scan_options(config: Config, args: Any) -> None:
     if args.max_display < 0:
         raise ConfigError("--max-display must be nonnegative")
-    if not args.offline and not any(rule.enabled for rule in config.rules.values()):
+    if not args.offline and not config.selected_rules():
         raise ConfigError("there are no enabled rules; use --offline for an inventory or enable a rule")
 
 
@@ -78,13 +78,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.init_config:
             with args.init_config.open("x", encoding="utf-8") as stream:
-                stream.write(default_yaml())
+                stream.write(initial_toml())
             print(f"Created {args.init_config}")
             return 0
         paths = [path.absolute() for path in (args.paths or [Path.cwd()])]
         loaded = _overrides(load_config(paths, args.config), args)
         if args.show_config:
-            sys.stdout.write(yaml.safe_dump(loaded.config.model_dump(mode="json"), sort_keys=False, allow_unicode=True))
+            sys.stdout.write(resolved_toml(loaded.config))
             return 0
         if args.list_rules:
             _list_rules(loaded.config)

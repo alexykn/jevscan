@@ -1,264 +1,190 @@
-# Configuration and rule contracts — version 3
+# Configuration
 
-Generate a complete project configuration with `jevscan --init-config`. `--show-config` prints the resolved settings; `--list-rules` shows target/context and both severity levels.
+## Discovery and precedence
 
-## Inheritance and discovery
+Use `jevscan.toml` with `version = 4` (version 4 is also the default). Python's `tomllib` parses TOML; Tomli-W writes `--show-config`. Input is limited to 1 MiB. Invalid/duplicate TOML keys, duplicate rule names, unknown settings/selectors, and invalid rule contracts fail before scanning.
 
-An explicit `--config` wins. Otherwise discovery checks the working directory upward, stopping at a Git worktree boundary, then the supplied targets. Conflicting target configurations or both `jevscan.yaml` and `jevscan.yml` at one level are errors. The selected configuration applies to the whole invocation, not separately to nested directories.
+Resolution is explicit `--config`; otherwise the nearest config above the working directory; then the targets' nearest config; finally the packaged defaults. Upward discovery stops at a Git boundary. One config applies to the invocation; targets with different configs require separate scans or an explicit config. A selected config's directory is the project root. Without one, the nearest `.git`, `pyproject.toml`, `Cargo.toml`, or `package.json` determines the root.
 
-Without `extends: default`, a project file replaces the entire rule set. Omitted operational settings receive schema defaults. With `extends: default`, mappings merge recursively and lists replace; use `enabled: false` to disable one inherited rule. Duplicate keys, unknown fields, invalid levels, and unsupported target scopes fail before any API request.
+Legacy YAML filenames are detected. A legacy-only selection raises a migration error; multiple old/new configs in one directory are ambiguous. Explicit `--config` must point to TOML. Source API-key/origin configuration remains environment-only.
+
+`--init-config` writes a minimal additive file without overwriting. `--show-config` writes all resolved definitions and selection policy as TOML that can be read back. The latter is a snapshot of current defaults; a small override is usually easier to maintain across upgrades.
+
+## Additive rule catalogue
+
+The packaged rules are **always loaded**. Project settings merge into them: mappings recursively merge, lists replace, and the `[[rules]]` array is merged by `name`, not by array position. `rules = []` adds nothing; it does not delete defaults. There is no `extends` field.
+
+Each rule's `name` is its stable unique identity. `title` is a human-readable description; `ruleset` names its group. Rule and ruleset names must start with an ASCII letter and contain at most 64 letters/digits/hyphens/underscores. They are case-sensitive and cannot overlap. `ALL` is a reserved selector. Names need not follow a numeric convention, but built-ins use JEV01–JEV09.
+
+| Name | Title |
+|---|---|
+| JEV01 | mixed-responsibilities |
+| JEV02 | unclear-control-flow |
+| JEV03 | mixed-abstraction-levels |
+| JEV04 | redundant-validation |
+| JEV05 | hidden-invariant-failure |
+| JEV06 | unhelpful-decomposition |
+| JEV07 | fragmented-ownership |
+| JEV08 | incohesive-owner |
+| JEV09 | duplicated-behavior |
+
+The `JEV` ruleset contains built-ins. An initially empty `project` ruleset is available for custom rules that omit `ruleset`. Declare other sets using `[rulesets.NAME]`; `description` is optional and `enabled` defaults to true.
+
+```toml
+version = 4
+
+[lint]
+ignore = ["JEV09"]
+
+[rulesets.TEAM]
+description = "Team conventions"
+
+[[rules]]
+name = "TEAM01"
+title = "mixed-responsibilities-at-boundaries"
+ruleset = "TEAM"
+applies_to = ["function", "method"]
+require_body = true
+context = "file"
+[rules.question]
+type = "noul"
+instructions = "Does the target mix transport handling with business policy in a way that obscures either?"
+[rules.report]
+message = "Review the boundary between transport and business policy."
+uncertain_range = [0.4, 0.6]
+[rules.report.levels.warning]
+min_probability = 0.75
+[rules.report.levels.error]
+min_probability = 0.95
+
+[[rules]]
+name = "JEV02"
+[rules.report.levels.warning]
+min_score = 1.2
+```
+
+This keeps all built-ins except ignored JEV09, adds TEAM01, and overrides only JEV02's warning score. Both rule and ruleset `enabled = false` are hard disables; neither is silently undone by selection. New rules need complete question/report contracts. Existing names are intentional overrides; duplicate names within the same project document are errors. To use a different primitive or remove inherited optional fields, define a new rule and ignore the old one rather than depending on TOML nulls (TOML has no null value).
+
+## Select and ignore
+
+`[lint] select = ["ALL"]` is the default: all enabled built-in **and custom** rules are eligible. An explicit `select` replaces that baseline. `ignore` removes matching rules. Selectors are exact rule names, exact ruleset names, or `ALL`; there is no prefix or glob interpretation.
+
+```toml
+[lint]
+select = ["TEAM", "JEV02"]
+ignore = ["TEAM02"]
+```
+
+Effective selection is: enabled rule, enabled ruleset, matched by `select`, and not matched by `ignore`. Ignore wins even over an exact rule selection. `select = []` or `ignore = ["ALL"]` selects nothing; a live scan then errors instead of reporting everything clean. Offline inventory remains available.
+
+`--select NAME` (alias `--rule`) is repeatable and replaces configured `select`. Repeatable `--ignore NAME` adds to configured ignores. Use `--list-rules` to see effective enablement, including suppressed definitions. Rules are selected before question creation: ignored rules are not sent to Jev and do not become findings.
+
+## Rule target and evidence
+
+`target = "unit"` (default) or `"file"` determines attribution. Unit rules require nonempty `applies_to`; file rules require file context, no `applies_to`, and no body/member requirements. `module` and `tree` are not supported.
+
+`context` is `unit`, `owner`, or `file`. Defaults are owner for units and file for files. Owner context uses the lexical owner, or the file for top-level functions; Rust owner context starts with the file. `languages` defaults to the five supported languages. `require_body = true` excludes declarations and obvious stub implementations. `require_members = true` requires implemented callable members for owner-level checks. No heuristic claims compiler-level call resolution.
+
+`enrich` defaults to true. `enrich_on` is a replaceable list of triggers. Packaged defaults admit missing/reduced evidence; JEV06 also admits applicability. Available values are `missing_evidence`, `reduced_context`, `applicability`, `low_confidence`, `low_choice_probability`, `weak_defect_signal`, and `probability_ambiguous`. The first two have priority across a file. Additional triggers should be enabled only when evidence may help that rule; ordinary ambiguity is not evidence of missing code.
+
+## Questions and reporting
+
+All rules need `question.type`, focused `question.instructions`, `report.message`, and both `report.levels.warning` and `.error`. Instructions and criteria describe the target; supplied surrounding source is evidence. Rule IDs are local identities, not substitutes for complete instructions.
+
+### Noul
+
+Noul is a scalar probability of a proposition, not intensity. Levels use `min_probability` and no separate confidence. `report.expected = false` tests `1 - noul`. Optional `uncertain_range = [0.4, 0.6]` applies to raw Noul with an inclusive lower/exclusive upper boundary. It must enclose 0.5. A signal inside that band can still be displayed as an uncertain warning/error when it crosses the directional reporting threshold.
+
+### Choice
+
+Choice uses named criteria and reports only selected defect labels listed in `report.choices`. Both levels require `min_probability`; `min_confidence` is optional. `uncertain_choices` identifies missing-evidence answers; `not_applicable_choices` is separate. These categories must be disjoint and present in `question.criteria`.
+
+```toml
+[[rules]]
+name = "PROJECT02"
+title = "concealed-failure"
+applies_to = ["function", "method"]
+context = "file"
+require_body = true
+[rules.question]
+type = "choice"
+instructions = "Does this operation silently conceal a violation of an explicitly established internal invariant?"
+[rules.question.criteria]
+concealed = "An established internal invariant is violated and silently concealed."
+legitimate = "Only legitimate runtime conditions are handled, or no concealment is present."
+missing = "A necessary invariant or behavior is absent from the evidence."
+[rules.report]
+message = "Review the concealed invariant failure."
+choices = ["concealed"]
+uncertain_choices = ["missing"]
+[rules.report.levels.warning]
+min_probability = 0.60
+min_confidence = 0.50
+[rules.report.levels.error]
+min_probability = 0.92
+min_confidence = 0.70
+```
+
+### Score
+
+Score uses an ordered array of criterion descriptions and a zero-based numeric scale. Levels use exactly one of `min_score` or `max_score`, with the same direction at both levels, and optional `min_confidence`. Levels must lie inside the rubric. Score reports cannot use `min_probability`, Choice labels, or `expected = false`.
+
+### Confirmation and tentative severity
+
+The highest matching numeric signal gives severity; confidence determines confirmation at **that** level. An error-level result lacking error-level confidence is an uncertain error, not a confirmed warning. Confident outcomes create `findings`; uncertain above-threshold outcomes create `tentative_findings`. The latter remain unknown, appear by default with cyan `?`, and do not trigger `--fail-on`.
+
+Benign Choice labels and missing-evidence labels never acquire an invented defect severity. Ordinary unknown results below reporting thresholds require `-v`. Per-rule messages and all numerical thresholds are customizable. Thresholds remain heuristic and are not measured correctness probabilities.
+
+## Operational settings
+
+| Section | Important defaults / meaning |
+|---|---|
+| scan | Existing five-language include patterns and dependency/build excludes; respect_gitignore=true; jobs=0 (up to 8 parsers); batch_size=8; queue_size=8; max_file_bytes=2000000; max_units_per_file=10000 |
+| jev | model="jev-latest"; concurrency=16; requests_per_minute=600; timeout_seconds=30; retries=3; max_retry_delay=60 |
+| evaluation | max_context_tokens=28000; max_total_tokens=56000; token_reserve=512; bytes_per_token=3.0; max_request_bytes=1048576; max_questions=64; oversized_context="reduce" |
+| enrichment | enabled=true; max_checks_per_file=12; max_calls_per_file=36; max_candidates=12; max_evidence=3; max_source_files=1000; max_source_bytes=16777216 |
+| cache | enabled=true; path=".jevscan-cache/results.sqlite3"; ttl_seconds=86400 |
+
+Use `--show-config` for the complete resolved values, including source patterns. API pacing is a local budget, not an account quota claim. Context estimates are not a provider tokenizer. `oversized_context = "skip"` forbids reducing requested evidence. Targets are never truncated.
+
+Routing uses `min_route_probability=0.70` and `min_route_confidence=0.50` for the **disposition Choice**, `min_evidence_probability=0.60` independently for each evidence-family Noul, and `min_relevance=0.65` for each candidate. Do not add or normalize independent family probabilities. A disposition stop wins over speculative family answers. One review can use several families, but the candidate/evidence/call budgets stay shared, not multiplied by family count.
+
+The cache path must be relative and inside the project. Cache entries contain raw provider answers, not source. `--no-cache` disables all cache use, including enrichment. CLI model/config operational overrides are validated by the same schema.
+
+## Migration from YAML v3
+
+1. Replace `jevscan.yaml`/`.yml` with `jevscan.toml`, set `version = 4`, and remove `extends`. Keep a backup outside those recognized filenames while migrating.
+2. Convert the rule mapping to named `[[rules]]` entries. Use the ID table above to replace built-in slugs, including CLI `--rule` arguments and consumers of `Finding.rule`.
+3. Convert YAML mappings to TOML tables and use `=` for values. Threshold names and meanings do not change.
+4. Built-ins now remain active automatically. For an old standalone custom-only config, declare your custom rules and set `[lint] select = ["your-set"]` (or enumerate rule names). To disable all checks, use `select = []`, not an empty rule array.
+5. For script consumers, report schema 5 retains confirmed/tentative separation but uses stable IDs and adds `rule_metadata`. Review routing now contains `disposition`, `evidence_families`, `evidence_probabilities`, and per-family retrieval coverage rather than one `route`.
+
+Before:
 
 ```yaml
 version: 3
 extends: default
 rules:
-  mixed-responsibilities:
-    context: file
+  duplicated-behavior:
+    enabled: false
+  unclear-control-flow:
     report:
       levels:
         warning:
-          min_probability: 0.65
+          min_score: 1.2
 ```
 
-## What is being judged?
+After:
 
-Each rule has independent `target` and `context` settings:
+```toml
+version = 4
+[lint]
+ignore = ["JEV09"]
 
-| Setting | Values and meaning |
-| --- | --- |
-| `target: unit` | A complete extracted function, method, class, impl, or other lexical unit |
-| `target: file` | The complete parsed file, including top-level statements |
-| `context: unit` | Just the target source, plus bounded import snippets |
-| `context: owner` | The target's lexical owner, or file for a top-level callable |
-| `context: file` | The containing file |
-
-Unit rules require nonempty `applies_to`. Supported kinds are `function`, `method`, `closure`, `class`, `struct`, `enum`, `trait`, `impl`, `interface`, `type`, `module`, and `package`. These are **lexical kinds**, not additional evaluation scopes. `target: module` and `target: tree` are not implemented and are rejected.
-
-`target` defaults to `unit`; its context defaults to `owner`. A file rule defaults to `context: file` and must not specify `applies_to`, `require_body: true`, or a narrower context. Unit rules can require an implementation with `require_body: true`. All rules default to enabled and all five supported languages; TSX uses `typescript`, JSX uses `javascript`.
-
-An owner-level target sees itself under `context: owner`. A method sees its class/impl; a nested function sees its enclosing callable. Rust owner context starts with the full file because type definitions and impls are siblings; this includes same-file evidence but does not resolve matching types, traits, imports, or cross-file impls. On a size reduction it falls back to the lexical impl and then the complete method.
-
-Every question explicitly identifies the target and defines `source` in the YAML instructions/criteria as **that target**, not everything included in the request. Related targets may share one evidence document and API request. Shared evidence does not combine their scores.
-
-## Three question forms
-
-### Noul: an affirmative proposition
-
-```yaml
-version: 3
-rules:
-  mixed-work:
-    target: unit
-    context: owner
-    applies_to: [function, method, closure]
-    require_body: true
-    question:
-      type: noul
-      instructions: >-
-        Does source interleave unrelated responsibilities in a way that obscures
-        its main operation? Necessary domain complexity alone is not a problem.
-    report:
-      message: Review the responsibilities combined in this operation.
-      levels:
-        warning: {min_probability: 0.50}
-        error: {min_probability: 0.90}
+[[rules]]
+name = "JEV02"
+[rules.report.levels.warning]
+min_score = 1.2
 ```
 
-`noul` is the provider's value for the affirmative proposition, in `[0,1]`. `report.expected: false` makes reporting compare `1 - noul` instead. The raw value displayed remains `noul`. There is no separate Noul confidence field/gate. Noul cannot use score or choice fields.
-
-### Choice: named alternatives, including uncertainty
-
-```yaml
-question:
-  type: choice
-  instructions: Which statement about the validation in source is supported?
-  criteria:
-    redundant: The supplied evidence establishes the same invariant before a repeated check.
-    justified: The check protects a trust boundary or changed state, or no repeated check exists.
-    unknown: A necessary upstream guarantee cannot be established from the supplied code.
-report:
-  message: A check appears to repeat an established invariant.
-  choices: [redundant]
-  uncertain_choices: [unknown]
-  levels:
-    warning: {min_probability: 0.60, min_confidence: 0.50}
-    error: {min_probability: 0.92, min_confidence: 0.70}
-```
-
-The selected label must be one of `report.choices`, its selected-label probability must meet the level's `min_probability`, and its confidence must meet `min_confidence` when specified. All conditions are ANDed. `uncertain_choices` is optional, must contain valid criteria labels, and must not overlap defect choices. Such a label produces `unknown`, never a finding.
-
-Below-threshold confidence, weak support for a non-defect label, or a selected defect label that does not satisfy a reporting gate also produces `unknown`. Uncertainty is not changed to green simply because no finding passed. It is counted in the summary and shown with `?` under `-v`; it does not by itself fail the scan.
-
-### Score: ordered criteria, not a probability
-
-```yaml
-question:
-  type: score
-  instructions: How difficult is the main execution path through source to follow?
-  criteria:
-    - Clear execution path, including necessary domain branching.
-    - Mostly clear, with some local complexity.
-    - Interleaved concerns or nesting substantially obscure the operation.
-    - Tangled control flow makes important transitions difficult to establish.
-report:
-  message: Review this operation's control flow.
-  levels:
-    warning: {min_score: 1.0, min_confidence: 0.60}
-    error: {min_score: 2.0, min_confidence: 0.70}
-```
-
-Criteria correspond to `0, 1, ...`; returned scores may be fractional. Both levels must use the same direction: `min_score` for larger-is-worse, `max_score` for smaller-is-worse. The valid range is zero through the final criterion index. Score rules cannot use probability gates, choice lists, or `expected: false`. A low-confidence non-finding is `unknown`, not confidently OK.
-
-## Levels, messages, and output
-
-Both `report.levels.warning` and `report.levels.error` are required. Thresholds are inclusive. After any configured Noul uncertainty band is applied, the error gate is checked first and must be at least as strict as the warning gate; `min_confidence` participates in this ordering. Otherwise the result is OK or uncertain as described above. YAML stores semantic levels, not ANSI color escape codes.
-
-`report.message` is the configurable explanation printed below a warning/error. The same message is used for both levels; it is not generated repair advice and does not localize an issue more narrowly than the target.
-
-| Outcome | Display | Default text report |
-| --- | --- | --- |
-| OK | Green `·` | Hidden |
-| Warning | Yellow `!` | Shown |
-| Error | Red `x` | Shown |
-| Unknown | Cyan `?` | Hidden; counted in summary |
-
-`-v` / `--verbose` shows all evaluated answers. Operational/coverage diagnostics remain visible in either mode. `--max-display` counts visible targets, not individual checks; `0` means unlimited. JSON/JSONL always preserve all answers and omissions. Offline inventory always lists extracted units.
-
-Packaged defaults retain the earlier warning/error numeric boundaries:
-
-| Rule | Target / context | Warning | Error |
-| --- | --- | --- | --- |
-| mixed-responsibilities | unit / owner | noul ≥ .50 | noul ≥ .90 |
-| mixed-abstraction-levels | unit / owner | noul ≥ .50 | noul ≥ .90 |
-| unclear-control-flow | unit / owner | score ≥ 1, conf ≥ .60 | score ≥ 2, conf ≥ .70 |
-| redundant-validation | unit / file | defect p ≥ .60, conf ≥ .50 | defect p ≥ .92, conf ≥ .70 |
-| hidden-invariant-failure | unit / file | defect p ≥ .60, conf ≥ .50 | defect p ≥ .92, conf ≥ .70 |
-| unhelpful-decomposition | unit / file | defect p ≥ .60, conf ≥ .50 | defect p ≥ .90, conf ≥ .70 |
-| incohesive-owner | unit / file | noul ≥ .50 | noul ≥ .90 |
-| fragmented-ownership | file / file | noul ≥ .50 | noul ≥ .92 |
-| duplicated-behavior | file / file | noul ≥ .50 | noul ≥ .93 |
-
-These are review-policy starting points, not measured correctness probabilities or thresholds calibrated across projects. Richer evidence and a changed target can change Jev's answers; the earlier unit-only self-scan is not a benchmark for file-level judgments.
-
-## Request planning and resource limits
-
-```yaml
-evaluation:
-  max_context_tokens: 28000  # estimated state + longest question, including reserve
-  max_total_tokens: 56000    # estimated state + all questions, including reserve
-  token_reserve: 512
-  bytes_per_token: 3.0       # heuristic over serialized UTF-8 input
-  max_request_bytes: 1048576 # exact serialized request-byte ceiling
-  max_questions: 64
-  oversized_context: reduce # reduce | skip
-```
-
-The estimator is deliberately visible and configurable. It is **not TypeSafe's tokenizer** and cannot guarantee that every accepted local plan fits the provider. Body bytes include JSON escaping, target metadata, instructions, criteria, question IDs, and model information. The state is counted once, not once per question.
-
-Question packing retains the same evidence. A provider HTTP 413 or a structured `max_tokens_exceeded` error at HTTP 400/422 also permits deterministic, bounded recovery: bisect questions, then try a smaller context for an individual check. An unrelated 400/401 or an invalid answer is not permission to change the evidence or fabricate a result.
-
-`reduce` chooses the broadest configured envelope that fits, then lexical owner, then unit where applicable. Requested-context reduction records exact ranges, emits a diagnostic, and makes the scan incomplete even though the target itself remains complete. A non-finding based on reduced requested context is classified unknown. `skip` requires the original requested envelope unchanged.
-
-The target is **never truncated**. File targets have no smaller whole-file alternative. An oversized file/class may be omitted while its fitting methods are still evaluated. There is no silent chunk scoring, max/mean aggregation, or whole-file result inferred from partial text. The report's `target_complete` and `context_complete` fields distinguish these cases.
-
-| Group | Other settings |
-| --- | --- |
-| `scan` | `include`, `exclude`, `respect_gitignore`, `jobs`, `batch_size`, `queue_size`, `max_file_bytes`, `max_units_per_file` |
-| `jev` | `model`, `concurrency`, `requests_per_minute`, `timeout_seconds`, `retries`, `max_retry_delay` |
-| `cache` | `enabled`, project-relative `path`, `ttl_seconds` (`0` means no expiration) |
-
-`scan.max_file_bytes` protects filesystem reads, not model quality; default 2,000,000 bytes. `queue_size` now counts parsed files awaiting evaluation (default 8), not individual units. Workers retain complete active files and their envelopes/results, so raising file size, nesting, rule count, and concurrency together can use substantial memory. `jev.concurrency` limits simultaneous file evaluators; batches within one file execute sequentially. `requests_per_minute` paces every HTTP attempt, including retries and size recovery.
-
-Include/exclude use Git-style patterns, not `Path.glob`: `*.py` matches that basename at any depth; leading `/` anchors at the project root. Ignored parent directories are pruned before traversal. Authentication and endpoint selection are environment-only, not project YAML.
-
-## Migration from version 2
-
-1. Change `version: 2` to `version: 3` (or regenerate with `--init-config` into a **new** path and transfer overrides).
-2. Remove `scan.max_unit_bytes`, `scan.context_bytes`, and `scan.context_members`. Source selection is controlled by each rule's `context`; request sizing is controlled by `evaluation`.
-3. Move `jev.max_request_bytes` and `jev.max_questions` to `evaluation` when previously configured. Reconsider their values: the old 60,000-byte request cap defeats richer context.
-4. Keep existing `report.levels.warning/error`; add `target/context` as needed. A standalone unit rule defaults to owner context. File rules must remove `applies_to` and `require_body` and use file context.
-5. Review inherited file-level defaults: `duplicated-behavior` and `fragmented-ownership` now apply once per file, not once per owner. Add `uncertain_choices` to custom Choice rules with an unknown category.
-6. Consumers of machine reports must accept **report schema 4** (schema 2 introduced target fields; schema 3 added audits; schema 4 separates tentative findings): evaluations and findings contain `target`, not `unit`; evaluations add `statuses`, `evidence`, `models`, `scales`, `cached_rules`, and `skipped_rules`. Offline `unit` inventory events remain lexical metadata.
-
-Version-1 configurations first need their single severity/threshold moved into explicit warning/error levels. Old-version configurations are rejected before scanning. Cache entries are versioned and the new request shape invalidates prior unit-only answers; subsequent reporting-only changes can reuse the new raw-answer cache.
-
-
-## RC2: bounded evidence enrichment (configuration version remains 3)
-
-These fields are additive; existing v3 configurations load without migration. Enrichment is enabled by the operational default, including standalone configurations. `--no-enrichment` overrides YAML for that invocation. `--show-config` prints the effective settings.
-
-```yaml
-version: 3
-extends: default
-
-enrichment:
-  enabled: true
-  max_checks_per_file: 12
-  max_calls_per_file: 36
-  max_candidates: 12
-  max_evidence: 3
-  min_route_probability: 0.70
-  min_route_confidence: 0.50
-  min_relevance: 0.65
-  max_source_files: 1000
-  max_source_bytes: 16777216
-
-rules:
-  redundant-validation:
-    enrich: true
-  unclear-control-flow:
-    enrich: false
-  mixed-responsibilities:
-    report:
-      uncertain_range: [0.40, 0.60]
-```
-
-There is one enrichment pass, not a configurable recursive state machine. `max_calls_per_file` counts routing, candidate-selection and reassessment predictions, including cache hits. HTTP retry attempts are separately controlled by `jev.retries` and the global rate limiter. Reaching a review/call limit retains uncertainty; it is not a successful reassessment. `max_evidence` cannot exceed `max_candidates`. Route probability and candidate relevance thresholds must be greater than 0.5. These defaults are heuristics awaiting domain calibration.
-
-`max_source_files` and `max_source_bytes` bound one lazy source index for the invocation, not each target. Reads over a configured file/total byte budget are rejected, not partially analyzed. One overflow byte may be read. Unreadable or unsupported source, budget exhaustion, and candidate truncation are recorded as partial retrieval coverage. The scan include/exclude and Git-ignore filters apply to this discovery too. A lexical name match is only a candidate; no complete call graph is implied even when discovery finishes.
-
-**Review data-sharing scope before live use.** The evidence search spans the resolved project root, not only command-line target paths. Tests outside `src/` may be supplied to Jev. To restrict sharing to primary requested evidence, disable enrichment. API authentication/endpoint cannot be redirected by repository YAML. No model-provided path is opened.
-
-### Applicability and uncertainty
-
-`require_body: true` now requires a body containing an implementation, not merely syntax such as `pass` or `...`. Declaration-only methods remain present in offline inventory. An empty block is not an implementation for these checks; a real expression-bodied closure is. `require_members: true` requires at least one directly owned implemented callable. The packaged decomposition rule uses this filter; it is optional for custom unit rules and invalid for file rules.
-
-Choice rules may set `report.not_applicable_choices` to labels in their criteria. These labels must be disjoint from defect `choices` and `uncertain_choices`. A sufficiently supported not-applicable answer has status `not_applicable`, not `ok`. A confident routing judgment may also reach this status; the raw primary answer and routing prediction are retained so this inference is auditable.
-
-Noul rules may set `report.uncertain_range: [lower, upper]`, which must enclose 0.5. The interval is **lower-inclusive, upper-exclusive**, applies to raw `noul` (also for `expected: false`), and takes precedence over reporting levels. `null` disables the uncertainty band. Thus the packaged `[0.40, 0.60)` leaves 0.599 uncertain and lets 0.600 reach the ordinary warning gate. Confidence-based Choice/Score rules retain their existing thresholds; uncertainty is now given a separate reason rather than being conflated with severity.
-
-Standalone/copied v3 rules do not inherit the new Noul band or decomposition filter. With `extends: default` they do. The numerical warning/error gates are unchanged, but the band deliberately changes handling around the Noul warning boundary.
-
-### Machine reports
-
-RC2 adds `not_applicable` to statuses, plus per-rule `uncertainty_reasons` and `reviews`. A review records its trigger, original answer/model/evidence, each prediction's request hash/model/cache/raw answer, candidate identities/relevance, retrieval limits, selected source hashes/ranges, and stop outcome. Final `answers`, `findings`, `evidence`, and summary counts describe the final assessment only; earlier judgments do not count twice. `cached_rules` and the target `cached` marker require every contributing prediction to be cached.
-
-`summary.enrichment_calls` includes cached predictions; `summary.requests` counts actual HTTP attempts across primary and auxiliary work. `enrichment_resolved` includes transitions from unknown to OK, warning, error, or not-applicable; it is a workflow count, not measured model accuracy. Provider context rejection in enrichment preserves the earlier uncertain answer with a specific stop reason. Other API, cache, and validation errors remain operational failures and make the scan incomplete.
-
-
-## RC3: selective enrichment and tentative findings
-
-Configuration remains version 3. A rule's `enrich_on` list controls which unknown judgments may request refinement. Omitted lists default to `[missing_evidence, reduced_context, applicability]`; packaged non-applicability rules explicitly use the first two. `enrich: false`, `enrichment.enabled: false`, and `--no-enrichment` still disable review. An empty `enrich_on` disables it for that rule.
-
-```yaml
-version: 3
-extends: default
-rules:
-  redundant-validation:
-    # Optional: a project-specific reason to revisit low-confidence contract judgments.
-    enrich_on: [missing_evidence, reduced_context, low_confidence]
-```
-
-Review priority is fixed independently of list order: missing evidence, reduced context, applicability, then explicitly enabled `low_confidence` / `low_choice_probability` / `weak_defect_signal`, then `probability_ambiguous`. Within a priority, source position and rule ID give a stable order. All judgments in a file are considered before the shared per-file budgets are consumed. Reduced context is considered independently of the displayed uncertainty reason. Applicability requires declared `not_applicable_choices`; adding its trigger alone does not make an unrelated rule eligible. Unknown trigger names are configuration errors.
-
-Non-admitted unknowns do not consume review/call budgets, load the source index, or claim that a model judged the evidence sufficient. They retain their raw answer and uncertainty reason, without a fabricated review entry. Admitted checks that reach a limit still have explicit budget outcomes. Model routing/retrieval remains bounded and unchanged; no threshold is lowered to manufacture a conclusive result.
-
-### Indicated severity versus confidence
-
-Severity comes from the highest matching numeric signal gate (`min_score` / `max_score`, or a defect Choice's `min_probability`). Its `min_confidence` decides whether that level is confirmed. For example `score=2.4, conf=0.65` with warning `1.0/0.60` and error `2.0/0.70` is an **uncertain error**, not a downgraded confirmed warning. Tentative results have status `unknown` and retain `low_confidence`; their indicated severity is stored in `tentative_findings`.
-
-The same separation applies to Noul uncertainty bands: a directional probability that crosses a severity gate inside the band is tentative; an uncertain value below that gate has no tentative severity. With the packaged positive rules, `0.48` is verbose-only and `0.51` is a cyan tentative warning. Inverse (`expected: false`) rules use `1 - noul` for the signal gate, while the configured uncertainty interval still refers to the raw `noul` value. Explicit missing-context/N/A choices never become tentative defects. A weak defect choice below its probability gate remains verbose-only.
-
-Default text displays confirmed findings and tentative findings, retaining cyan `?` for the latter and adding `[uncertain warning]` or `[uncertain error]`. Messages still come from `report.message`. `-v` includes the remaining answers. Filtering happens before file/target headers and `--max-display`. Messages/labels preserve hanging indents, including with ANSI color disabled.
-
-**Machine-report schema 4** adds `evaluation.tentative_findings` (same item structure as `findings`) and `summary.tentative_findings` (`warning` and `error` counts). A result occurs in at most one findings list. Tentative results are a subset of `summary.uncertain`, not additional checks. Confirmed `findings` alone determine `--fail-on`; low-confidence error signals no longer qualify as confirmed warnings via the lower gate. Operational failures still exit 2. Schema-3 consumers must accept the new schema and must not treat tentative findings as confirmed failures. Raw answers, evidence, reviews and cache provenance remain available regardless of text verbosity. Review entries now distinguish the admitted `trigger` from the original `initial_reason`.
+There is no automatic YAML rewrite or hidden legacy evaluator. Migration errors are preferable to silently changing which checks a project runs. Numerical defaults were not retuned in rc4.

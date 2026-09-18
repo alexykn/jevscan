@@ -12,7 +12,7 @@ from jevscan.core.cache import AnswerCache
 from jevscan.core.client import JevClient
 from jevscan.core.config import Config, EnrichmentConfig, EvaluationConfig, JevConfig, load_config
 from jevscan.core.context import ContextBuilder
-from jevscan.core.enrichment import ROUTES
+from jevscan.core.enrichment import DISPOSITIONS, EVIDENCE_FAMILIES
 from jevscan.core.evaluation import evaluate_file
 from jevscan.core.models import FileJob, Kind, Summary
 from jevscan.core.parser import parse_source
@@ -80,22 +80,32 @@ class Responses:
         route: str = "callers",
         *,
         route_confidence: float = 0.9,
+        families: dict[str, float] | None = None,
         relevance: float = 0.9,
         final: str = "clean",
         status: int = 200,
     ) -> None:
         self.route, self.route_confidence, self.relevance = route, route_confidence, relevance
         self.final, self.status = final, status
+        self.disposition = route if route in DISPOSITIONS else "local_evidence"
+        self.families = (
+            families if families is not None else {name: 0.9 if name == route else 0.1 for name in EVIDENCE_FAMILIES}
+        )
         self.requests: list[dict] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         self.requests.append(body)
         questions, state = body["questions"], body["state"]
-        if "route" in questions:
+        if any(name in questions for name in ("disposition", *EVIDENCE_FAMILIES)):
             if self.status != 200:
                 return httpx.Response(self.status)
-            answers = {"route": choice(ROUTES, self.route, self.route_confidence)}
+            answers = {
+                name: choice(DISPOSITIONS, self.disposition, self.route_confidence)
+                if name == "disposition"
+                else {"type": "noul", "noul": self.families[name]}
+                for name in questions
+            }
         elif "candidate_context" in state:
             answers = {key: {"type": "noul", "noul": self.relevance} for key in questions}
         else:
@@ -139,7 +149,7 @@ async def test_closed_routing_relevance_and_fresh_judgment(tmp_path: Path, evide
     assert event["statuses"]["contract"] == "ok"
     review = event["reviews"]["contract"]
     assert review["initial_answer"]["choice"] == "missing"
-    assert review["route"] == "callers" and review["outcome"] == "reassessed"
+    assert review["evidence_families"] == ["callers"] and review["outcome"] == "reassessed"
     assert review["selected"][0]["target"]["path"] == "caller.py"
     assert review["selected"][0]["reference"]["name"] == "work"
     last = responses.requests[-1]
@@ -244,7 +254,7 @@ class Actual:
         check.rule_id == "unhelpful-decomposition" and check.target.qualified_name != "Actual"
         for check in planner.checks
     )
-    check = next(check for check in planner.checks if check.rule_id == "mixed-responsibilities")
+    check = next(check for check in planner.checks if check.rule_id == "JEV01")
     for value, status in (
         (0.1, "ok"),
         (0.4, "unknown"),
@@ -270,7 +280,7 @@ async def test_candidate_batches_obey_question_budget_and_preserve_overlap(tmp_p
     assert len(selections) == 3 and all(len(body["questions"]) == 1 for body in selections)
     assert len(events[0]["reviews"]["contract"]["selected"]) == 3
     assert summary.enrichment_reruns == 1
-    assert responses.requests[-1]["state"]["retrieval_coverage"]["discovery_complete"]
+    assert responses.requests[-1]["state"]["retrieval_coverage"]["families"]["callers"]["discovery_complete"]
 
     # Owner/file candidates overlap. The final document is the union, not duplicate source.
     source = 'class Owner:\n    label = "λ"\n    def work(self): return self.label\n'
@@ -290,7 +300,7 @@ async def test_no_candidate_means_no_selection_or_reassessment(tmp_path, evidenc
     assert len(responses.requests) == 2
     review = events[0]["reviews"]["contract"]
     assert review["outcome"] == "no_relevant_evidence"
-    assert review["retrieval"]["matched_candidates"] == 0
+    assert review["retrieval"]["families"]["callers"]["matched_candidates"] == 0
 
 
 async def test_malformed_auxiliary_answer_is_an_error_not_a_clean_result(tmp_path, evidence_rule):
@@ -298,7 +308,7 @@ async def test_malformed_auxiliary_answer_is_an_error_not_a_clean_result(tmp_pat
 
     def malformed(request):
         body = json.loads(request.content)
-        if "route" in body["questions"]:
+        if any(name in body["questions"] for name in ("disposition", *EVIDENCE_FAMILIES)):
             return httpx.Response(200, json={"model": "test", "answers": {"invented": {"type": "noul", "noul": 1.0}}})
         return responses(request)
 
@@ -309,7 +319,7 @@ async def test_malformed_auxiliary_answer_is_an_error_not_a_clean_result(tmp_pat
 async def test_confident_primary_answer_does_not_request_enrichment(tmp_path, evidence_rule):
     def clean(request):
         body = json.loads(request.content)
-        assert "route" not in body["questions"]
+        assert "disposition" not in body["questions"]
         return httpx.Response(
             200,
             json={
@@ -348,7 +358,7 @@ async def test_intrinsic_uncertainty_does_not_route_or_load_the_catalogue(tmp_pa
 
     def primary_only(request):
         body = json.loads(request.content)
-        assert "route" not in body["questions"]
+        assert "disposition" not in body["questions"]
         if kind == "score":
             raw = {
                 "type": "score",
@@ -383,7 +393,7 @@ async def test_evidence_gaps_win_the_budget_before_earlier_optional_reviews(tmp_
 
     def heterogeneous(request):
         body = json.loads(request.content)
-        if "route" in body["questions"]:
+        if any(name in body["questions"] for name in ("disposition", *EVIDENCE_FAMILIES)):
             return responses(request)
         answers = {}
         for key, question in body["questions"].items():
@@ -396,7 +406,7 @@ async def test_evidence_gaps_win_the_budget_before_earlier_optional_reviews(tmp_
         tmp_path, rule, heterogeneous, source=source, enrichment=EnrichmentConfig(max_checks_per_file=1)
     )
     assert len(responses.requests) == 1
-    route = responses.requests[0]["questions"]["route"]["instructions"]
+    route = responses.requests[0]["questions"]["disposition"]["instructions"]
     assert route["target"]["qualified_name"] == "last_gap"
     assert [event["target"]["qualified_name"] for event in events] == ["first", "second", "last_gap"]
     assert [event["reviews"]["contract"]["outcome"] for event in events] == [
@@ -414,7 +424,7 @@ async def test_reduced_context_is_actionable_even_when_reason_is_low_confidence(
 
     def low_confidence(request):
         body = json.loads(request.content)
-        if "route" in body["questions"]:
+        if any(name in body["questions"] for name in ("disposition", *EVIDENCE_FAMILIES)):
             return responses(request)
         return httpx.Response(
             200,
@@ -443,7 +453,7 @@ async def test_context_sensitive_rule_can_opt_into_low_confidence(tmp_path, evid
 
     def low_confidence(request):
         body = json.loads(request.content)
-        if "route" in body["questions"]:
+        if any(name in body["questions"] for name in ("disposition", *EVIDENCE_FAMILIES)):
             return responses(request)
         return httpx.Response(
             200,
@@ -456,3 +466,83 @@ async def test_context_sensitive_rule_can_opt_into_low_confidence(tmp_path, evid
     events, summary, _ = await run_review(tmp_path, rule, low_confidence)
     assert summary.enrichment_reviewed == 1 and len(responses.requests) == 1
     assert events[0]["reviews"]["contract"]["trigger"] == "low_confidence"
+
+
+async def test_multiple_evidence_families_share_one_ranked_candidate_pool(tmp_path, evidence_rule):
+    (tmp_path / "caller.py").write_text("def use(): return work(2)\n")
+    (tmp_path / "helper.py").write_text("def helper(v): return v + 1\n")
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_target.py").write_text("def test_work(): assert work(2) == 3\n")
+    probabilities = {"callers": 0.8, "definitions": 0.8, "tests": 0.8, "enclosing_context": 0.1}
+    responses = Responses(families=probabilities)
+    events, summary, _ = await run_review(
+        tmp_path, evidence_rule, responses, source="def work(value): return helper(value)\n"
+    )
+    review = events[0]["reviews"]["contract"]
+    assert review["disposition"] == "local_evidence"
+    assert review["evidence_families"] == ["callers", "definitions", "tests"]
+    assert review["evidence_probabilities"] == probabilities
+    routing_questions = responses.requests[1]["questions"]
+    assert {key: value["type"] for key, value in routing_questions.items()} == {
+        "disposition": "choice",
+        **dict.fromkeys(EVIDENCE_FAMILIES, "noul"),
+    }
+    selected = review["selected"]
+    assert {item["target"]["path"] for item in selected} == {"caller.py", "helper.py", "tests/test_target.py"}
+    assert len({item["id"] for item in selected}) == len(selected) == 3
+    shared = next(item for item in selected if item["target"]["path"] == "tests/test_target.py")
+    assert review["retrieval"]["candidate_families"][shared["id"]] == ["callers", "tests"]
+    assert len(responses.requests) == 4 and summary.enrichment_reruns == 1
+    assert responses.requests[0]["questions"] == responses.requests[-1]["questions"]
+    state = responses.requests[-1]["state"]
+    assert not {"initial_answer", "disposition", "evidence_probabilities", "predictions"} & state.keys()
+    assert events[0]["statuses"]["contract"] == "ok"
+
+
+@pytest.mark.parametrize(
+    "disposition,outcome",
+    [("local_evidence", "no_evidence_family"), ("sufficient", "sufficient"), ("unavailable", "unavailable")],
+)
+async def test_no_family_and_disposition_stops_are_not_overridden(tmp_path, evidence_rule, disposition, outcome):
+    scores = dict.fromkeys(EVIDENCE_FAMILIES, 0.1 if disposition == "local_evidence" else 0.95)
+    responses = Responses(disposition, families=scores)
+    events, summary, index = await run_review(tmp_path, evidence_rule, responses)
+    assert events[0]["reviews"]["contract"]["outcome"] == outcome
+    assert summary.enrichment_reruns == 0 and index._catalogue is None
+    assert len(responses.requests) == 2
+
+
+async def test_combined_families_obey_one_global_candidate_budget(tmp_path, evidence_rule):
+    for i in range(5):
+        (tmp_path / f"caller{i}.py").write_text(f"def use{i}(): return work({i})\n")
+    (tmp_path / "helper.py").write_text("def helper(v): return v\n")
+    responses = Responses(families={"callers": 0.9, "definitions": 0.8, "tests": 0.1, "enclosing_context": 0.1})
+    events, _, _ = await run_review(
+        tmp_path,
+        evidence_rule,
+        responses,
+        source="def work(v): return helper(v)\n",
+        enrichment=EnrichmentConfig(max_candidates=2, max_evidence=2),
+    )
+    review = events[0]["reviews"]["contract"]
+    assert len(review["candidates"]) == 2
+    assert "helper.py" in {item["target"]["path"] for item in review["selected"]}
+    assert review["retrieval"]["combined_candidate_limit_omissions"] == 1
+    assert review["retrieval"]["families"]["callers"]["candidate_limit_omissions"] == 3
+
+
+async def test_split_routing_respects_call_budget_without_incomplete_decisions(tmp_path, evidence_rule):
+    responses = Responses()
+    events, summary, index = await run_review(
+        tmp_path,
+        evidence_rule,
+        responses,
+        enrichment=EnrichmentConfig(max_calls_per_file=2),
+        evaluation=EvaluationConfig(max_questions=1),
+    )
+    review = events[0]["reviews"]["contract"]
+    assert review["outcome"] == "call_budget"
+    assert len(review["predictions"]) == 2
+    assert summary.enrichment_calls == 2 and summary.enrichment_reruns == 0
+    assert index._catalogue is None
