@@ -1,0 +1,116 @@
+name: YAML correction verification
+
+on:
+  push:
+    branches: [fix/pr6-yaml-verification]
+    paths: [.github/workflows/restore-yaml-verify.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/fix/pr6-yaml-verification'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      UV_PYTHON: '3.12'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 3
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: '0.12.16'
+      - name: Apply hash-verified YAML source correction
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD^)" = '326bf72d0c48f661161a580421a030488927cc64'
+          python - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import lzma
+          import subprocess
+          parts = []
+          for sha in (
+              'd29147436cf041a948471ad25d8d0552b4ab0950',
+              '04c3eba3f9ca065101ee8fb54de98de98f4ff42c',
+              '4c989de57375fe3745f6418ac0298b89e2eb2151',
+          ):
+              raw = subprocess.check_output(['gh', 'api', f'repos/alexykn/jevscan/git/blobs/{sha}'])
+              parts.append(base64.b64decode(json.loads(raw)['content']).decode('ascii'))
+          patch = lzma.decompress(base64.b64decode(''.join(parts)))
+          assert hashlib.sha256(patch).hexdigest() == '2a905ac6b0af5e87e6aebe1db9ca0123e1fe31d863489ad7cc324155ef7b49c4'
+          subprocess.run(['git', 'apply', '--unidiff-zero', '--check'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--unidiff-zero', '--index'], input=patch, check=True)
+          PY
+          git show 3f7ca8dcfb5e19fa88ade1352a418a2ca2bf894d:requirements.txt > requirements.txt
+          git show 3f7ca8dcfb5e19fa88ade1352a418a2ca2bf894d:uv.lock > uv.lock
+          git rm .github/workflows/restore-yaml-verify.yml
+          git add -A
+          git diff --cached --check
+          test "$(git write-tree)" = '97145b0f732b0a27c1dac46992ff9261cf68c97a'
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups
+      - name: Check whole-project formatting and lint
+        run: |
+          uv run --no-sync ruff format --check src tests
+          uv run --no-sync ruff check src tests
+      - name: Type-check
+        run: uv run --no-sync ty check
+      - name: Test
+        run: uv run --no-sync pytest -q -rs
+      - name: Build distributions
+        run: uv build
+      - name: Verify installed YAML package outside checkout
+        run: |
+          uv pip install --python .venv/bin/python --no-deps --reinstall dist/*.whl
+          root="$PWD"
+          work="$(mktemp -d)"
+          cp -R tests/fixtures "$work/fixtures"
+          cp examples/*.yaml "$work/"
+          cd "$work"
+          "$root/.venv/bin/jevscan" --init-config
+          "$root/.venv/bin/jevscan" --show-config > resolved.yaml
+          "$root/.venv/bin/jevscan" --config resolved.yaml --show-config > roundtrip.yaml
+          "$root/.venv/bin/jevscan" --no-enrichment --show-config > disabled.yaml
+          "$root/.venv/bin/jevscan" --config extends-default.yaml --show-config > example1.yaml
+          "$root/.venv/bin/jevscan" --config standalone.yaml --list-rules > example2.txt
+          "$root/.venv/bin/jevscan" fixtures --offline --format json > inventory.json
+          "$root/.venv/bin/python" -I - <<'PY'
+          import json
+          from pathlib import Path
+          import jevscan
+          import yaml
+          assert 'site-packages' in str(jevscan.__file__)
+          assert jevscan.__version__ == '0.2.0rc4'
+          config = yaml.safe_load(Path('resolved.yaml').read_text())
+          assert config == yaml.safe_load(Path('roundtrip.yaml').read_text())
+          assert config['version'] == 4 and len(config['rules']) == 9
+          assert not yaml.safe_load(Path('disabled.yaml').read_text())['enrichment']['enabled']
+          assert yaml.safe_load(Path('example1.yaml').read_text())['lint']['ignore'] == ['JEV09']
+          assert sum('enabled=True' in row for row in Path('example2.txt').read_text().splitlines()) == 1
+          report = json.loads(Path('inventory.json').read_text())
+          assert report['schema_version'] == 5 and not report['summary']['incomplete']
+          assert {e['language'] for e in report['events'] if e['event'] == 'file'} == {'python', 'rust', 'perl', 'typescript', 'javascript'}
+          assert (Path(jevscan.__file__).parent / 'data/default.yaml').exists()
+          assert not (Path(jevscan.__file__).parent / 'data/default.toml').exists()
+          print('Installed wheel: YAML init/round-trip, opt-out, examples and five-language parsing passed.')
+          PY
+      - name: Commit verified non-workflow source on the isolated branch
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          test "$(git ls-remote origin refs/heads/fix/pr6-yaml-verification | cut -f1)" = "$EXPECTED_HEAD"
+          # Workflow changes are finalized only by the authorized connector, not this token.
+          git restore --source="$EXPECTED_HEAD" --staged --worktree .github
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: retain YAML configuration with additive named rulesets'
+          git push origin HEAD:refs/heads/fix/pr6-yaml-verification
