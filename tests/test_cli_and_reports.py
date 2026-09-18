@@ -18,6 +18,10 @@ def test_init_config_does_not_overwrite_and_resolved_config_is_available(tmp_pat
     assert (tmp_path / "jevscan.yaml").read_text() == original
     assert main(["--show-config"]) == 0
     assert "mixed-responsibilities" in capsys.readouterr().out
+    assert main(["--init-config", "custom.yml"]) == 0
+    assert main(["--show-config", "--config", "custom.yml"]) == 0
+    assert main(["--init-config", "custom.toml"]) == 2
+    assert not (tmp_path / "custom.toml").exists()
 
 
 @pytest.mark.parametrize("format_name", ["json", "jsonl"])
@@ -93,6 +97,10 @@ def test_text_report_groups_all_answers_under_one_unit() -> None:
         "event": "evaluation",
         "target": unit,
         "cached": True,
+        "rule_metadata": {
+            name: {"title": "", "ruleset": "project"}
+            for name in ("mixed-responsibilities", "unclear-control-flow", "redundant-validation")
+        },
         "statuses": {
             "mixed-responsibilities": "error",
             "unclear-control-flow": "warning",
@@ -182,6 +190,7 @@ def _evaluation_event(name: str = "work", status: str = "warning") -> dict:
         },
         "answers": {"cohesion": {"type": "noul", "noul": 0.95}},
         "statuses": {"cohesion": status},
+        "rule_metadata": {"cohesion": {"title": "", "ruleset": "project"}},
         "findings": [finding] if status in {"warning", "error"} else [],
         "tentative_findings": [],
         "uncertainty_reasons": {},
@@ -233,10 +242,10 @@ def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monke
     assert "\x1b" not in text
     if format_name == "json":
         decoded = json.loads(text)
-        assert decoded["schema_version"] == 4 and decoded["events"] == events
+        assert decoded["schema_version"] == 5 and decoded["events"] == events
     else:
         decoded = [json.loads(line) for line in text.splitlines()]
-        assert decoded[0]["schema_version"] == 4 and decoded[1:-1] == events
+        assert decoded[0]["schema_version"] == 5 and decoded[1:-1] == events
 
 
 @pytest.mark.parametrize("width", [32, 80])
@@ -299,7 +308,7 @@ def test_no_enrichment_is_a_resolved_config_override(tmp_path, monkeypatch, caps
     assert main(["--show-config", "--no-enrichment"]) == 0
     document = yaml.safe_load(capsys.readouterr().out)
     assert document["enrichment"]["enabled"] is False
-    assert document["rules"]["unhelpful-decomposition"]["require_members"] is True
+    assert next(rule for rule in document["rules"] if rule["name"] == "JEV06")["require_members"] is True
 
 
 @pytest.mark.parametrize("format_name", ["json", "jsonl", "text"])
@@ -315,6 +324,7 @@ def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
         "tentative_findings": [],
         "answers": {"test": {"type": "noul", "noul": 0.5}},
         "statuses": {"test": "unknown"},
+        "rule_metadata": {"test": {"title": "", "ruleset": "project"}},
         "uncertainty_reasons": {"test": "probability_ambiguous"},
         "reviews": {
             "test": {"outcome": "no_relevant_evidence", "selected": [], "candidates": [{"id": "c1", "relevance": 0.1}]}
@@ -327,7 +337,7 @@ def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
         assert "? test" in text and "probability ambiguous" in text and "no relevant evidence" in text
     else:
         payload = json.loads(text) if format_name == "json" else json.loads(text.splitlines()[0])
-        assert payload["schema_version"] == 4
+        assert payload["schema_version"] == 5
         actual = payload["events"][0] if format_name == "json" else json.loads(text.splitlines()[1])
         assert actual == event
 
@@ -371,3 +381,49 @@ def test_tentative_warning_and_error_are_visible_without_verbose(color, monkeypa
     if color:
         assert CYAN + "?" in raw
     assert summary.exit_code("warning") == summary.exit_code("error") == summary.exit_code("never") == 0
+
+
+def test_rule_codes_titles_and_ruleset_selection_reach_cli_and_planner(tmp_path, monkeypatch, capsys):
+    from jevscan.core.config import load_config
+    from jevscan.core.context import ContextBuilder
+    from jevscan.core.models import FileJob
+    from jevscan.core.parser import parse_source
+    from jevscan.core.planning import Planner
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "jevscan.yaml").write_text("lint:\n  ignore: [JEV09]\n")
+    assert main(["--list-rules", "--select", "JEV", "--ignore", "JEV02"]) == 0
+    rows = capsys.readouterr().out.splitlines()
+    assert "title=mixed-responsibilities" in rows[0] and "ruleset=JEV" in rows[0]
+    assert "enabled=False" in rows[1] and "enabled=False" in rows[8]
+    assert main(["--list-rules", "--ignore", "JVE09"]) == 2
+    assert "unknown rule/ruleset" in capsys.readouterr().err
+    config = load_config([tmp_path], cwd=tmp_path).config
+    parsed = parse_source(b"def f(): return 1\n", FileJob("x.py", "x.py", "python", "python"))
+    planner = Planner(ContextBuilder(parsed), config)
+    assert "JEV09" not in {check.rule_id for check in planner.checks}
+    assert "JEV01" in {check.rule_id for check in planner.checks}
+
+
+def test_rule_metadata_is_presented_but_not_used_as_a_model_instruction(tmp_path):
+    from jevscan.core.config import load_config
+    from jevscan.core.context import ContextBuilder
+    from jevscan.core.evaluation import FileResults
+    from jevscan.core.models import FileJob
+    from jevscan.core.parser import parse_source
+    from jevscan.core.planning import Planner
+    from jevscan.core.protocol import NoulAnswer
+
+    config = load_config([], cwd=tmp_path).config
+    parsed = parse_source(b"def f(): return 1\n", FileJob("x.py", "x.py", "python", "python"))
+    planner = Planner(ContextBuilder(parsed), config)
+    check = next(check for check in planner.checks if check.rule_id == "JEV01")
+    evidence = next(planner.context.variants(check))
+    results = FileResults(planner)
+    results.accept(planner.request(evidence, (check,)), {check.id: NoulAnswer(type="noul", noul=0.95)}, "test", False)
+    event = results.records[check.target.id].event()
+    assert event["rule_metadata"]["JEV01"] == {"title": "mixed-responsibilities", "ruleset": "JEV"}
+    stream = io.StringIO()
+    Reporter(stream, "text", _report_metadata(), width=120).emit(event)
+    assert "JEV01 mixed-responsibilities" in stream.getvalue()
+    assert "title" not in check.question()["instructions"]

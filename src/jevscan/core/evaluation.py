@@ -62,6 +62,10 @@ class TargetResults:
             "event": "evaluation",
             "target": self.target.metadata(),
             "answers": {name: item.answer.model_dump(mode="json") for name, item in sorted(self.judgments.items())},
+            "rule_metadata": {
+                name: {"title": item.check.rule.title, "ruleset": item.check.rule.ruleset}
+                for name, item in self.judgments.items()
+            },
             "statuses": statuses,
             "uncertainty_reasons": reasons,
             "reviews": {name: item.review for name, item in self.judgments.items() if item.review},

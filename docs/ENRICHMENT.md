@@ -1,76 +1,82 @@
-# Evidence enrichment in 0.2.0rc3
+# Bounded evidence enrichment
 
-## Design and research basis
+## Purpose and limits
 
-This workflow adds evidence, not repeated attempts to obtain a more confident answer. It is ordinary sequential Python: primary evaluation, conditional route, candidate relevance, then one fresh evaluation. There is no agent framework, arbitrary tool execution, persistent provider conversation, or recursive search.
+Enrichment addresses missing source evidence, not every form of model uncertainty. A low-confidence judgment can have adequate context; more source does not necessarily improve it. The scanner owns selection, filesystem access, budgets, snapshots, caching, and stopping. Jev supplies typed evidence judgments, not generated paths or executable tool calls.
 
-Primary sources reviewed on 18 September 2026:
+The control flow remains one bounded pass:
 
-- [TypeSafe documentation introduction](https://docs.typesafe.ai/): shared state, independent typed questions, and application-controlled composition.
-- [TypeSafe's current agent skill](https://github.com/typesafe-ai/skills/blob/65a39f393687675ce170e6094757de20370365b9/skills/typesafe-ai/SKILL.md): named structured state; explicit question meaning rather than relying on IDs; relevance selection; a second request when an earlier result is needed to fetch evidence; probabilities/concentration are not correctness guarantees.
-- [Introducing System One and Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev): typed decisions instead of generated explanations, and composing focused judgments in code.
-- [Official Python SDK question types](https://github.com/typesafe-ai/typesafe-sdk-python/blob/v0.6.0/src/typesafe_sdk/_core/question_types.py) and [endpoint request construction](https://github.com/typesafe-ai/typesafe-sdk-python/blob/v0.6.0/src/typesafe_sdk/_core/endpoints.py): named questions against text/JSON state, structured instructions and criteria, and typed answers.
-
-The live documentation introduction and official skill were accessible; deeper state/confidence/reranking/function-calling cookbook URLs returned cache misses in the research environment. This document does not claim experimental results from those inaccessible examples. The architecture below is our implementation choice based on the accessible primary guidance, not a provider-prescribed code-review algorithm.
-
-## Why this shape
-
-A Noul near 0.5 is indecision about a proposition, not medium severity. Low Choice/Score confidence can reflect adjacent acceptable alternatives, a broad rubric, or insufficient evidence. These cases should not all trigger a caller search. The model's route is also a prediction: it cannot diagnose its own hidden internal cause with certainty.
-
-After code admits an actionable check, the first model stage asks which additional evidence would be useful, based on the actual source, target, and original question. `sufficient` means no missing source was identified and leaves the initial uncertainty unchanged. `unavailable` means source retrieval is unlikely to establish the missing runtime/external fact. A confidently selected `not_applicable` ends separately from OK. Weak routing predictions stop rather than guessing a path.
-
-For missing source, the routes are possible callers, referenced definitions, test references, or enclosing owner/file. The caller supplies no prior verdict to the router. Selection likewise asks whether each candidate can help decide the rule, not whether it supports an expected conclusion. Candidate relevance uses independent Nouls instead of a single forced-choice winner: several candidates may be useful, and no candidate may qualify. Only questions sharing that candidate-batch state are batched; dependent stages remain separate calls.
-
-On reassessment, the original target and question remain unchanged. The model sees original evidence plus admitted complete source, provenance, and coverage. It does not see the initial answer, router verdict, or relevance scores. This avoids explicitly anchoring the new judgment on the old one, but it does not prove the model will reason correctly. Stop after one reassessment, including an unchanged unknown result.
-
-## Admission and priority (RC3)
-
-RC2's supplied self-scan performed 111 routing predictions but no reassessments. Most reviews concerned ordinary probability/rubric ambiguity, while two explicit missing-evidence results exhausted the per-file check budget. This is evidence about that run, not proof that other projects never need callers.
-
-RC3 therefore makes admission a deterministic, configurable policy before the existing model-assisted sequence. Missing-evidence judgments go first, reduced-context judgments second, and ambiguous applicability third. Reduced evidence remains a reason to review even if the assessment also has low confidence. Applicability is available only when the rule declares a not-applicable option. Plain score/Noul ambiguity does not invoke the router by default. Projects can deliberately opt a particular rule into broader reasons through `enrich_on`.
-
-The file evaluator orders eligible reviews before consuming either budget. It still emits results in the original target order. Skipped intrinsic ambiguity remains unknown without a misleading `sufficient` audit entry. No new state machine, model endpoint, threshold change, or retrieval loop is introduced.
-
-Indicated severity and confidence are independent. A signal above a warning/error gate can remain uncertain and be visible in the default report. `assessment.py` computes confirmed or tentative findings from the same thresholds; rendering does not invent cutoffs. A low-confidence error indication is not relabelled a confirmed warning, and neither an evidence gap nor a not-applicable label is itself a defect.
-
-## Ownership
-
-- `assessment.py` owns severity, applicability, and uncertainty reasons. Both initial and final answers use it.
-- `inference.py` owns cached/validated prediction and usage accounting for every stage; `client.py` still owns HTTP, retry, and pacing.
-- `retrieval.py` owns the lazy index, safe source reads, lexical relationship candidates, and bounded snapshot lifetime.
-- `enrichment.py` owns the conditional route/selection/reassessment sequence. It uses `RequestBudget`, not a second token-size implementation.
-- `evaluation.py` owns per-file results and the audit. It runs enrichment only for uncertain eligible checks and emits one final result per rule/target.
-
-The shared index is built only on the first caller/definition/test request. It is read-only after loading and is retained only for this invocation. Enclosing-source retrieval uses the current file without a project scan. Existing fixed file workers share one index; there is no task per candidate. Files still finish independently and their target output remains grouped.
-
-## Source evidence contract
-
-Candidates must originate in local discovery under the resolved project root and pass the existing source-language/include/exclude/Git-ignore filters. Model outputs never become filesystem paths. Reads open each path component relative to the root without following symlinks, require a regular file, cap bytes, and reject detectable changes during a read. A selected candidate uses the same immutable bytes as its preview, not a second filesystem read. A separately indexed version of the primary file is not mixed into an older primary evaluation snapshot.
-
-Every candidate has a content-dependent ID, path, target name, UTF-8 byte span, line range, full-file SHA-256, and relationship label. Call references also retain the matched occurrence. Previews are bounded and explicitly marked partial; final admitted evidence is a complete extracted source unit or complete file. Overlapping spans are unioned to avoid repeating source. Selected source is subject to the same final context/aggregate/byte/question budgets; it never displaces the original target or evidence.
-
-The index records discovery completeness, files/bytes read, failures/oversized inputs, matched candidates, and cap omissions. That coverage accompanies the final state and report. A file snapshot is not an atomic repository snapshot. A changed file on the next invocation changes its candidate identity; selection and reassessment cache keys change accordingly. Evidence/report policy changes are still separated: a changed severity boundary need not repeat unchanged inference.
-
-**Lexical evidence is not a call graph.** A syntactic `obj.run()` is a possible use of a target named `run`, not proof that dispatch reaches that target. References in comments or strings are not parsed as call expressions. Aliases, re-exports, inheritance, decorators, macros and runtime dispatch can leave candidates undiscovered or wrongly matched. Tests are selected by source references and file naming, not by observed execution. Rust impl names provide lexical hints; there is no rustc/type resolution. Cross-language links and external dependencies are not resolved. Selecting a few callers cannot establish a universal upstream invariant.
-
-## Bounds and stop behavior
-
-The defaults in `default.yaml` are policy starting points, not calibration results. Per-file review and prediction caps apply to cache hits too, keeping a cached run's logic consistent with an uncached run. Source-index limits apply globally to the invocation. Ordinary HTTP retries remain finite and are counted separately from prediction budgets.
-
-Unknown results survive `route_uncertain`, `sufficient`, `unavailable`, `no_relevant_evidence`, `check_budget`, `call_budget`, `request_budget`, `evidence_budget`, and `provider_context_limit`. A malformed answer, authentication error, cache failure, or unrelated server failure is not a no-match outcome: it propagates to the scan's operational-error boundary. Already obtained judgments and the in-progress review trace are emitted before failure is reported. The model is never repeatedly queried until a desired verdict appears.
-
-A partial evidence search is recorded but is not automatically an operational scan failure: primary target coverage is unchanged. A remaining unknown is not OK. If requested primary context was reduced, that original coverage limitation remains unless complete enclosing evidence is genuinely restored. A model-selected not-applicable status is explicitly distinguished from a conclusive negative finding.
-
-## Audit and release acceptance
-
-JSON/JSONL schema 4 exposes per-rule `reviews` and `uncertainty_reasons`. The audit includes the initial answer/model/evidence, routing and selection predictions, request hashes, cache flags, candidate metadata/relevance, admitted source locations/hashes, retrieval coverage, and the final stop outcome. It does not contain copied candidate previews or arbitrary model-generated explanations. Final findings/counts are not duplicated with the initial judgment. Text shows confirmed and tentative warning/error signals; below-threshold uncertainty and not-applicable results require verbose output. Tentative signals stay cyan `?`, remain `unknown`, and do not trigger `--fail-on`.
-
-No live authenticated semantic test was run for this release. Mocked provider tests validate the production orchestration and contracts, not whether more evidence improves Jev's accuracy. A useful acceptance comparison is:
-
-```bash
-# These commands send source to TypeSafe. Review root-level sharing first.
-uv run jevscan src --no-enrichment --format jsonl -o primary.jsonl
-uv run jevscan src --format jsonl -o enriched.jsonl
+```text
+initial answer
+  -> actionable uncertainty: disposition Choice + independent family Nouls
+       -> stop / not applicable / disposition uncertain / no qualifying family
+       -> one or more qualifying families
+            -> deterministic local candidate discovery
+            -> bounded deduplicated pool
+            -> independent candidate relevance judgments
+            -> append complete fitting evidence
+            -> original question reassessed once, then stop
 ```
 
-Pin an account-supported model and keep source/configuration unchanged for the comparison. Include known defects, clean cases, same-name unrelated methods, and genuinely unavailable contracts. Inspect changes in false positives/negatives, uncertainty resolution, not-applicable routing, evidence relevance, requests and latency. A lower question-mark count alone is not success. Fewer wrong confident answers matters more than manufacturing certainty.
+Module/tree scoring, persistent model sessions, compiler-resolved call graphs, and arbitrary repository agents are not implemented.
+
+## Admission and priority
+
+`review_trigger` uses the validated rule's `enrich_on` and assessment reason. It admits unknown checks only. Missing evidence precedes reduced context, applicability, explicit confidence/Choice ambiguity opt-ins, then explicit Noul ambiguity opt-ins. Reduced context can qualify even when low confidence is the primary displayed reason. File-local scheduling builds the priority queue before consuming the shared review budget, with deterministic source-position/rule-name ties. Source-order presentation is unaffected.
+
+The packaged default is missing/reduced evidence, plus applicability for JEV06. Ordinary low confidence/ambiguous Nouls do not invoke the router unless explicitly enabled. A possible not-applicable result is not a clean judgment. Above-threshold uncertain warnings/errors remain visible without verbose mode regardless of routing admission.
+
+## Disposition and independent evidence families
+
+The disposition Choice answers a single control-flow decision:
+
+- `not_applicable`: the target does not contain the operation the rule evaluates;
+- `sufficient`: the rule applies and current evidence is adequate;
+- `local_evidence`: additional local source could establish a concrete missing fact;
+- `unavailable`: the required fact is external/runtime-only and unlikely to be established locally.
+
+Four independent Nouls ask whether callers, definitions, tests, and enclosing owner/file context could help. Each uses an explicit speculative premise: **assuming the rule applies and local source could help**. The questions cannot see each other's answers. A family score is not a normalized share of one distribution; several families or none may qualify.
+
+The five questions normally share one request. If configured token/byte/question budgets require it, they split into bounded batches using the same state. Every batch consumes the existing auxiliary-call budget, including cache hits. Partial routing answers remain auditable but never become an incomplete routing decision. The full routing result is required before retrieval.
+
+The disposition must pass its configured probability/confidence gates. Only `local_evidence` admits families above `min_evidence_probability`. A terminal or uncertain disposition stops even when speculative family scores are high. A confident local disposition with no qualifying families stops as `no_evidence_family`. These explicit stops are not proof that retrieval would never help; they are the bounded policy decisions made from these predictions.
+
+## Discovery and pooling
+
+`SourceIndex` retains its existing syntax/name-based discovery. A file-scoped source snapshot supplies possible call sites, referenced definitions, test references, and enclosing source. Aliases, dynamic dispatch, macros, runtime-generated behavior, external contracts, and cross-language relationships may be missed. Candidate labels never claim compiler-level resolution.
+
+For each qualifying family, discovery applies the same source/root/include/exclude/Git-ignore rules and local limits. Family candidates are combined by deterministic round-robin, deduplicated by target plus snapshot identity, and capped by **one global `max_candidates`**. Thus one large caller pool does not automatically exclude a definition pool. The audit records all discovered family memberships for duplicate candidates, per-family omission counts, and combined-pool omissions. It does not claim the bounded preview pool includes all repository candidates.
+
+The shared lazy catalogue is capped at 1,000 source files and 16 MiB by default. An invocation can retrieve source outside its scanned subdirectory, but never intentionally outside its resolved project root and filters. Reads reject symlinks at every path component, nonregular files, and observed size/mtime changes during reading. This is not a sandbox against all hostile filesystem races. Snapshots are per-file, not an atomic repository snapshot. A preview and its eventual complete evidence use the same source revision.
+
+## Relevance and reassessment
+
+Each candidate gets an independent Noul about whether its complete source could provide a concrete missing fact for the original question and exact target. It is not asked to support a positive verdict. Matching short names, already-present source, and unrelated tests are explicitly insufficient.
+
+Relevant candidates are ranked, then admitted within `max_evidence` and the shared request budgets. Source is complete at the candidate target level; the original target/evidence is preserved. Overlapping UTF-8 spans are merged. Candidate previews may be bounded and say so; actual target source is never truncated.
+
+The final request uses the **unchanged original question** and target, with enriched documents, relationships, source hashes, and coverage. It excludes the initial verdict, disposition prediction, family probabilities, relevance scores, and an expected conclusion. Selection changes evidence, not the rule. The answer can become clean, tentative, confirmed, not applicable, or remain uncertain. There is only one reassessment.
+
+Every phase uses the shared inference/cache/transport validator and rate limiter. Provider size rejection or a local limit stops enrichment explicitly. Malformed answers, genuine service failures, and cancellation retain audits and follow normal incomplete-scan handling; they are not disguised as clean results.
+
+## Audit and accounting
+
+Report schema 5 records initial answer/cache/evidence provenance, scheduling trigger, uncertainty reason, each prediction's model/cache flag/request hash/raw answers, disposition, all family probabilities, admitted families, per-family retrieval coverage, candidate family membership/relevance, selected spans, omissions, and stop outcome.
+
+The `enrichment_calls` counter counts prediction requests, not individual questions: five routing questions can be one call; a constrained request budget can split them. `enrichment_reviewed` counts admitted checks. `enrichment_reruns` counts actual final reassessments. `enrichment_resolved` counts previously unknown checks whose final status becomes conclusive, including applicability-only decisions. Findings count once, not once per inference phase.
+
+Cache keys include request bytes and package/prompt identity. Changing candidate source invalidates affected relevance/reassessment requests; unchanged initial/routing state may remain cached. Project selection/title/threshold changes do not themselves become model instructions. Selecting a different batch of questions can nevertheless change request identity.
+
+## Research basis and acceptance
+
+Reviewed on 2026-09-18:
+
+- [Official TypeSafe agent guidance](https://github.com/typesafe-ai/skills/blob/65a39f393687675ce170e6094757de20370365b9/skills/typesafe-ai/SKILL.md): independent shared-state questions, speculative premises, Noul for multiple simultaneous labels, and fresh calls when evidence must be acquired. It also distinguishes distribution confidence from workflow correctness.
+- [Official Python SDK](https://github.com/typesafe-ai/typesafe-sdk-python): typed `system_one(state=..., questions=...)` interface. This architecture does not assume a persistent provider conversation.
+- The live documentation index, Noul and fan-out Markdown pages at `docs.typesafe.ai` were attempted but inaccessible in this environment. The accessible official guidance supports this decomposition; it does not establish measured code-review accuracy or validate our numerical gates.
+
+RC3's displayed routing failures did not include full distributions. The explanation that callers/definitions/tests were competing alternatives was a **design hypothesis**, not an observed probability distribution. RC4 removes that inappropriate mutual exclusivity; it does not guarantee that the disposition will become confident or that retrieval will improve a judgment.
+
+HTTP-boundary tests exercise multiple families, no families, conflicting speculative answers and terminal dispositions, deduplication, global budgets, request splitting, source restrictions, changed-caller cache identity, and unchanged final questions. These tests establish orchestration behavior, not model quality. No authenticated live call is part of this release's verification.
+
+For acceptance, pin a model, use representative positive/negative examples requiring cross-file evidence, save JSONL with and without enrichment, and inspect the raw disposition/family/candidate results. Measure whether retrieved facts improve the final decisions, not just whether question marks disappear. Keep stop outcomes and added source available for review.

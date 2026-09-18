@@ -81,6 +81,8 @@ class ReportPolicy(StrictModel):
 
 
 class Rule(StrictModel):
+    title: str = ""
+    ruleset: str = "project"
     enabled: bool = True
     target: Literal["unit", "file"] = "unit"
     context: Literal["unit", "owner", "file"] = "owner"

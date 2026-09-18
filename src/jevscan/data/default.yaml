@@ -1,26 +1,23 @@
-# Project config replaces this rule set. Use `extends: default` for explicit inheritance.
-version: 3
-
+# Project rules and overrides merge by name; built-ins remain active unless disabled or ignored.
+version: 4
 scan:
-  include: ['*.py', '*.pyi', '*.rs', '*.pl', '*.pm', '*.t', '*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs']
-  exclude: ['.git/', '.venv/', 'venv/', 'node_modules/', 'target/', 'dist/', 'build/', '__pycache__/', '.jevscan-cache/', 'vendor/', '*.min.js']
+  include: ['*.py', '*.pyi', '*.rs', '*.pl', '*.pm', '*.t', '*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx',
+    '*.mjs', '*.cjs']
+  exclude: [.git/, .venv/, venv/, node_modules/, target/, dist/, build/, __pycache__/, .jevscan-cache/, vendor/,
+    '*.min.js']
   respect_gitignore: true
-  jobs: 0                 # auto: up to 8 parser processes
+  jobs: 0
   batch_size: 8
-  queue_size: 8           # parsed files waiting for fixed file evaluators
+  queue_size: 8
   max_file_bytes: 2000000
   max_units_per_file: 10000
-
 jev:
-  model: jev-latest       # pin an account-supported version when calibrating rules
+  model: jev-latest
   concurrency: 16
-  requests_per_minute: 600  # starting budget, not a claim about your account's quota; 0 disables pacing
+  requests_per_minute: 600
   timeout_seconds: 30
   retries: 3
   max_retry_delay: 60
-
-# Local estimates over serialized UTF-8, not an exact TypeSafe tokenizer.
-# Both per-question context and aggregate question volume are checked.
 evaluation:
   max_context_tokens: 28000
   max_total_tokens: 56000
@@ -28,31 +25,37 @@ evaluation:
   bytes_per_token: 3.0
   max_request_bytes: 1048576
   max_questions: 64
-  oversized_context: reduce  # reduce surrounding evidence only; never truncate a target
-
-# At most one enrichment round per admitted check, ordered by evidence need.
-# Ordinary low confidence and ambiguous Nouls do not request enrichment by default.
-# Files under the project root
-# obey the same source filters and gitignore rules, including test files.
+  oversized_context: reduce
 enrichment:
   enabled: true
   max_checks_per_file: 12
   max_calls_per_file: 36
   max_candidates: 12
   max_evidence: 3
-  min_route_probability: 0.70
-  min_route_confidence: 0.50
+  min_route_probability: 0.7
+  min_route_confidence: 0.5
   min_relevance: 0.65
   max_source_files: 1000
   max_source_bytes: 16777216
-
+  min_evidence_probability: 0.6
 cache:
   enabled: true
   path: .jevscan-cache/results.sqlite3
   ttl_seconds: 86400
-
+lint:
+  select: [ALL]
+  ignore: []
+rulesets:
+  JEV:
+    enabled: true
+    description: Built-in semantic code-quality checks
+  project:
+    enabled: true
+    description: Project-specific checks
 rules:
-  mixed-responsibilities:
+  - name: JEV01
+    title: mixed-responsibilities
+    ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: owner
@@ -60,20 +63,20 @@ rules:
     require_body: true
     question:
       type: noul
-      instructions: >-
-        Does `source` interleave independently meaningful responsibilities in a way that
-        makes this operation harder to understand? Do not flag a cohesive orchestration
-        function merely because it calls several different operations. Length alone is not evidence.
+      instructions: Does `source` interleave independently meaningful responsibilities in a way that makes this
+        operation harder to understand? Do not flag a cohesive orchestration function merely because it calls several
+        different operations. Length alone is not evidence.
     report:
       message: This operation appears to interleave responsibilities that would be clearer as distinct operations.
-      uncertain_range: [0.40, 0.60]
+      uncertain_range: [0.4, 0.6]
       levels:
         warning:
-          min_probability: 0.50
+          min_probability: 0.5
         error:
-          min_probability: 0.90
-
-  unclear-control-flow:
+          min_probability: 0.9
+  - name: JEV02
+    title: unclear-control-flow
+    ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: owner
@@ -81,25 +84,24 @@ rules:
     require_body: true
     question:
       type: score
-      instructions: >-
-        How difficult is the main execution path through `source` to follow?
-        Distinguish unavoidable domain branching from avoidable structural confusion.
-      criteria:
-        - Clear execution path and explicit transitions, including necessary domain branching.
-        - Mostly clear, with some local complexity that does not obscure the operation.
-        - Interleaved concerns or nested branches substantially obscure the operation.
-        - Tangled control flow makes the operation and its important transitions difficult to determine.
+      instructions: How difficult is the main execution path through `source` to follow? Distinguish unavoidable
+        domain branching from avoidable structural confusion.
+      criteria: ['Clear execution path and explicit transitions, including necessary domain branching.', 'Mostly
+          clear, with some local complexity that does not obscure the operation.', Interleaved concerns or nested
+          branches substantially obscure the operation., Tangled control flow makes the operation and its important
+          transitions difficult to determine.]
     report:
       message: Interleaved concerns or nesting appear to obscure the main execution path.
       levels:
         warning:
           min_score: 1.0
-          min_confidence: 0.60
+          min_confidence: 0.6
         error:
           min_score: 2.0
-          min_confidence: 0.70
-
-  mixed-abstraction-levels:
+          min_confidence: 0.7
+  - name: JEV03
+    title: mixed-abstraction-levels
+    ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: owner
@@ -107,20 +109,20 @@ rules:
     require_body: true
     question:
       type: noul
-      instructions: >-
-        Does `source` mix high-level orchestration with substantial low-level parsing,
-        resource bookkeeping, or implementation detail such that the main operation is obscured?
-        A small necessary detail or explicit cleanup does not by itself establish a problem.
+      instructions: Does `source` mix high-level orchestration with substantial low-level parsing, resource bookkeeping,
+        or implementation detail such that the main operation is obscured? A small necessary detail or explicit
+        cleanup does not by itself establish a problem.
     report:
       message: High-level orchestration appears mixed with substantial low-level implementation detail.
-      uncertain_range: [0.40, 0.60]
+      uncertain_range: [0.4, 0.6]
       levels:
         warning:
-          min_probability: 0.50
+          min_probability: 0.5
         error:
-          min_probability: 0.90
-
-  redundant-validation:
+          min_probability: 0.9
+  - name: JEV04
+    title: redundant-validation
+    ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: file
@@ -128,27 +130,30 @@ rules:
     require_body: true
     question:
       type: choice
-      instructions: >-
-        Which statement about repeated validation in `source` is supported by the supplied code?
-        Type annotations, names, and absent callers do not prove that an invariant was established.
-        Revalidation across a new trust boundary or after relevant mutation/concurrency may be necessary.
+      instructions: Which statement about repeated validation in `source` is supported by the supplied code? Type
+        annotations, names, and absent callers do not prove that an invariant was established. Revalidation across
+        a new trust boundary or after relevant mutation/concurrency may be necessary.
       criteria:
-        demonstrably_redundant: The supplied implementation explicitly establishes an invariant and later rechecks it without a new boundary or invalidating operation.
-        justified_or_absent: There is no repeated check, or the repeated check protects a real boundary or invalidation risk.
-        insufficient_context: An upstream guarantee or intervening behavior needed for the judgment is not established by the supplied evidence.
+        demonstrably_redundant: The supplied implementation explicitly establishes an invariant and later rechecks
+          it without a new boundary or invalidating operation.
+        justified_or_absent: There is no repeated check, or the repeated check protects a real boundary or invalidation
+          risk.
+        insufficient_context: An upstream guarantee or intervening behavior needed for the judgment is not established
+          by the supplied evidence.
     report:
       message: A validation check appears to repeat an invariant explicitly established in the supplied code.
       choices: [demonstrably_redundant]
       uncertain_choices: [insufficient_context]
       levels:
         warning:
-          min_probability: 0.60
-          min_confidence: 0.50
+          min_probability: 0.6
+          min_confidence: 0.5
         error:
           min_probability: 0.92
-          min_confidence: 0.70
-
-  hidden-invariant-failure:
+          min_confidence: 0.7
+  - name: JEV05
+    title: hidden-invariant-failure
+    ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: file
@@ -156,28 +161,29 @@ rules:
     require_body: true
     question:
       type: choice
-      instructions: >-
-        Does a default value, swallowed exception, or best-effort continuation in `source`
-        conceal a violation of an internal invariant that is explicitly established in the
-        supplied code? Legitimate I/O failures, cancellation, user input errors, and documented
-        optional behavior are not invariant violations.
+      instructions: Does a default value, swallowed exception, or best-effort continuation in `source` conceal a
+        violation of an internal invariant that is explicitly established in the supplied code? Legitimate I/O failures,
+        cancellation, user input errors, and documented optional behavior are not invariant violations.
       criteria:
-        concealed_bug: A clearly established internal invariant is violated and the implementation silently conceals it.
+        concealed_bug: A clearly established internal invariant is violated and the implementation silently conceals
+          it.
         legitimate_behavior: The behavior handles a legitimate runtime condition or no such concealment is present.
-        insufficient_context: The invariant or intended failure behavior cannot be established from the supplied evidence.
+        insufficient_context: The invariant or intended failure behavior cannot be established from the supplied
+          evidence.
     report:
       message: A fallback or swallowed failure appears to conceal a violation of an established internal invariant.
       choices: [concealed_bug]
       uncertain_choices: [insufficient_context]
       levels:
         warning:
-          min_probability: 0.60
-          min_confidence: 0.50
+          min_probability: 0.6
+          min_confidence: 0.5
         error:
           min_probability: 0.92
-          min_confidence: 0.70
-
-  unhelpful-decomposition:
+          min_confidence: 0.7
+  - name: JEV06
+    title: unhelpful-decomposition
+    ruleset: JEV
     enrich_on: [missing_evidence, reduced_context, applicability]
     require_members: true
     target: unit
@@ -185,14 +191,15 @@ rules:
     applies_to: [class, impl, package, module]
     question:
       type: choice
-      instructions: >-
-        Do the helpers visible in `source` make their callers easier to understand by naming
-        coherent operations, or mainly add forwarding/line-splitting indirection? Small helpers,
-        interface adapters, decorators, and required protocol methods are not inherently bad.
+      instructions: Do the helpers visible in `source` make their callers easier to understand by naming coherent
+        operations, or mainly add forwarding/line-splitting indirection? Small helpers, interface adapters, decorators,
+        and required protocol methods are not inherently bad.
       criteria:
         meaningful: Decomposition gives coherent operations meaningful names or serves an evident interface requirement.
-        needless_indirection: Visible helpers mainly move lines or forward arguments without hiding meaningful detail, and visibly make the caller harder to follow.
-        not_applicable: No helper decomposition is present in the target; a data-only type, exception, enum or interface declaration is not a decomposition defect.
+        needless_indirection: Visible helpers mainly move lines or forward arguments without hiding meaningful detail,
+          and visibly make the caller harder to follow.
+        not_applicable: No helper decomposition is present in the target; a data-only type, exception, enum or interface
+          declaration is not a decomposition defect.
         insufficient_context: The relevant helper implementations or callers are missing, or the evidence is inconclusive.
     report:
       message: Helper indirection appears to obscure the caller without providing meaningful decomposition.
@@ -201,67 +208,67 @@ rules:
       uncertain_choices: [insufficient_context]
       levels:
         warning:
-          min_probability: 0.60
-          min_confidence: 0.50
+          min_probability: 0.6
+          min_confidence: 0.5
         error:
-          min_probability: 0.90
-          min_confidence: 0.70
-
-  fragmented-ownership:
+          min_probability: 0.9
+          min_confidence: 0.7
+  - name: JEV07
+    title: fragmented-ownership
+    ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
     target: file
     context: file
     question:
       type: noul
-      instructions: >-
-        Does `source` maintain duplicate authoritative state or distribute lifecycle bookkeeping
-        across conflicting owners in a way that visibly creates synchronization obligations?
-        Derived caches and deliberately synchronized representations are not problems merely
-        because data is repeated; require a concrete ownership conflict in the supplied implementation.
+      instructions: Does `source` maintain duplicate authoritative state or distribute lifecycle bookkeeping across
+        conflicting owners in a way that visibly creates synchronization obligations? Derived caches and deliberately
+        synchronized representations are not problems merely because data is repeated; require a concrete ownership
+        conflict in the supplied implementation.
     report:
       message: State or lifecycle bookkeeping appears to have competing authoritative owners.
-      uncertain_range: [0.40, 0.60]
+      uncertain_range: [0.4, 0.6]
       levels:
         warning:
-          min_probability: 0.50
+          min_probability: 0.5
         error:
           min_probability: 0.92
-
-  incohesive-owner:
+  - name: JEV08
+    title: incohesive-owner
+    ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
     target: unit
     context: file
     applies_to: [class, impl, package, module]
     question:
       type: noul
-      instructions: >-
-        Does this owner in `source` combine unrelated responsibilities whose state and behavior
-        have little meaningful connection? A domain aggregate, a cohesive facade, or one implementation
-        of a required interface is not incohesive merely because it contains many methods.
+      instructions: Does this owner in `source` combine unrelated responsibilities whose state and behavior have
+        little meaningful connection? A domain aggregate, a cohesive facade, or one implementation of a required
+        interface is not incohesive merely because it contains many methods.
     report:
       message: This owner appears to combine unrelated state and behavior.
-      uncertain_range: [0.40, 0.60]
+      uncertain_range: [0.4, 0.6]
       levels:
         warning:
-          min_probability: 0.50
+          min_probability: 0.5
         error:
-          min_probability: 0.90
-
-  duplicated-behavior:
+          min_probability: 0.9
+  - name: JEV09
+    title: duplicated-behavior
+    ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
     target: file
     context: file
     question:
       type: noul
-      instructions: >-
-        Does `source` contain materially duplicated implementations of the same owned behavior,
-        creating a clear maintenance obligation to keep them in sync? Similar syntax alone,
-        distinct trust boundaries, or required trait/interface implementations are insufficient.
+      instructions: Does `source` contain materially duplicated implementations of the same owned behavior, creating
+        a clear maintenance obligation to keep them in sync? Similar syntax alone, distinct trust boundaries, or
+        required trait/interface implementations are insufficient.
     report:
       message: The same owned behavior appears implemented more than once and may need to be maintained in sync.
-      uncertain_range: [0.40, 0.60]
+      uncertain_range: [0.4, 0.6]
       levels:
         warning:
-          min_probability: 0.50
+          min_probability: 0.5
         error:
           min_probability: 0.93

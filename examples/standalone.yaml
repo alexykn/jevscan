@@ -1,50 +1,26 @@
-# This file REPLACES the packaged rules; only these two checks run.
-version: 3
-jev:
-  concurrency: 16
-  requests_per_minute: 600
-
+# Select only custom checks; built-in definitions remain available.
+version: 4
+lint:
+  select: [TEAM]
+rulesets:
+  TEAM:
+    description: Custom code-review checks
 rules:
-  cohesive-callable:
-    target: unit
-    context: file
-    applies_to: [function, method, closure]
+  - name: TEAM01
+    title: mixed-responsibilities
+    ruleset: TEAM
+    applies_to: [function, method]
     require_body: true
+    context: file
     question:
       type: noul
-      instructions: >
-        Does `source` interleave unrelated responsibilities in a way
-        that materially obscures its main operation? Do not flag
-        necessary complexity or length alone.
+      instructions: Does this operation interleave independently meaningful responsibilities that obscure its main
+        purpose?
     report:
-      message: Several responsibilities appear interleaved in this operation.
+      message: Review independently meaningful responsibilities in this operation.
+      uncertain_range: [0.4, 0.6]
       levels:
         warning:
-          min_probability: 0.50
+          min_probability: 0.75
         error:
-          min_probability: 0.90
-
-  owner-cohesion:
-    target: unit
-    context: file
-    applies_to: [class, impl, trait, interface, package, module]
-    question:
-      type: choice
-      instructions: >
-        Which description best fits the responsibilities owned by `source`?
-        Use only supplied evidence, not hypothetical requirements or callers.
-      criteria:
-        cohesive: Members serve one coherent responsibility.
-        mixed: Several unrelated responsibilities are combined under one owner.
-        unknown: The supplied implementation is too limited to judge.
-    report:
-      message: This owner appears to combine unrelated responsibilities.
-      choices: [mixed]
-      uncertain_choices: [unknown]
-      levels:
-        warning:
-          min_probability: 0.60
-          min_confidence: 0.50
-        error:
-          min_probability: 0.92
-          min_confidence: 0.70
+          min_probability: 0.95

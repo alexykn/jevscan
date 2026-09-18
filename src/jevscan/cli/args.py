@@ -10,19 +10,24 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="jevscan", description="Parallel Tree-sitter + Jev code quality scanner")
     result.add_argument("paths", nargs="*", type=Path, help="files or directories (default: current directory)")
     result.add_argument("--version", action="version", version=f"jevscan {__version__}")
-    result.add_argument("--config", type=Path, help="explicit YAML config; otherwise discover nearest jevscan.yaml")
+    result.add_argument(
+        "--config", type=Path, help="explicit YAML config; otherwise discover nearest jevscan.yaml/jevscan.yml"
+    )
     result.add_argument(
         "--init-config",
         nargs="?",
         const="jevscan.yaml",
         type=Path,
         metavar="PATH",
-        help="write the packaged config without overwriting an existing file",
+        help="write a minimal additive config without overwriting an existing file",
+    )
+    result.add_argument(
+        "--ignore", action="append", default=[], metavar="NAME", help="ignore a rule or ruleset (repeatable)"
     )
     result.add_argument("--show-config", action="store_true", help="print resolved config as YAML and exit")
     result.add_argument("--list-rules", action="store_true", help="show configured rules and exit")
     result.add_argument(
-        "--rule", action="append", default=[], metavar="ID", help="limit analysis to this rule (repeatable)"
+        "--rule", "--select", action="append", default=[], metavar="NAME", help="select a rule or ruleset (repeatable)"
     )
     result.add_argument(
         "--offline", action="store_true", help="parse and list units only; no API calls or cache writes"

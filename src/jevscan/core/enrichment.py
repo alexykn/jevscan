@@ -6,6 +6,7 @@ cache use and termination; no model-generated paths or executable actions exist.
 
 import hashlib
 from dataclasses import dataclass
+from itertools import zip_longest
 from typing import Any
 
 from jevscan.core.assessment import Assessment
@@ -41,15 +42,24 @@ def review_trigger(check: Check, decision: Assessment, context_complete: bool) -
     return next((reason for reason in REVIEW_PRIORITY if reason in reasons and reason in check.rule.enrich_on), None)
 
 
-ROUTES = {
-    "not_applicable": "The target does not exhibit the kind of operation this rule evaluates; more callers would not make the rule applicable.",
-    "sufficient": "The supplied implementation and context are sufficient for this rule; any remaining uncertainty is interpretation or rubric ambiguity, not a concrete missing fact.",
-    "callers": "Actual uses of the target are missing and could establish how its inputs, results, or lifecycle are constrained.",
-    "definitions": "Implementations or type/contract definitions referenced by the target are missing and could resolve the judgment.",
-    "tests": "Concrete tests of this target are missing and could clarify intended behavior; tests alone cannot prove universal guarantees.",
-    "enclosing_context": "The surrounding owner or file implementation is missing and is needed to judge this target.",
-    "unavailable": "The missing fact is a runtime condition, external requirement, or unresolved contract that local source retrieval is unlikely to establish.",
+DISPOSITIONS = {
+    "not_applicable": "The rule does not apply to this target's operation, regardless of missing context.",
+    "sufficient": "The rule applies and the supplied evidence suffices; remaining uncertainty is interpretation, not a missing fact.",
+    "local_evidence": "The rule applies and additional local source could supply a concrete missing fact relevant to the judgment.",
+    "unavailable": "The rule applies but the essential missing fact is external or runtime-only; local source is unlikely to establish it.",
 }
+EVIDENCE_FAMILIES = {
+    "callers": "Actual uses of the target that constrain its inputs, results or lifecycle.",
+    "definitions": "Referenced implementations or type/contract definitions, including related Rust impls.",
+    "tests": "Concrete tests that clarify intended behavior, but do not prove universal guarantees.",
+    "enclosing_context": "The surrounding owner or file implementation, when not already supplied.",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Routing:
+    disposition: str | None
+    families: tuple[str, ...] = ()
 
 
 class EnrichmentStoppedError(Exception):
@@ -159,29 +169,102 @@ class Enricher:
         })
         return prediction
 
-    async def _route(self, check: Check, evidence: Evidence, trace: dict[str, Any]) -> str | None:
+    def _routing_questions(self) -> dict[str, Question]:
         questions: dict[str, Question] = {
-            "route": ChoiceQuestion(
+            "disposition": ChoiceQuestion(
                 type="choice",
                 instructions=(
-                    "Which single next step would most help decide the supplied rule about this target? "
-                    "Inspect the actual documents and coverage, not assumptions about unseen code. "
-                    "Choose sufficient when the needed evidence is already present. "
-                    "Do not choose callers merely because the target is a function. "
-                    "This is an evidence-routing judgment, not a diagnosis of the model's internal reasoning."
+                    "Which evidence disposition applies to this rule and exact target? First determine whether "
+                    "the operation is applicable, then whether concrete necessary evidence is missing. "
+                    "Do not infer missing facts merely from low model confidence. Source context sufficiency "
+                    "is distinct from certainty about the verdict."
                 ),
-                criteria=ROUTES,
+                criteria=DISPOSITIONS,
             )
         }
-        prediction = await self._predict("route", evidence.encoded, questions, self._wire(check, questions), trace)
-        answer = prediction.response.answers["route"]
-        assert isinstance(answer, ChoiceAnswer)
+        for family, description in EVIDENCE_FAMILIES.items():
+            questions[family] = NoulQuestion(
+                type="noul",
+                instructions=(
+                    "Assuming the rule applies and additional local evidence could help, would this evidence "
+                    f"family supply a concrete currently missing fact for the exact target: {family}: {description} "
+                    "Judge this family independently: several families or none may help. Evidence already present, "
+                    "a matching short name alone, or generic extra context is insufficient. "
+                    "Do not assume any other question's answer or prefer evidence that supports a defect."
+                ),
+            )
+        return questions
+
+    async def _routing_answers(self, check: Check, evidence: Evidence, trace: dict[str, Any]) -> dict[str, Answer]:
+        """Batch independent routing questions; small configured request budgets still apply."""
+        questions = self._routing_questions()
+        wire = self._wire(check, questions)
+        pending: dict[str, Question] = {}
+        answers: dict[str, Answer] = {}
+        for name, question in questions.items():
+            proposed = {key: wire[key] for key in (*pending, name)}
+            if pending and not self.budget.fits(evidence.encoded, proposed):
+                prediction = await self._predict(
+                    "route", evidence.encoded, pending, {key: wire[key] for key in pending}, trace
+                )
+                answers.update(prediction.response.answers)
+                pending = {}
+            pending[name] = question
+        if pending:
+            prediction = await self._predict(
+                "route", evidence.encoded, pending, {key: wire[key] for key in pending}, trace
+            )
+            answers.update(prediction.response.answers)
+        return answers
+
+    async def _route(self, check: Check, evidence: Evidence, trace: dict[str, Any]) -> Routing:
+        answers = await self._routing_answers(check, evidence, trace)
+        disposition = answers["disposition"]
+        assert isinstance(disposition, ChoiceAnswer)
+        scores = {}
+        for name in EVIDENCE_FAMILIES:
+            answer = answers[name]
+            assert isinstance(answer, NoulAnswer)
+            scores[name] = answer.noul
+        trace["evidence_probabilities"] = scores
         if (
-            answer.confidence < self.limits.min_route_confidence
-            or answer.probabilities[answer.choice] < self.limits.min_route_probability
+            disposition.confidence < self.limits.min_route_confidence
+            or disposition.probabilities[disposition.choice] < self.limits.min_route_probability
         ):
-            return None
-        return answer.choice
+            return Routing(None)
+        if disposition.choice != "local_evidence":
+            return Routing(disposition.choice)
+        families = tuple(
+            name
+            for name in sorted(scores, key=lambda name: (-scores[name], name))
+            if scores[name] >= self.limits.min_evidence_probability
+        )
+        return Routing(disposition.choice, families)
+
+    async def _candidates(
+        self, check: Check, evidence: Evidence, families: tuple[str, ...], trace: dict[str, Any]
+    ) -> list[Candidate]:
+        """Pool families fairly under one candidate limit, retaining all family provenance."""
+        pools = {}
+        for family in families:
+            pools[family] = await self.index.candidates(self.context, check, evidence, family)
+        membership: dict[str, list[str]] = {}
+        for family, pool in pools.items():
+            for candidate in pool.items:
+                membership.setdefault(candidate.id, []).append(family)
+        unique: dict[str, Candidate] = {}
+        for row in zip_longest(*(pool.items for pool in pools.values())):
+            for candidate in row:
+                if candidate is not None:
+                    unique.setdefault(candidate.id, candidate)
+        admitted = list(unique.values())[: self.limits.max_candidates]
+        trace["retrieval"] = {
+            "families": {family: pool.coverage for family, pool in pools.items()},
+            "candidate_families": membership,
+            "pooled_candidates": len(unique),
+            "combined_candidate_limit_omissions": max(0, len(unique) - len(admitted)),
+        }
+        return admitted
 
     def _selection_input(
         self, check: Check, evidence: Evidence, candidates: list[Candidate]
@@ -216,14 +299,15 @@ class Enricher:
                 ranked.append((answer.noul, candidate))
         return ranked
 
-    async def _select(self, check: Check, evidence: Evidence, route: str, trace: dict[str, Any]) -> list[Candidate]:
+    async def _select(
+        self, check: Check, evidence: Evidence, families: tuple[str, ...], trace: dict[str, Any]
+    ) -> list[Candidate]:
         if self.calls >= self.limits.max_calls_per_file:
             raise EnrichmentStoppedError("call_budget")
-        found = await self.index.candidates(self.context, check, evidence, route)
-        trace["retrieval"] = found.coverage
+        candidates = await self._candidates(check, evidence, families, trace)
         ranked = []
         pending: list[Candidate] = []
-        for candidate in found.items:
+        for candidate in candidates:
             state, _, wire = self._selection_input(check, evidence, [*pending, candidate])
             if pending and not self.budget.fits(state, wire):
                 ranked.extend(await self._rank_batch(check, evidence, pending, trace))
@@ -268,15 +352,19 @@ class Enricher:
         self.inference.summary.enrichment_reviewed += 1
         trace["outcome"] = "failed"  # Retained if a genuine service/validation failure aborts the scan.
         try:
-            route = await self._route(check, evidence, trace)
-            trace["route"] = route
-            if route is None:
+            routing = await self._route(check, evidence, trace)
+            trace["disposition"] = routing.disposition
+            trace["evidence_families"] = list(routing.families)
+            if routing.disposition is None:
                 trace["outcome"] = "route_uncertain"
                 return None
-            if route in {"not_applicable", "sufficient", "unavailable"}:
-                trace["outcome"] = route
+            if routing.disposition != "local_evidence":
+                trace["outcome"] = routing.disposition
                 return None
-            selected = await self._select(check, evidence, route, trace)
+            if not routing.families:
+                trace["outcome"] = "no_evidence_family"
+                return None
+            selected = await self._select(check, evidence, routing.families, trace)
             if not selected:
                 trace["outcome"] = "no_relevant_evidence"
                 return None
