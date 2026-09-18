@@ -1,0 +1,126 @@
+name: RC5 isolated verification
+on:
+  push:
+    branches: [feat/rc5-structured-evidence]
+    paths: [.github/workflows/rc5-verify.yml]
+permissions:
+  contents: write
+concurrency:
+  group: rc5-isolated-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      UV_PYTHON: '3.13'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: '0.12.16'
+      - name: Apply exact reviewed source with per-file hash verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          shas=['dacb4c24b498260aefa42c2b2c8b6967616d7f8e','a11ffeb66fe2ea7718e76125a169b937badb0c32','72c09c175d754b6a1a5171a05bda88767d031fcf']
+          fragments=[]
+          for sha in shas:
+              req=urllib.request.Request('https://api.github.com/repos/alexykn/jevscan/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=30) as response:
+                  blob=json.load(response)
+              raw=base64.b64decode(blob['content'])
+              assert hashlib.sha1(f'blob {len(raw)}\0'.encode()+raw).hexdigest()==sha
+              fragments.append(raw)
+          raw=lzma.decompress(base64.b64decode(b''.join(fragments)))
+          assert hashlib.sha256(raw).hexdigest()=='74dfdf860b45b7e9cc5534e17af7cd3accc272787ea51e3fbbee638ca857236f'
+          delta=json.loads(raw)
+          assert delta['base']=='6afbfe670df2bb79792bc076cf98a2c721d3a439'
+          def git_hash(data):
+              return hashlib.sha1(f'blob {len(data)}\0'.encode()+data).hexdigest()
+          for item in delta['files']:
+              path=pathlib.Path(item['path'])
+              assert not path.is_absolute() and '..' not in path.parts
+              assert path.parts[0] in {'README.md','docs','src','tests'}
+              before=path.read_bytes() if path.exists() else b''
+              if item['old'] is None:
+                  assert not path.exists(), path
+              else:
+                  assert git_hash(before)==item['old'], path
+              if item['new'] is None:
+                  path.unlink()
+                  continue
+              lines=before.decode('utf-8').splitlines(keepends=True)
+              for start,end,replacement in reversed(item['edits']):
+                  lines[start:end]=replacement.splitlines(keepends=True)
+              after=''.join(lines).encode('utf-8')
+              assert git_hash(after)==item['new'], path
+              path.parent.mkdir(parents=True,exist_ok=True)
+              path.write_bytes(after)
+          pathlib.Path('/tmp/rc5-applied-manifest.json').write_text(json.dumps(delta,indent=2))
+          print('Verified and applied',len(delta['files']),'reviewed files.')
+          PY
+      - name: Locked install and complete software checks
+        run: |
+          uv sync --locked --all-groups
+          uv run --no-sync python -c 'from jevscan.core.parser import require_parser_runtime; require_parser_runtime()'
+          uv run --no-sync ruff format --check src tests
+          uv run --no-sync ruff check src tests
+          uv run --no-sync ty check
+          uv run --no-sync pytest -q -rs
+          uv run --no-sync radon cc -s -n C src
+          uv build
+      - name: Verify installed wheel outside checkout
+        shell: bash
+        run: |
+          root="$PWD"
+          uv pip install --python .venv/bin/python --no-deps --reinstall dist/*.whl
+          work="$(mktemp -d)"
+          cp -R tests/fixtures "$work/fixtures"
+          cd "$work"
+          "$root/.venv/bin/jevscan" --init-config
+          "$root/.venv/bin/jevscan" --show-config > resolved.yaml
+          "$root/.venv/bin/jevscan" --config resolved.yaml --show-config > roundtrip.yaml
+          "$root/.venv/bin/jevscan" fixtures --offline --format json > inventory.json
+          "$root/.venv/bin/python" -I - <<'PY'
+          import json, yaml, jevscan
+          from pathlib import Path
+          assert 'site-packages' in jevscan.__file__ and jevscan.__version__=='0.2.0rc5'
+          config=yaml.safe_load(Path('resolved.yaml').read_text())
+          assert config==yaml.safe_load(Path('roundtrip.yaml').read_text())
+          assert config['evaluation']['max_context_tokens'] is None
+          assert config['evaluation']['recovery_context_tokens']==28000
+          report=json.loads(Path('inventory.json').read_text())
+          assert report['schema_version']==6 and not report['summary']['incomplete']
+          assert report['summary']['requests']==0
+          assert {event['language'] for event in report['events'] if event['event']=='file'}=={'python','rust','perl','typescript','javascript'}
+          print('Installed rc5 wheel: YAML roundtrip and real five-language inventory passed.')
+          PY
+      - name: Commit only successfully verified source to the feature branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- README.md docs src tests
+          git diff --cached --check
+          git commit -m 'feat: verified structured evidence preparation and recovery'
+          git push origin HEAD:refs/heads/feat/rc5-structured-evidence
+          git archive HEAD > /tmp/rc5-verified-source.tar
+          git rev-parse HEAD > /tmp/rc5-verified-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/rc5-verified-tree.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: success()
+        with:
+          name: rc5-verified-source
+          path: |
+            /tmp/rc5-verified-source.tar
+            /tmp/rc5-verified-commit.txt
+            /tmp/rc5-verified-tree.txt
+          retention-days: 2
+          if-no-files-found: error
