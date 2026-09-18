@@ -1,0 +1,32 @@
+name: RC5 provider references
+on:
+  push:
+    branches: [feat/rc5-structured-evidence]
+    paths: [.github/workflows/rc5-research.yml]
+permissions:
+  contents: read
+jobs:
+  references:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read public provider documentation
+        run: |
+          mkdir -p /tmp/references
+          python3 - <<'PY'
+          import pathlib, urllib.request, json
+          root=pathlib.Path('/tmp/references'); log={}
+          urls={'models.md':'https://docs.typesafe.ai/models.md','exceptions.md':'https://docs.typesafe.ai/sdk/python/api/exceptions.md','jaggedness.md':'https://docs.typesafe.ai/model-jaggedness/jev-1.13.md','openapi.json':'https://api.typesafe.ai/openapi.json'}
+          for name,url in urls.items():
+              try:
+                  with urllib.request.urlopen(url,timeout=20) as response:
+                      data=response.read(2000000); (root/name).write_bytes(data)
+                      log[url]={'status':response.status,'bytes':len(data)}
+              except Exception as exc:log[url]={'error':str(exc)}
+          (root/'status.json').write_text(json.dumps(log,indent=2))
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rc5-provider-references
+          path: /tmp/references/
+          retention-days: 2
