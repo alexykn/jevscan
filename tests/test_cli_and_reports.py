@@ -114,10 +114,15 @@ def test_text_report_groups_all_answers_under_one_unit() -> None:
         },
         "findings": [
             {
+                "rule": "mixed-responsibilities",
+                "severity": "error",
+                "message": "Responsibilities are interleaved.",
+            },
+            {
                 "rule": "unclear-control-flow",
                 "severity": "warning",
                 "message": "Control flow is difficult to follow.",
-            }
+            },
         ],
     })
 
@@ -125,9 +130,10 @@ def test_text_report_groups_all_answers_under_one_unit() -> None:
     assert text.count("src/example.py") == 1
     assert text.count("ContextBuilder.__init__") == 1
     assert "M 25 ContextBuilder.__init__  cached" in text
-    assert "mixed-responsibilities" in text and "noul=0.210" in text
-    assert "unclear-control-flow" in text and "score=2.000  conf=0.840" in text
+    assert "x mixed-responsibilities" in text and "noul=0.210" in text
+    assert "! unclear-control-flow" in text and "score=2.000  conf=0.840" in text
     assert "redundant-validation" in text and "justified_or_absent  p=0.830  conf=0.740" in text
+    assert "Responsibilities are interleaved." in text
     assert "Control flow is difficult to follow." in text
     assert "\x1b[" not in text
 
