@@ -69,7 +69,6 @@ def test_exit_codes_keep_operational_errors_distinct() -> None:
     assert summary.exit_code("never") == 2
 
 
-
 def _report_metadata() -> dict[str, object]:
     return {
         "root": "/repo",
@@ -90,39 +89,37 @@ def test_text_report_groups_all_answers_under_one_unit() -> None:
         "kind": "method",
         "qualified_name": "ContextBuilder.__init__",
     }
-    reporter.emit(
-        {
-            "event": "evaluation",
-            "unit": unit,
-            "cached": True,
-            "answers": {
-                "mixed-responsibilities": {"type": "noul", "noul": 0.21},
-                "unclear-control-flow": {
-                    "type": "score",
-                    "score": 2.0,
-                    "confidence": 0.84,
-                    "probabilities": {"0": 0.01, "1": 0.15, "2": 0.74, "3": 0.10},
-                },
-                "redundant-validation": {
-                    "type": "choice",
-                    "choice": "justified_or_absent",
-                    "confidence": 0.74,
-                    "probabilities": {
-                        "demonstrably_redundant": 0.10,
-                        "justified_or_absent": 0.83,
-                        "insufficient_context": 0.07,
-                    },
+    reporter.emit({
+        "event": "evaluation",
+        "unit": unit,
+        "cached": True,
+        "answers": {
+            "mixed-responsibilities": {"type": "noul", "noul": 0.21},
+            "unclear-control-flow": {
+                "type": "score",
+                "score": 2.0,
+                "confidence": 0.84,
+                "probabilities": {"0": 0.01, "1": 0.15, "2": 0.74, "3": 0.10},
+            },
+            "redundant-validation": {
+                "type": "choice",
+                "choice": "justified_or_absent",
+                "confidence": 0.74,
+                "probabilities": {
+                    "demonstrably_redundant": 0.10,
+                    "justified_or_absent": 0.83,
+                    "insufficient_context": 0.07,
                 },
             },
-            "findings": [
-                {
-                    "rule": "unclear-control-flow",
-                    "severity": "warning",
-                    "message": "Control flow is difficult to follow.",
-                }
-            ],
-        }
-    )
+        },
+        "findings": [
+            {
+                "rule": "unclear-control-flow",
+                "severity": "warning",
+                "message": "Control flow is difficult to follow.",
+            }
+        ],
+    })
 
     text = stream.getvalue()
     assert text.count("src/example.py") == 1
@@ -144,15 +141,13 @@ def test_text_report_colors_tty_output(monkeypatch) -> None:
     monkeypatch.setenv("COLOR", "auto")
     stream = TtyStream()
     reporter = Reporter(stream, "text", _report_metadata())
-    reporter.emit(
-        {
-            "event": "unit",
-            "unit": {
-                "path": "src/example.py",
-                "start_line": 7,
-                "kind": "function",
-                "qualified_name": "work",
-            },
-        }
-    )
+    reporter.emit({
+        "event": "unit",
+        "unit": {
+            "path": "src/example.py",
+            "start_line": 7,
+            "kind": "function",
+            "qualified_name": "work",
+        },
+    })
     assert "\x1b[" in stream.getvalue()
