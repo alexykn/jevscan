@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 
 import yaml
+import yaml.resolver
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from jevscan.core.models import Kind, Severity

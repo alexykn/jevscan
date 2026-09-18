@@ -94,7 +94,7 @@ uv run jevscan . --no-cache --fail-on error
 uv run jevscan . --offline --format jsonl -o inventory.jsonl
 ```
 
-Text output is a compact line-oriented report: every evaluated answer is printed with its probability, choice, score, or confidence, and findings are marked with `!`. The default text report is unlimited; `--max-display` can cap detail lines. JSON/JSONL are never display-limited. Machine reports include unit metadata, typed answers, findings, diagnostics, and a final summary. Reports contain names and declaration signatures; treat them as potentially sensitive.
+Text output follows a Radon-style hierarchy: each source file is a heading, each evaluated code unit is printed once beneath it, and every applicable Jev rule is shown as an aligned score row below that unit. Clean answers use green, findings use their configured severity color, and cached units are marked once on the unit line. ANSI color is automatic for terminals (`COLOR=yes|no` overrides it; `NO_COLOR` disables it) and is never written to normal redirected files. The default text report is unlimited; `--max-display` can cap displayed units. JSON/JSONL are never display-limited. Machine reports include unit metadata, typed answers, findings, diagnostics, and a final summary. Reports contain names and declaration signatures; treat them as potentially sensitive.
 
 Reported probabilities and confidence values are the model's returned values, not measured probabilities that findings are correct. Severity comes from the rule, not from confidence. Score thresholds use the configured rubric's zero-based scale. Findings currently refer to the **whole extracted unit**; there is no second-pass line localization or generated repair advice.
 

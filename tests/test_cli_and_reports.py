@@ -67,3 +67,87 @@ def test_exit_codes_keep_operational_errors_distinct() -> None:
     assert summary.exit_code("never") == 0
     summary.incomplete = True
     assert summary.exit_code("never") == 2
+
+
+def _report_metadata() -> dict[str, object]:
+    return {
+        "root": "/repo",
+        "config": "default",
+        "mode": "live",
+        "model": "jev-latest",
+        "parser_processes": 2,
+        "concurrency": 4,
+    }
+
+
+def test_text_report_groups_all_answers_under_one_unit() -> None:
+    stream = io.StringIO()
+    reporter = Reporter(stream, "text", _report_metadata())
+    unit = {
+        "path": "src/example.py",
+        "start_line": 25,
+        "kind": "method",
+        "qualified_name": "ContextBuilder.__init__",
+    }
+    reporter.emit({
+        "event": "evaluation",
+        "unit": unit,
+        "cached": True,
+        "answers": {
+            "mixed-responsibilities": {"type": "noul", "noul": 0.21},
+            "unclear-control-flow": {
+                "type": "score",
+                "score": 2.0,
+                "confidence": 0.84,
+                "probabilities": {"0": 0.01, "1": 0.15, "2": 0.74, "3": 0.10},
+            },
+            "redundant-validation": {
+                "type": "choice",
+                "choice": "justified_or_absent",
+                "confidence": 0.74,
+                "probabilities": {
+                    "demonstrably_redundant": 0.10,
+                    "justified_or_absent": 0.83,
+                    "insufficient_context": 0.07,
+                },
+            },
+        },
+        "findings": [
+            {
+                "rule": "unclear-control-flow",
+                "severity": "warning",
+                "message": "Control flow is difficult to follow.",
+            }
+        ],
+    })
+
+    text = stream.getvalue()
+    assert text.count("src/example.py") == 1
+    assert text.count("ContextBuilder.__init__") == 1
+    assert "M 25 ContextBuilder.__init__  cached" in text
+    assert "mixed-responsibilities" in text and "noul=0.210" in text
+    assert "unclear-control-flow" in text and "score=2.000  conf=0.840" in text
+    assert "redundant-validation" in text and "justified_or_absent  p=0.830  conf=0.740" in text
+    assert "Control flow is difficult to follow." in text
+    assert "\x1b[" not in text
+
+
+def test_text_report_colors_tty_output(monkeypatch) -> None:
+    class TtyStream(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("COLOR", "auto")
+    stream = TtyStream()
+    reporter = Reporter(stream, "text", _report_metadata())
+    reporter.emit({
+        "event": "unit",
+        "unit": {
+            "path": "src/example.py",
+            "start_line": 7,
+            "kind": "function",
+            "qualified_name": "work",
+        },
+    })
+    assert "\x1b[" in stream.getvalue()

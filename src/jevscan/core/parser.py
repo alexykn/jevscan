@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from jevscan.core.languages import SPECS
 from jevscan.core.models import Diagnostic, FileJob, Kind, ParsedFile, Severity, Unit
@@ -38,10 +38,11 @@ def require_parser_runtime() -> None:
 @lru_cache(maxsize=6)
 def _frontend(grammar: str) -> tuple[Any, Any]:
     from tree_sitter import Query
-    from tree_sitter_language_pack import get_language, get_parser
+    from tree_sitter_language_pack import SupportedLanguage, get_language, get_parser
 
     spec = SPECS[grammar]
-    language = get_language(grammar)
+    language_name = cast(SupportedLanguage, grammar)
+    language = get_language(language_name)
     available = {language.node_kind_for_id(i) for i in range(language.node_kind_count)
                  if language.node_kind_is_named(i)}
     missing = spec.required - available
@@ -52,7 +53,7 @@ def _frontend(grammar: str) -> tuple[Any, Any]:
         supported = [name for name in names if name in available]
         if supported:
             patterns.append("[" + " ".join(f"({name})" for name in supported) + f"] @{capture}")
-    return get_parser(grammar), Query(language, "\n".join(patterns))
+    return get_parser(language_name), Query(language, "\n".join(patterns))
 
 
 def _text(node: Any, source: bytes) -> str:

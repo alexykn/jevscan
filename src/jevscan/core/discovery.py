@@ -1,7 +1,7 @@
 """Lazy directory traversal with Git-style matching and nested .gitignore scopes."""
 
 import os
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -71,7 +71,7 @@ def normalize_targets(targets: list[Path]) -> list[Path]:
     return result
 
 
-def discover(targets: list[Path], root: Path, config: ScanConfig) -> Iterator[FileJob | Diagnostic]:
+def discover(targets: list[Path], root: Path, config: ScanConfig) -> Generator[FileJob | Diagnostic, None, None]:
     include = GitIgnoreSpec.from_lines(config.include)
     exclude = GitIgnoreSpec.from_lines(config.exclude)
     for target in normalize_targets(targets):
