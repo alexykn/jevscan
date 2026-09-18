@@ -1,0 +1,10 @@
+# Built-ins are included automatically. Only supplied fields change.
+version: 4
+lint:
+  ignore: [JEV09]
+rules:
+  - name: JEV02
+    report:
+      levels:
+        warning:
+          min_score: 1.2

@@ -13,11 +13,15 @@ from jevscan.core.models import Summary
 def test_init_config_does_not_overwrite_and_resolved_config_is_available(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
     assert main(["--init-config"]) == 0
-    original = (tmp_path / "jevscan.toml").read_text()
+    original = (tmp_path / "jevscan.yaml").read_text()
     assert main(["--init-config"]) == 2
-    assert (tmp_path / "jevscan.toml").read_text() == original
+    assert (tmp_path / "jevscan.yaml").read_text() == original
     assert main(["--show-config"]) == 0
     assert "mixed-responsibilities" in capsys.readouterr().out
+    assert main(["--init-config", "custom.yml"]) == 0
+    assert main(["--show-config", "--config", "custom.yml"]) == 0
+    assert main(["--init-config", "custom.toml"]) == 2
+    assert not (tmp_path / "custom.toml").exists()
 
 
 @pytest.mark.parametrize("format_name", ["json", "jsonl"])
@@ -298,11 +302,11 @@ def test_untrusted_terminal_text_cannot_inject_ansi(monkeypatch) -> None:
 
 
 def test_no_enrichment_is_a_resolved_config_override(tmp_path, monkeypatch, capsys):
-    import tomllib
+    import yaml
 
     monkeypatch.chdir(tmp_path)
     assert main(["--show-config", "--no-enrichment"]) == 0
-    document = tomllib.loads(capsys.readouterr().out)
+    document = yaml.safe_load(capsys.readouterr().out)
     assert document["enrichment"]["enabled"] is False
     assert next(rule for rule in document["rules"] if rule["name"] == "JEV06")["require_members"] is True
 
@@ -387,7 +391,7 @@ def test_rule_codes_titles_and_ruleset_selection_reach_cli_and_planner(tmp_path,
     from jevscan.core.planning import Planner
 
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "jevscan.toml").write_text('[lint]\nignore=["JEV09"]\n')
+    (tmp_path / "jevscan.yaml").write_text("lint:\n  ignore: [JEV09]\n")
     assert main(["--list-rules", "--select", "JEV", "--ignore", "JEV02"]) == 0
     rows = capsys.readouterr().out.splitlines()
     assert "title=mixed-responsibilities" in rows[0] and "ruleset=JEV" in rows[0]

@@ -33,7 +33,7 @@ where = ["src"]
 namespaces = true
 
 [tool.setuptools.package-data]
-jevscan = ["data/*.toml", "py.typed"]
+jevscan = ["data/*.yaml", "py.typed"]
 
 [tool.setuptools.dynamic]
 version = { attr = "jevscan.__version__" }
