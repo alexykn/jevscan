@@ -14,9 +14,18 @@ from jevscan.core.config import EnrichmentConfig
 from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.inference import Inference, Prediction
 from jevscan.core.planning import RequestBudget
-from jevscan.core.protocol import QUESTION_POLICY, Answer, Check, ChoiceAnswer, ContextLimitError, NoulAnswer, encode
+from jevscan.core.protocol import (
+    Answer,
+    Check,
+    ChoiceAnswer,
+    ContextLimitError,
+    NoulAnswer,
+    auxiliary_questions,
+    encode,
+)
 from jevscan.core.retrieval import Candidate, SourceIndex
 from jevscan.core.rules import ChoiceQuestion, EnrichmentTrigger, NoulQuestion, Question
+from jevscan.core.selection import rank_candidates
 
 # Code owns admission and ordering; Jev only chooses useful evidence after admission.
 REVIEW_PRIORITY: dict[EnrichmentTrigger, int] = {
@@ -109,7 +118,7 @@ def _augment(
                 "file_sha256": hashlib.sha256(source).hexdigest(),
             })
     state = {
-        **initial.state,
+        **{key: value for key, value in initial.state.items() if key != "source_outline"},
         "documents": documents,
         "coverage": {
             **context.coverage(documents),
@@ -135,21 +144,6 @@ class Enricher:
         self.calls = 0
         self.reviewed = 0
 
-    @staticmethod
-    def _wire(check: Check, questions: dict[str, Question]) -> dict[str, bytes]:
-        return {
-            key: encode({
-                **question.model_dump(mode="json"),
-                "instructions": {
-                    "policy": QUESTION_POLICY,
-                    "target": check.target.metadata(),
-                    "rule": check.rule.question.model_dump(mode="json"),
-                    "task": question.instructions,
-                },
-            })
-            for key, question in questions.items()
-        }
-
     async def _predict(
         self, phase: str, state: bytes, questions: dict[str, Question], wire: dict[str, bytes], trace: dict[str, Any]
     ) -> Prediction:
@@ -161,7 +155,11 @@ class Enricher:
         body = self.budget.body(state, wire)
         entry: dict[str, Any] = {"phase": phase, "request_sha256": hashlib.sha256(body).hexdigest()}
         trace["predictions"].append(entry)
-        prediction = await self.inference.predict(body, questions, enrichment=True)
+        try:
+            prediction = await self.inference.predict(body, questions, enrichment=True)
+        except ContextLimitError as exc:
+            entry["rejection"] = exc.metadata()
+            raise
         entry.update({
             "model": prediction.response.model,
             "cached": prediction.cached,
@@ -198,7 +196,7 @@ class Enricher:
     async def _routing_answers(self, check: Check, evidence: Evidence, trace: dict[str, Any]) -> dict[str, Answer]:
         """Batch independent routing questions; small configured request budgets still apply."""
         questions = self._routing_questions()
-        wire = self._wire(check, questions)
+        wire = auxiliary_questions(check, questions)
         pending: dict[str, Question] = {}
         answers: dict[str, Answer] = {}
         for name, question in questions.items():
@@ -266,59 +264,22 @@ class Enricher:
         }
         return admitted
 
-    def _selection_input(
-        self, check: Check, evidence: Evidence, candidates: list[Candidate]
-    ) -> tuple[bytes, dict[str, Question], dict[str, bytes]]:
-        questions: dict[str, Question] = {
-            candidate.id: NoulQuestion(
-                type="noul",
-                instructions=(
-                    f"Would the complete source for candidate `{candidate.id}` in `candidate_context` supply "
-                    "concrete, currently missing evidence for deciding this rule about this exact target? "
-                    "Judge relevance, not whether it supports a positive or negative verdict. "
-                    "A shared short name alone, unrelated tests, or evidence already supplied is insufficient. "
-                    "The preview may be partial; do not invent the omitted contents."
-                ),
-            )
-            for candidate in candidates
-        }
-        state = encode({**evidence.state, "candidate_context": [candidate.preview() for candidate in candidates]})
-        return state, questions, self._wire(check, questions)
-
-    async def _rank_batch(
-        self, check: Check, evidence: Evidence, candidates: list[Candidate], trace: dict[str, Any]
-    ) -> list[tuple[float, Candidate]]:
-        state, questions, wire = self._selection_input(check, evidence, candidates)
-        prediction = await self._predict("selection", state, questions, wire, trace)
-        ranked = []
-        for candidate in candidates:
-            answer = prediction.response.answers[candidate.id]
-            assert isinstance(answer, NoulAnswer)
-            trace["candidates"].append({**candidate.metadata(), "relevance": answer.noul})
-            if answer.noul >= self.limits.min_relevance:
-                ranked.append((answer.noul, candidate))
-        return ranked
-
     async def _select(
         self, check: Check, evidence: Evidence, families: tuple[str, ...], trace: dict[str, Any]
     ) -> list[Candidate]:
         if self.calls >= self.limits.max_calls_per_file:
             raise EnrichmentStoppedError("call_budget")
         candidates = await self._candidates(check, evidence, families, trace)
-        ranked = []
-        pending: list[Candidate] = []
-        for candidate in candidates:
-            state, _, wire = self._selection_input(check, evidence, [*pending, candidate])
-            if pending and not self.budget.fits(state, wire):
-                ranked.extend(await self._rank_batch(check, evidence, pending, trace))
-                pending = []
-            state, _, wire = self._selection_input(check, evidence, [candidate])
-            if self.budget.fits(state, wire):
-                pending.append(candidate)
-            else:
-                trace["omitted_candidates"].append({"id": candidate.id, "reason": "selection_budget"})
-        if pending:
-            ranked.extend(await self._rank_batch(check, evidence, pending, trace))
+
+        async def call(state: bytes, questions: dict[str, Question], wire: dict[str, bytes]) -> Prediction:
+            return await self._predict("selection", state, questions, wire, trace)
+
+        scores = await rank_candidates(check, evidence.state, candidates, self.budget, call, trace)
+        ranked = [
+            (scores[candidate.id], candidate)
+            for candidate in candidates
+            if scores.get(candidate.id, 0) >= self.limits.min_relevance
+        ]
         ranked.sort(key=lambda pair: (-pair[0], pair[1].target.path, pair[1].target.start_byte))
         selected: list[Candidate] = []
         wire = {check.id: encode(check.question())}

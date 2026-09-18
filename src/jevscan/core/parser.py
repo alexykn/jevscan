@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from jevscan.core.languages import SPECS
 from jevscan.core.models import CALLABLE_KINDS, Diagnostic, FileJob, Kind, ParsedFile, Reference, Severity, Unit
+from jevscan.core.syntax import callback_label, context_blocks, display_path
 
 
 class ParserUnavailableError(RuntimeError):
@@ -52,7 +53,7 @@ def _frontend(grammar: str) -> tuple[Any, Any]:
     if missing:
         raise ParserUnavailableError(f"{grammar} grammar lacks required syntax nodes: {', '.join(sorted(missing))}")
     patterns = []
-    for capture, names in (("unit", spec.nodes), ("import", spec.imports), ("branch", spec.branches)):
+    for capture, names in (("unit", spec.nodes), ("branch", spec.branches)):
         supported = [name for name in names if name in available]
         if supported:
             patterns.append("[" + " ".join(f"({name})" for name in supported) + f"] @{capture}")
@@ -270,6 +271,12 @@ def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: li
             has_body=symbol.body is not None,
             has_implementation=_has_implementation(symbol),
             branch_nodes=bisect_left(branches, symbol.end) - bisect_left(branches, symbol.start),
+            body_start_byte=symbol.body.start_byte if symbol.body is not None else None,
+            display_name=display_path(
+                parent.display_name if parent else "",
+                callback_label(symbol.node, source) if symbol.name.startswith("<anonymous@") else symbol.name,
+                separator,
+            ),
         )
         if parent:
             member_counts[parent.id] += 1
@@ -303,11 +310,13 @@ def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> Parsed
         _extend_perl_namespaces(symbols)
     branches = sorted(node.start_byte for node in captures.get("branch", []))
     units = _normalize(symbols, source, job, branches)
-    declarations = tuple(
-        _text(node, source)[:1024] for node in sorted(captures.get("import", []), key=lambda n: n.start_byte)[:32]
-    )
     return ParsedFile(
-        job.display_path, job.language, source, units, declarations, references=_references(tree.root_node, source)
+        job.display_path,
+        job.language,
+        source,
+        units,
+        references=_references(tree.root_node, source),
+        blocks=context_blocks(tree.root_node, source),
     )
 
 

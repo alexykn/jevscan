@@ -61,7 +61,7 @@ async def test_calls_are_syntax_occurrences_not_comment_or_string_matches(
     planner = Planner(context, Config(rules={"rule": basic_rule}))
     check = next(check for check in planner.checks if check.target.qualified_name == "target")
     index = SourceIndex(tmp_path, ScanConfig(), EnrichmentConfig())
-    result = await index.candidates(context, check, next(context.variants(check)), "callers")
+    result = await index.candidates(context, check, context.requested(check), "callers")
     assert len(result.items) == 1 and result.items[0].target.path == "caller" + extension
     assert result.items[0].relation == "possible_call_site"
     assert "target(1)" in result.items[0].document()["content"]
@@ -81,7 +81,7 @@ async def test_filters_limits_and_safe_reads(tmp_path: Path, basic_rule: Rule) -
     context = ContextBuilder(parsed)
     check = Planner(context, Config(rules={"rule": basic_rule})).checks[0]
     index = SourceIndex(tmp_path, ScanConfig(), EnrichmentConfig())
-    found = await index.candidates(context, check, next(context.variants(check)), "callers")
+    found = await index.candidates(context, check, context.requested(check), "callers")
     assert [item.target.path for item in found.items] == ["caller.py"]
     with pytest.raises(OSError):
         _read_source(tmp_path, "linked.py", 1000)
@@ -92,7 +92,7 @@ async def test_filters_limits_and_safe_reads(tmp_path: Path, basic_rule: Rule) -
         _read_source(tmp_path, "linked_dir/not-evidence.py", 1000)
     small = SourceIndex(tmp_path, ScanConfig(), EnrichmentConfig(max_source_bytes=1024))
     (tmp_path / "huge.py").write_text('DATA = "' + "x" * 5000 + '"')
-    found = await small.candidates(context, check, next(context.variants(check)), "callers")
+    found = await small.candidates(context, check, context.requested(check), "callers")
     assert not found.coverage["discovery_complete"]
     assert found.coverage["source_bytes"] <= 1025
 
@@ -105,7 +105,7 @@ async def test_snapshots_are_immutable_and_changed_primary_is_not_mixed(tmp_path
     context = ContextBuilder(parsed)
     check = Planner(context, Config(rules={"rule": basic_rule})).checks[0]
     index = SourceIndex(tmp_path, ScanConfig(), EnrichmentConfig())
-    found = await index.candidates(context, check, next(context.variants(check)), "callers")
+    found = await index.candidates(context, check, context.requested(check), "callers")
     assert found.coverage["primary_snapshot_changed"]
     assert [item.target.path for item in found.items] == ["caller.py"]
     before = found.items[0].document()
@@ -121,7 +121,7 @@ async def test_cross_file_definitions_tests_and_rust_impl_candidates(tmp_path, b
     context = ContextBuilder(parsed)
     check = Planner(context, Config(rules={"rule": basic_rule})).checks[0]
     index = SourceIndex(tmp_path, ScanConfig(), EnrichmentConfig())
-    evidence = next(context.variants(check))
+    evidence = context.requested(check)
     definitions = await index.candidates(context, check, evidence, "definitions")
     tests = await index.candidates(context, check, evidence, "tests")
     assert [item.target.qualified_name for item in definitions.items] == ["Contract"]
@@ -136,7 +136,7 @@ async def test_cross_file_definitions_tests_and_rust_impl_candidates(tmp_path, b
         if check.target.qualified_name == "impl S::work"
     )
     index = SourceIndex(tmp_path, ScanConfig(), EnrichmentConfig())
-    definitions = await index.candidates(context, check, next(context.variants(check)), "definitions")
+    definitions = await index.candidates(context, check, context.requested(check), "definitions")
     assert any(item.relation == "possible_sibling_impl" for item in definitions.items)
 
 
@@ -163,7 +163,7 @@ async def test_catalogue_limits_and_concurrent_single_load(tmp_path, basic_rule,
     context = ContextBuilder(parsed)
     check = Planner(context, Config(rules={"rule": basic_rule})).checks[0]
     index = SourceIndex(tmp_path, ScanConfig(), EnrichmentConfig(max_candidates=1, max_evidence=1, max_source_files=3))
-    found = await index.candidates(context, check, next(context.variants(check)), "callers")
+    found = await index.candidates(context, check, context.requested(check), "callers")
     assert found.coverage["files_read"] == 3 and not found.coverage["discovery_complete"]
     assert len(found.items) == 1 and found.coverage["candidate_limit_omissions"] == 2
 

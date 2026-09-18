@@ -75,8 +75,11 @@ class JevConfig(StrictModel):
 
 class EvaluationConfig(StrictModel):
     # Estimates, not a claim that TypeSafe publishes this tokenizer or these quotas.
-    max_context_tokens: int = Field(default=28_000, ge=1024)
-    max_total_tokens: int = Field(default=56_000, ge=1024)
+    max_context_tokens: int | None = Field(default=None, ge=1024)
+    max_total_tokens: int | None = Field(default=None, ge=1024)
+    recovery_context_tokens: int = Field(default=28_000, ge=1024)
+    compaction_candidates: int = Field(default=32, ge=1, le=256)
+    compaction_calls_per_file: int = Field(default=12, ge=0, le=512)
     token_reserve: int = Field(default=512, ge=0)
     bytes_per_token: float = Field(default=3.0, ge=1, le=8)
     max_request_bytes: int = Field(default=1_048_576, ge=1024)
@@ -85,10 +88,15 @@ class EvaluationConfig(StrictModel):
 
     @model_validator(mode="after")
     def coherent_budgets(self) -> Self:
-        if self.max_total_tokens < self.max_context_tokens:
+        if (
+            self.max_total_tokens is not None
+            and self.max_context_tokens is not None
+            and self.max_total_tokens < self.max_context_tokens
+        ):
             raise ValueError("max_total_tokens must be at least max_context_tokens")
-        if self.token_reserve >= self.max_context_tokens:
-            raise ValueError("token_reserve must be smaller than max_context_tokens")
+        caps = [self.recovery_context_tokens, self.max_context_tokens, self.max_total_tokens]
+        if any(cap is not None and self.token_reserve >= cap for cap in caps):
+            raise ValueError("token_reserve must be smaller than configured token budgets")
         return self
 
 

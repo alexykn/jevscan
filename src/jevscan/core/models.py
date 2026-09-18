@@ -51,6 +51,8 @@ class Unit:
     member_count: int = 0
     branch_nodes: int = 0
     has_implementation: bool = True
+    display_name: str = ""
+    body_start_byte: int | None = None
 
     def metadata(self) -> dict[str, Any]:
         return asdict(self)
@@ -77,15 +79,27 @@ class Reference:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceBlock:
+    """A complete AST declaration/statement, never a claimed resolved contract."""
+
+    start_byte: int
+    end_byte: int
+    syntax_type: str
+    names: tuple[str, ...]
+    scope_start: int
+    scope_end: int
+
+
+@dataclass(frozen=True, slots=True)
 class ParsedFile:
     path: str
     language: str
     source: bytes
     units: tuple[Unit, ...]
-    declarations: tuple[str, ...] = ()
     diagnostics: tuple[Diagnostic, ...] = ()
     failed: bool = False
     references: tuple[Reference, ...] = ()
+    blocks: tuple[SourceBlock, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +122,7 @@ class Target:
     start_line: int
     end_line: int
     kind: Kind | None = None
+    display_name: str = ""
 
     @classmethod
     def from_unit(cls, unit: Unit) -> "Target":
@@ -122,6 +137,7 @@ class Target:
             unit.start_line,
             unit.end_line,
             unit.kind,
+            unit.display_name,
         )
 
     @classmethod
@@ -180,6 +196,9 @@ class Summary:
     enrichment_resolved: int = 0
     enrichment_calls: int = 0
     enrichment_cache_hits: int = 0
+    compaction_calls: int = 0
+    compaction_cache_hits: int = 0
+    context_rejections: int = 0
     context_reduced: int = 0
     cache_hits: int = 0
     requests: int = 0

@@ -5,7 +5,7 @@ from typing import Any, TextIO
 
 from jevscan.cli.terminal import BOLD, CYAN, DIM, GREEN, KIND_STYLE, LEVEL_MARKER, LEVEL_STYLE, RED, YELLOW, Terminal
 
-REPORT_SCHEMA_VERSION = 5
+REPORT_SCHEMA_VERSION = 6
 
 
 class Reporter:
@@ -84,7 +84,7 @@ class Reporter:
             location, name = f"1-{target['end_line']}", "whole file"
         else:
             marker, style = KIND_STYLE[target["kind"]]
-            location, name = str(target["start_line"]), target["qualified_name"]
+            location, name = str(target["start_line"]), target.get("display_name") or target["qualified_name"]
         self.terminal.header(marker, location, name, cached, style)
 
     @staticmethod
@@ -141,7 +141,20 @@ class Reporter:
             self._target_header(event["unit"])
         elif event["event"] == "evaluation":
             self._evaluation(event)
+        elif event["event"] == "coverage":
+            if self.current_path != event["path"]:
+                self.stream.write("\n" if self.current_path is not None else "")
+                self.terminal.write(event["path"], style=BOLD)
+                self.current_path = event["path"]
+            self.terminal.write(
+                f"coverage: compacted context for {event['reduced_targets']} targets/{event['reduced_checks']} checks; "
+                f"{event['skipped_checks']} checks on {event['skipped_targets']} targets omitted; see JSONL for ranges",
+                4,
+                YELLOW,
+            )
         elif event["event"] == "diagnostic":
+            if event["code"] in {"context-reduced", "evaluation-size-limit"}:
+                return  # Full structured events are retained; one file coverage notice replaces the flood.
             location = event["path"]
             if location and event.get("line"):
                 location += f":{event['line']}"
@@ -194,6 +207,12 @@ class Reporter:
                 f"enrichment: reviewed={summary['enrichment_reviewed']} rerun={summary['enrichment_reruns']} "
                 f"resolved={summary['enrichment_resolved']} calls={summary['enrichment_calls']} "
                 f"cached={summary['enrichment_cache_hits']}",
+                style=DIM,
+            )
+        if summary["compaction_calls"] or summary["context_rejections"]:
+            self.terminal.write(
+                f"context preparation: rejected={summary['context_rejections']} "
+                f"selection-calls={summary['compaction_calls']} cached={summary['compaction_cache_hits']}",
                 style=DIM,
             )
         if self.hidden:

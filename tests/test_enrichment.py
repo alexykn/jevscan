@@ -440,7 +440,9 @@ async def test_reduced_context_is_actionable_even_when_reason_is_low_confidence(
         rule,
         low_confidence,
         source=source,
-        evaluation=EvaluationConfig(max_context_tokens=1500, max_total_tokens=3000, token_reserve=100),
+        evaluation=EvaluationConfig(
+            max_context_tokens=1500, max_total_tokens=3000, token_reserve=100, compaction_calls_per_file=0
+        ),
     )
     review = events[0]["reviews"]["contract"]
     assert review["trigger"] == "reduced_context" and review["initial_reason"] == "low_confidence"

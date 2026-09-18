@@ -229,3 +229,17 @@ def test_enrichment_policy_is_validated_at_configuration_boundary(tmp_path, patc
 def test_project_can_replace_enrichment_admission(tmp_path, triggers):
     write_config(tmp_path, {"rules": [{"name": "JEV04", "enrich_on": triggers}]})
     assert load_config([tmp_path], cwd=tmp_path).config.rules["JEV04"].enrich_on == triggers
+
+
+def test_context_estimates_are_optional_but_real_budgets_remain_bounded(tmp_path):
+    config = load_config([tmp_path], cwd=tmp_path).config
+    assert config.evaluation.max_context_tokens is None
+    assert config.evaluation.max_total_tokens is None
+    assert config.evaluation.max_request_bytes == 1_048_576
+    assert config.evaluation.recovery_context_tokens == 28_000
+    write_config(
+        tmp_path, {"evaluation": {"max_context_tokens": 1500, "max_total_tokens": 2000, "compaction_calls_per_file": 0}}
+    )
+    configured = load_config([tmp_path], cwd=tmp_path).config
+    assert configured.evaluation.max_context_tokens == 1500
+    assert configured.evaluation.compaction_calls_per_file == 0

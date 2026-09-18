@@ -141,7 +141,7 @@ Benign Choice labels and missing-evidence labels never acquire an invented defec
 |---|---|
 | scan | Existing five-language include patterns and dependency/build excludes; respect_gitignore=true; jobs=0 (up to 8 parsers); batch_size=8; queue_size=8; max_file_bytes=2000000; max_units_per_file=10000 |
 | jev | model="jev-latest"; concurrency=16; requests_per_minute=600; timeout_seconds=30; retries=3; max_retry_delay=60 |
-| evaluation | max_context_tokens=28000; max_total_tokens=56000; token_reserve=512; bytes_per_token=3.0; max_request_bytes=1048576; max_questions=64; oversized_context="reduce" |
+| evaluation | max_context_tokens=null; max_total_tokens=null; recovery_context_tokens=28000; compaction_candidates=32; compaction_calls_per_file=12; token_reserve=512; bytes_per_token=3.0; max_request_bytes=1048576; max_questions=64; oversized_context="reduce" |
 | enrichment | enabled=true; max_checks_per_file=12; max_calls_per_file=36; max_candidates=12; max_evidence=3; max_source_files=1000; max_source_bytes=16777216 |
 | cache | enabled=true; path=".jevscan-cache/results.sqlite3"; ttl_seconds=86400 |
 
@@ -189,3 +189,18 @@ rules:
 ```
 
 There is no automatic rewrite or hidden legacy evaluator; the migration changes schema and selection semantics, not serialization. Migration errors are preferable to silently changing which checks a project runs. Numerical defaults were not retuned in rc4.
+
+
+## RC5: provider-first requests and context preparation
+
+Configuration stays version 4 and stays YAML. The token-estimate ceilings are now optional (`null` by default). Explicit old values are honored, including in copied/resolved configs. `max_request_bytes` and `max_questions` remain mandatory local bounds; TypeSafe independently enforces its actual tokenizer/window. Read [the context/rejection design](CONTEXT.md) before increasing bounds on a live account.
+
+`recovery_context_tokens` defaults to 28000 and applies during AST preparation, after a local configured limit or recognized provider rejection. It is reduced further after a rejected compacted request. `compaction_candidates` limits the same-file AST candidate pool (1–256, default 32). `compaction_calls_per_file` caps relevance prediction calls for preparation (0–512, default 12), including cache hits. Zero disables model ranking, not structural preparation. HTTP retries remain independently bounded by `jev.retries`.
+
+The active YAML question type, instructions and criteria are supplied to every auxiliary evidence query. No built-in ID or particular wording is required: custom rule sets use the same path. Reporting thresholds, titles and severity messages are not substituted for the question's semantics. Rule-specific selection can choose different source for different questions. `enrich_on` still controls *post-answer* uncertainty reviews, not the initial evidence-preparation phase.
+
+`oversized_context: skip` continues to require the configured requested envelope intact. With `reduce`, only surrounding evidence may be selected; an entire target that cannot fit remains skipped. Whole-file rules never receive a partial file under a complete-coverage label. No numeric finding threshold or router probability gate was changed by RC5.
+
+Machine-report schema 6 adds `target.display_name`, `preparation` histories, file-level `coverage` events, and summary counters `compaction_calls`, `compaction_cache_hits`, and `context_rejections`. A preparation history records source hashes, request/rejection metadata, exact selected spans/relations, omitted candidates, caps and model decisions. It does not copy raw submitted source into reports. Ordinary target evidence still records actual included/omitted original-file ranges. The `cached` marker requires the contributing preparation predictions to be cached too; a fresh rejection is not a cache hit.
+
+Default and verbose text both aggregate repetitive coverage notices by file, independently of `--max-display`. JSON/JSONL retain every target's details and diagnostics. Syntax errors, file-read failures and other operational errors are not hidden by aggregation. Canonical source identity and actual `qualified_name` do not change when a callback receives a more readable display label.

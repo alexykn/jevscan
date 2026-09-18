@@ -242,10 +242,10 @@ def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monke
     assert "\x1b" not in text
     if format_name == "json":
         decoded = json.loads(text)
-        assert decoded["schema_version"] == 5 and decoded["events"] == events
+        assert decoded["schema_version"] == 6 and decoded["events"] == events
     else:
         decoded = [json.loads(line) for line in text.splitlines()]
-        assert decoded[0]["schema_version"] == 5 and decoded[1:-1] == events
+        assert decoded[0]["schema_version"] == 6 and decoded[1:-1] == events
 
 
 @pytest.mark.parametrize("width", [32, 80])
@@ -337,7 +337,7 @@ def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
         assert "? test" in text and "probability ambiguous" in text and "no relevant evidence" in text
     else:
         payload = json.loads(text) if format_name == "json" else json.loads(text.splitlines()[0])
-        assert payload["schema_version"] == 5
+        assert payload["schema_version"] == 6
         actual = payload["events"][0] if format_name == "json" else json.loads(text.splitlines()[1])
         assert actual == event
 
@@ -418,7 +418,7 @@ def test_rule_metadata_is_presented_but_not_used_as_a_model_instruction(tmp_path
     parsed = parse_source(b"def f(): return 1\n", FileJob("x.py", "x.py", "python", "python"))
     planner = Planner(ContextBuilder(parsed), config)
     check = next(check for check in planner.checks if check.rule_id == "JEV01")
-    evidence = next(planner.context.variants(check))
+    evidence = planner.context.requested(check)
     results = FileResults(planner)
     results.accept(planner.request(evidence, (check,)), {check.id: NoulAnswer(type="noul", noul=0.95)}, "test", False)
     event = results.records[check.target.id].event()
@@ -427,3 +427,53 @@ def test_rule_metadata_is_presented_but_not_used_as_a_model_instruction(tmp_path
     Reporter(stream, "text", _report_metadata(), width=120).emit(event)
     assert "JEV01 mixed-responsibilities" in stream.getvalue()
     assert "title" not in check.question()["instructions"]
+
+
+@pytest.mark.parametrize("format_name", ["text", "json", "jsonl"])
+def test_coverage_is_aggregated_without_hiding_operational_errors(format_name):
+    stream = io.StringIO()
+    reporter = Reporter(stream, format_name, _report_metadata(), width=100)
+    reporter.emit({
+        "event": "coverage",
+        "path": "large.ts",
+        "reduced_targets": 200,
+        "reduced_checks": 800,
+        "skipped_targets": 1,
+        "skipped_checks": 2,
+    })
+    for index in range(200):
+        reporter.emit({
+            "event": "diagnostic",
+            "path": "large.ts",
+            "code": "context-reduced",
+            "message": f"callback {index}: omitted sibling evidence",
+            "severity": "warning",
+            "line": index + 1,
+        })
+    reporter.emit({
+        "event": "diagnostic",
+        "path": "broken.ts",
+        "code": "syntax-error",
+        "message": "unsupported syntax",
+        "severity": "error",
+        "line": 3,
+    })
+    event = _evaluation_event("canonical_anonymous_name", "warning")
+    event["target"]["path"] = "large.ts"
+    event["target"]["display_name"] = 'describe["suite"].test["renders"]'
+    reporter.emit(event)
+    reporter.emit({"event": "summary", **asdict(Summary("live", incomplete=True))})
+    text = stream.getvalue()
+    if format_name == "text":
+        assert text.count("coverage:") == 1 and "compacted context for 200 targets/800 checks" in text
+        assert "context-reduced" not in text and "callback 199" not in text
+        assert "syntax-error" in text and 'describe["suite"].test["renders"]' in text
+        assert "canonical_anonymous_name" not in text
+    else:
+        events = (
+            json.loads(text)["events"]
+            if format_name == "json"
+            else [json.loads(line) for line in text.splitlines()[1:-1]]
+        )
+        assert len(events) == 203 and events[0]["event"] == "coverage"
+        assert events[-1]["target"]["qualified_name"] == "canonical_anonymous_name"

@@ -1,17 +1,21 @@
 """Execute file-local plans, reclassify cached answers, and retain target attribution."""
 
+import hashlib
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
+from itertools import islice
 from typing import Any
 
 from jevscan.core.assessment import Assessment, assess
 from jevscan.core.cache import AnswerCache
 from jevscan.core.client import JevClient
+from jevscan.core.compaction import Compactor
 from jevscan.core.context import Evidence
 from jevscan.core.enrichment import REVIEW_PRIORITY, Enricher, review_trigger
 from jevscan.core.inference import Inference
 from jevscan.core.models import Diagnostic, EventSink, Summary, Target, emit_diagnostic
-from jevscan.core.planning import Omission, Planner, Request
+from jevscan.core.planning import Omission, Planner, Preparation, Request
 from jevscan.core.protocol import Answer, Check, ContextLimitError
 from jevscan.core.retrieval import SourceIndex
 from jevscan.core.rules import ScoreQuestion
@@ -48,6 +52,15 @@ class TargetResults:
     target: Target
     judgments: dict[str, Judgment] = field(default_factory=dict)
     skipped: dict[str, str] = field(default_factory=dict)
+    preparation: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+
+    def _cached(self, name: str, result: Judgment) -> bool:
+        return result.fully_cached and all(
+            trace.get("reason") != "provider_rejection"
+            and not trace.get("adapted_after_rejection", False)
+            and all(prediction.get("cached", False) for prediction in trace.get("predictions", []))
+            for trace in self.preparation.get(name, [])
+        )
 
     def event(self) -> dict[str, Any]:
         statuses, reasons, findings, tentative = {}, {}, [], []
@@ -68,15 +81,16 @@ class TargetResults:
             },
             "statuses": statuses,
             "uncertainty_reasons": reasons,
+            "preparation": self.preparation,
             "reviews": {name: item.review for name, item in self.judgments.items() if item.review},
             "findings": findings,
             "tentative_findings": tentative,
             "evidence": {name: item.evidence for name, item in self.judgments.items()},
             "models": {name: item.model for name, item in self.judgments.items()},
-            "cached_rules": [name for name, item in self.judgments.items() if item.fully_cached],
+            "cached_rules": [name for name, item in self.judgments.items() if self._cached(name, item)],
             "cached": bool(self.judgments)
             and not self.skipped
-            and all(item.fully_cached for item in self.judgments.values()),
+            and all(self._cached(name, item) for name, item in self.judgments.items()),
             "skipped_rules": self.skipped,
             "scales": {
                 name: len(item.check.rule.question.criteria) - 1
@@ -202,14 +216,103 @@ class FileResults:
             if check.rule_id not in record.judgments and check.rule_id not in record.skipped:
                 assert aborted, "every planned check must have an answer or explicit omission"
                 record.skipped[check.rule_id] = "scan aborted before an answer was received"
+        self.emit_coverage(sink)
         for record in self.records.values():
             record.emit(sink, summary, aborted)
 
+    def emit_coverage(self, sink: EventSink) -> None:
+        affected = [
+            record
+            for record in self.records.values()
+            if record.skipped or any(not result.evidence["context_complete"] for result in record.judgments.values())
+        ]
+        if affected:
+            sink.emit({
+                "event": "coverage",
+                "path": self.planner.context.parsed.path,
+                "reduced_targets": sum(
+                    any(not j.evidence["context_complete"] for j in record.judgments.values()) for record in affected
+                ),
+                "reduced_checks": sum(
+                    not j.evidence["context_complete"] for record in affected for j in record.judgments.values()
+                ),
+                "skipped_targets": sum(bool(record.skipped) for record in affected),
+                "skipped_checks": sum(len(record.skipped) for record in affected),
+            })
 
-async def _execute(request: Request, inference: Inference, results: FileResults) -> None:
-    prediction = await inference.predict(request.body, request.questions)
-    response = prediction.response
-    results.accept(request, response.answers, response.model, prediction.cached)
+
+class FileExecutor:
+    """Run full requests, then pack prepared evidence in bounded batches; own retries here."""
+
+    def __init__(self, planner: Planner, inference: Inference, results: FileResults) -> None:
+        self.planner, self.inference, self.results = planner, inference, results
+        self.compactor = Compactor(planner, inference)
+        self.rejected_states: set[str] = set()
+        self.pending: list[Preparation] = []
+
+    def _rejected(self, request: Request, exc: ContextLimitError) -> None:
+        if len(request.checks) == 1 and request.compaction_round == 0:
+            self.rejected_states.add(request.evidence.key)
+        for check in request.checks:
+            self.results.records[check.target.id].preparation.setdefault(check.rule_id, []).append({
+                "reason": "provider_rejection",
+                "request_sha256": hashlib.sha256(request.body).hexdigest(),
+                **exc.metadata(),
+                "question_count": len(request.checks),
+            })
+
+    async def _execute(self, items: Iterable[Request | Preparation | Omission]) -> None:
+        for planned in items:
+            recovery = deque([planned])
+            while recovery:
+                item = recovery.popleft()
+                if isinstance(item, Omission):
+                    self.results.omit(item)
+                    continue
+                if isinstance(item, Preparation):
+                    self.pending.append(item)
+                    continue
+                if (
+                    item.compaction_round == 0
+                    and item.evidence.key in self.rejected_states
+                    and all(check.target.scope == "unit" for check in item.checks)
+                    and self.planner.limits.oversized_context == "reduce"
+                ):
+                    recovery.extendleft(reversed(self.planner.adapt_rejected_state(item)))
+                    continue
+                try:
+                    prediction = await self.inference.predict(item.body, item.questions)
+                    response = prediction.response
+                    self.results.accept(item, response.answers, response.model, prediction.cached)
+                except ContextLimitError as exc:
+                    self._rejected(item, exc)
+                    recovery.extendleft(reversed(self.planner.recover(item)))
+
+    async def _prepare(self, batch: list[Preparation]) -> list[Request | Omission]:
+        groups: dict[tuple[str, int], tuple[Evidence, list[Check]]] = {}
+        result: list[Request | Omission] = []
+        for task in batch:
+            trace: dict[str, Any] = {}
+            self.results.records[task.check.target.id].preparation.setdefault(task.check.rule_id, []).append(trace)
+            item = await self.compactor.prepare(task, trace)
+            if isinstance(item, Omission):
+                result.append(item)
+                continue
+            key = item.evidence.key, item.compaction_round
+            if key not in groups:
+                groups[key] = item.evidence, []
+            groups[key][1].extend(item.checks)
+        for (_, level), (evidence, checks) in groups.items():
+            result.extend(self.planner.pack(evidence, checks, level))
+        return result
+
+    async def run(self) -> None:
+        await self._execute(self.planner.plan())
+        while self.pending:
+            tasks, self.pending = iter(self.pending), []
+            # At most 64 prepared request bodies per active file; no repository-sized collection.
+            while batch := list(islice(tasks, 64)):
+                await self._execute(await self._prepare(batch))
 
 
 async def evaluate_file(
@@ -224,17 +327,7 @@ async def evaluate_file(
     inference = Inference(client, cache, summary)
     finished = False
     try:
-        for planned in planner.plan():
-            pending = deque([planned])
-            while pending:
-                item = pending.popleft()
-                if isinstance(item, Omission):
-                    results.omit(item)
-                    continue
-                try:
-                    await _execute(item, inference, results)
-                except ContextLimitError:
-                    pending.extendleft(reversed(planner.recover(item)))
+        await FileExecutor(planner, inference, results).run()
         if index is not None:
             await results.enrich(Enricher(planner.context, planner.budget, index.limits, index, inference))
         finished = True

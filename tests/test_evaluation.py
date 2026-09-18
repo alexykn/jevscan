@@ -168,9 +168,9 @@ async def test_provider_rejection_splits_questions_and_attributes_answers_once(b
     assert len({event["target"]["id"] for event in records}) == len(planner.checks)
 
 
-async def test_provider_state_rejection_reduces_to_owner_without_cutting_target(basic_rule: Rule) -> None:
+async def test_provider_state_rejection_compacts_without_cutting_target(basic_rule: Rule) -> None:
     rule = Rule.model_validate({**basic_rule.model_dump(), "context": "file"})
-    config = configured(rule)
+    config = configured(rule, compaction_calls_per_file=0)
     source = 'PADDING = "' + "background " * 4000 + '"\nclass S:\n    def work(self): return 1\n'
     planner = planned(source, config)
     accepted = []
@@ -185,7 +185,11 @@ async def test_provider_state_rejection_reduces_to_owner_without_cutting_target(
     sink, summary = Sink(), Summary("live")
     async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
         await evaluate_file(planner, client, None, sink, summary)
-    assert accepted and all(body["state"]["documents"][0]["content"].startswith("class S:") for body in accepted)
+    primary = [body for body in accepted if "candidate_context" not in body["state"]]
+    assert primary
+    assert all(
+        any("def work(self): return 1" in doc["content"] for doc in body["state"]["documents"]) for body in primary
+    )
     assert summary.units_evaluated == 2 and summary.context_reduced == 2 and summary.incomplete
 
 
@@ -270,7 +274,8 @@ async def test_failure_retains_prior_results_and_marks_unanswered_checks(basic_r
         with pytest.raises(JevError):
             await evaluate_file(planner, client, None, sink, summary)
     assert summary.checks_evaluated == 1 and summary.checks_skipped == 1 and summary.units_failed == 1
-    assert sink.events[0]["answers"] and not sink.events[1]["answers"]
+    evaluations = [event for event in sink.events if event["event"] == "evaluation"]
+    assert evaluations[0]["answers"] and not evaluations[1]["answers"]
     assert summary.incomplete
 
 
@@ -360,3 +365,153 @@ async def test_tentative_severity_reclassifies_from_cache_without_double_countin
             if expected == "error":
                 assert event["cached"] and summary.cache_hits == 1
     assert len(calls) == 1
+
+
+async def test_full_file_exceeding_old_heuristic_limit_is_attempted_intact(basic_rule):
+    rule = Rule.model_validate({**basic_rule.model_dump(), "target": "file", "context": "file", "applies_to": []})
+    source = 'DATA = "' + "unrelated text " * 10_000 + '"\n'
+    config = configured(rule)
+    planner = planned(source, config)
+    request = next(planner.plan())
+    assert isinstance(request, Request) and planner.estimate(request.evidence, request.checks)[0] > 46_000
+    sent = []
+
+    def handle(request):
+        sent.append(json.loads(request.content))
+        return answer(request)
+
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+    assert len(sent) == 1 and sent[0]["state"]["documents"][0]["content"] == source
+    assert not summary.incomplete and summary.compaction_calls == 0
+
+
+async def test_ast_compaction_preserves_helpers_fields_and_captured_declarations(basic_rule):
+    rule = Rule.model_validate({**basic_rule.model_dump(), "context": "file", "applies_to": ["method"]})
+    source = """LIMIT = 7
+class Worker:
+    threshold = LIMIT
+    def constructor(self): self.state = LIMIT
+    def target(self, value): return self.helper(value) + self.threshold
+    def helper(self, value): return value + LIMIT
+"""
+    source += '    def unrelated(self):\n        return "' + "noise " * 10_000 + '"\n'
+    config = configured(
+        rule, max_context_tokens=1600, max_total_tokens=3200, token_reserve=100, compaction_calls_per_file=0
+    )
+    planner = planned(source, config)
+    sent = []
+
+    def handle(request):
+        body = json.loads(request.content)
+        sent.append(body)
+        return answer(request)
+
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+    target = next(
+        event
+        for event in sink.events
+        if event["event"] == "evaluation" and event["target"]["qualified_name"] == "Worker.target"
+    )
+    target_state = next(
+        body["state"]
+        for body in sent
+        if any(q["instructions"]["target"]["qualified_name"] == "Worker.target" for q in body["questions"].values())
+    )
+    text = "\n".join(document["content"] for document in target_state["documents"])
+    assert "LIMIT = 7" in text and "threshold = LIMIT" in text and "def helper" in text
+    assert "noise noise" not in text
+    for document in target_state["documents"]:
+        assert document["content"].encode() == source.encode()[document["start_byte"] : document["end_byte"]]
+    assert target["evidence"]["cohesion"]["target_complete"]
+    assert not target["evidence"]["cohesion"]["context_complete"] and summary.incomplete
+    assert summary.compaction_calls == 0
+    assert len([event for event in sink.events if event["event"] == "coverage"]) == 1
+
+
+async def test_custom_rubric_controls_compaction_queries_and_cache_identity(tmp_path):
+    source = "def target(value): return helper(value)\ndef helper(v): return v\n"
+    source += "".join(f'PAD{i} = "' + "irrelevant " * 500 + '"\n' for i in range(8))
+    requests = []
+
+    def handle(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        if "candidate_context" in body["state"]:
+            answers = {name: {"type": "noul", "noul": 0.9} for name in body["questions"]}
+        else:
+            answers = {
+                name: {
+                    "type": "choice",
+                    "choice": "clear",
+                    "confidence": 0.99,
+                    "probabilities": {"clear": 0.99, "defect": 0.01},
+                }
+                for name in body["questions"]
+            }
+        return httpx.Response(200, json={"model": "test", "answers": answers})
+
+    async with AnswerCache(tmp_path / "cache.sqlite3", 3600) as cache:
+        for criterion in ("Semantic contract A", "Semantic contract B"):
+            rule = Rule.model_validate({
+                "applies_to": ["function"],
+                "context": "file",
+                "question": {
+                    "type": "choice",
+                    "instructions": "Judge a custom transport boundary.",
+                    "criteria": {"clear": criterion, "defect": "The transport boundary is violated"},
+                },
+                "report": {
+                    "message": "Review transport",
+                    "choices": ["defect"],
+                    "levels": {"warning": {"min_probability": 0.6}, "error": {"min_probability": 0.9}},
+                },
+            })
+            config = configured(rule, max_context_tokens=2000, max_total_tokens=5000, token_reserve=100)
+            config = config.model_copy(update={"rules": {"CUSTOM_TRANSPORT": rule}})
+            sink, summary = Sink(), Summary("live")
+            start = len(requests)
+            async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+                await evaluate_file(planned(source, config), client, cache, sink, summary)
+            selections = [body for body in requests[start:] if "candidate_context" in body["state"]]
+            assert selections and summary.compaction_calls
+            for body in selections:
+                for question in body["questions"].values():
+                    assert question["instructions"]["rule"] == rule.question.model_dump(mode="json")
+                    assert "JEV04" not in json.dumps(question)
+            evaluations = [event for event in sink.events if event["event"] == "evaluation"]
+            assert all(event["preparation"]["CUSTOM_TRANSPORT"] for event in evaluations)
+            assert not any(
+                "candidate_context" in body["state"]
+                for body in requests[start:]
+                if next(iter(body["questions"].values()))["type"] == "choice"
+            )
+
+
+async def test_persistent_size_rejection_is_finite_redacted_and_never_scores_partial_file(basic_rule):
+    source = "class S:\n" + "".join(f"    def m{i}(self): return {i}\n" for i in range(20))
+    file_rule = Rule.model_validate({**basic_rule.model_dump(), "target": "file", "context": "file", "applies_to": []})
+    config = configured(basic_rule, compaction_calls_per_file=0)
+    config = config.model_copy(update={"rules": {"file": file_rule, "unit": basic_rule}})
+    sent = []
+
+    def handle(request):
+        sent.append(request.content)
+        return httpx.Response(
+            422,
+            json={"detail": {"code": "max_tokens_exceeded", "input": "SECRET_SOURCE"}},
+            headers={"x-typesafe-request-id": "trace-1"},
+        )
+
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(config.jev, "key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(planned(source, config), client, None, sink, summary)
+    assert len(sent) < 100 and len(sent) == len(set(sent))
+    assert summary.checks_evaluated == 0 and summary.checks_skipped == 22
+    assert summary.context_rejections == len(sent) and summary.incomplete
+    assert "SECRET_SOURCE" not in json.dumps(sink.events)
+    assert any("trace-1" in json.dumps(event.get("preparation", {})) for event in sink.events)
+    assert len([event for event in sink.events if event["event"] == "coverage"]) == 1

@@ -86,13 +86,25 @@ No absolute home directory is added to an ordinary project-relative path merely 
 
 ## Planning and budgets
 
-`ContextBuilder` supplies exact file/owner/unit envelopes. The planner groups matching envelopes, binds independent questions, and packs them under four limits: estimated state-plus-longest-question tokens, estimated state-plus-all-question tokens, serialized request bytes, and question count. Eight recently used source envelopes are retained per active file to avoid accumulating copies for every deeply nested owner.
+Requested file/owner/unit source is attempted intact when it fits the mandatory serialized-byte and question-count caps, plus any explicitly configured token-estimate caps. Defaults no longer use the heuristic 28k estimate as a preemptive source cutoff. TypeSafe's Models page, retrieved on 2026-09-18, specifies **32k state-plus-longest-question and 64k aggregate tokens for Jev 1.13**; the SDK model-list schema itself does not provide a tokenizer or numeric capacity field. `null` local estimates do not remove those real service limits.
 
-The defaults (28k/56k estimated tokens, 512 reserve, 3 UTF-8 bytes per estimated token) are **application policy**, not an exact tokenizer or a promise about current account/model limits. The SDK schema inspected here does not expose a numeric model context window or a token-count endpoint. Provider rejection remains authoritative. Estimates include source JSON escaping, criteria, metadata, and instructions; byte ceilings are checked against the actual request representation.
+`RequestBudget` owns exact wire byte accounting and the UTF-8 heuristic for every phase. Normal and prepared requests sharing identical evidence can be packed; each question retains its target/rule binding. `Evidence.key` hashes the complete encoded state, so two selections with equal bounding offsets but different included ranges are not conflated.
 
-When questions do not fit together, they are split while keeping identical evidence. A successful response yields one answer for each local binding. On HTTP 413, or structured `error.code == max_tokens_exceeded` / top-level `code == max_tokens_exceeded` at HTTP 400/422, the executor asks the planner for a strictly smaller request. It first bisects questions; singleton requests can fall back to narrower surrounding evidence when allowed. Recovery cannot loop indefinitely because each step reduces questions or source extent.
+Size recovery first bisects question batches. A singleton unit can enter bounded AST-aware preparation; a singleton file cannot be partly scored. Preparation reduces budgets geometrically, then may try the complete target alone. It never repeats an identical rejected primary body. A file-local record of singleton state rejection avoids redundant large probes for other unit checks, with an explicit preparation cause rather than an invented individual provider rejection.
 
-An entire target that still cannot fit is reported as omitted. There is no hidden chunk aggregation or generated summary used as a substitute for the source. A reduced context records exact original-file omitted ranges and makes coverage incomplete. File-level judgments always require the full file.
+### Errors: documented contract versus compatibility handling
+
+The public [API](https://docs.typesafe.ai/api), [SDK exceptions](https://docs.typesafe.ai/sdk/python/api/exceptions), and [OpenAPI schema](https://api.typesafe.ai/openapi.json) were retrieved during this release's research. They document HTTP validation failures (422), authentication/permission failures, rate limiting (429), and server/overload handling (including 529). The OpenAPI 422 shape is `detail: [{loc, msg, type, input?, ctx?}, ...]`. **They do not specify a canonical token-limit response body.** No authenticated size-rejection response was observed for this release.
+
+The conservative compatibility handler recognizes HTTP 413, and at HTTP 400/422 only an exact `max_tokens_exceeded` code in a top-level object or an `error`/`detail` object. For example, this is a *supported compatibility shape*, not a claim about a documented real rejection sample:
+
+```json
+{"error": {"code": "max_tokens_exceeded"}}
+```
+
+Arbitrary 422 validation lists, prose mentioning context, unknown codes, authentication failures and timeouts are **not** interpreted as permission to remove source. Unknown errors fail with status/request ID for diagnosis. Echoed `input`, source text, arbitrary server messages, and API keys are never copied into rejection audits. Recognized rejection records retain bounded status, allowlisted code, sanitized request ID and request hash.
+
+429, 529 and other retryable transport/server outcomes retain bounded backoff/`Retry-After` behavior; they do not trigger compaction. Explicit size failures do not retry the same request unchanged. See [CONTEXT.md](CONTEXT.md) for the finite recovery path and the source-completeness contract.
 
 ## Validation and lifecycle
 
@@ -102,20 +114,21 @@ An entire target that still cannot fit is reported as omitted. There is no hidde
 
 `core/evaluation.py` owns answers for one active file. It reclassifies cached raw responses using the active reporting policy, assigns answers to exact targets, and emits each target once after its file finishes. Abort/cancellation still emits completed answers and records unanswered checks. File evaluators run concurrently; request batches within a file are sequential. Questions in a shared request remain logically independent; a question cannot consume another answer from that same request.
 
-Raw-answer cache keys include endpoint, canonical request body, package version, and prompt version (currently 3). Threshold, severity-message, and uncertainty-policy changes do not alter the request. Model, question, target, source, or evidence changes do. A moving model alias can keep serving cache entries until expiry; pin a model for reproducibility.
+Raw-answer cache keys include endpoint, canonical request body, package version, and prompt version (currently 4). Threshold, severity-message, and uncertainty-policy changes do not alter the request. Model, question, target, source, or evidence changes do. A moving model alias can keep serving cache entries until expiry; pin a model for reproducibility.
 
 ## Machine reports
 
-Report schema **5** is separate from configuration schema **4**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/diagnostic/evaluation events, and a final `summary`, flushing each event.
+Report schema **6** is separate from configuration schema **4**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/coverage/diagnostic/evaluation events, and a final `summary`, flushing each event.
 
 An `evaluation` event contains:
 
 | Field | Meaning |
 | --- | --- |
-| `target` | Complete unit/file identity and source span |
+| `target` | Canonical unit/file identity/source span plus a source-derived display label |
 | `answers` | Raw typed answers keyed by YAML rule name |
 | `rule_metadata` | Per-rule title and ruleset membership, separate from identity |
 | `statuses` | `ok`, `unknown`, `not_applicable`, `warning`, or `error` per answer |
+| `preparation` | Per-rule compaction/source selection and bounded rejection history before primary answers |
 | `uncertainty_reasons`, `reviews` | Decision reasons and an auditable, bounded enrichment history |
 | `findings` | Confidence-qualified warning/error findings, each with `target`; these alone determine `--fail-on` |
 | `tentative_findings` | Indicated warning/error signals that remain `unknown`; same item structure, never duplicated in `findings` |
@@ -139,6 +152,8 @@ Automated tests use the actual HTTPX client with MockTransport and the real bund
 The HTTP contract is unchanged. `core/inference.py` is the shared validated/cached prediction owner. `RequestBudget` enforces context, aggregate, byte, and question-count limits in all phases. Auxiliary answers must match the submitted IDs and primitive contracts.
 
 The routing request contains a disposition Choice and four independent family Nouls, not a seven-way mutually exclusive route. Only a confident `local_evidence` disposition admits qualifying families. Candidates come from allowed local source and immutable per-file snapshots. Each candidate's relevance is a separate Noul; all families share candidate and evidence budgets. The final assessment sees the original bound question and additional source, not previous verdicts or routing/relevance scores.
+
+`core/selection.py` is shared by preparation and enrichment; `auxiliary_questions` derives meaning from the active YAML question and exact target, including custom criteria. No code branches on JEV01–JEV09.
 
 Report reviews record disposition, all family probabilities, admitted families, per-family coverage, candidate memberships, selected source, omissions, and stopping outcomes. The resulting `retrieval_coverage` contains `families`, `candidate_families`, and combined-pool omission counts. Family membership is lexical/provenance information, not a resolved contract.
 

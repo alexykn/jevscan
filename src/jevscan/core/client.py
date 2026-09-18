@@ -32,7 +32,7 @@ def _context_rejected(response: httpx.Response) -> bool:
         return False
     if not isinstance(body, dict):
         return False
-    error = body.get("error", body)
+    error = body.get("error", body.get("detail", body))
     return isinstance(error, dict) and error.get("code") == "max_tokens_exceeded"
 
 
@@ -130,7 +130,14 @@ class JevClient:
             if response.is_success:
                 return validate_response(response.content, questions)
             if _context_rejected(response):
-                raise ContextLimitError("Jev rejected the request's context size")
+                request_id = response.headers.get("x-typesafe-request-id", "")[:100]
+                request_id = "".join(c for c in request_id if c.isalnum() or c in "-_")
+                raise ContextLimitError(
+                    "Jev rejected the request's context size",
+                    status=response.status_code,
+                    code="payload_too_large" if response.status_code == 413 else "max_tokens_exceeded",
+                    request_id=request_id,
+                )
             retryable = response.status_code in {408, 429} or response.status_code >= 500
             if not retryable or attempt == self.config.retries:
                 request_id = response.headers.get("x-typesafe-request-id", "unavailable")[:100]

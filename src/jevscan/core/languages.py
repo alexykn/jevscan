@@ -12,7 +12,6 @@ class LanguageSpec:
     grammar: str
     nodes: dict[str, Kind]
     required: frozenset[str]
-    imports: tuple[str, ...]
     branches: tuple[str, ...]
 
 
@@ -43,7 +42,6 @@ SPECS = {
         "python",
         {"function_definition": Kind.FUNCTION, "class_definition": Kind.CLASS},
         frozenset({"function_definition", "class_definition"}),
-        ("import_statement", "import_from_statement"),
         ("if_statement", "elif_clause", "for_statement", "while_statement", "except_clause", "case_clause"),
     ),
     "rust": LanguageSpec(
@@ -61,7 +59,6 @@ SPECS = {
             "closure_expression": Kind.CLOSURE,
         },
         frozenset({"function_item", "struct_item", "enum_item", "trait_item", "impl_item"}),
-        ("use_declaration",),
         ("if_expression", "match_arm", "for_expression", "while_expression", "loop_expression"),
     ),
     "perl": LanguageSpec(
@@ -75,7 +72,6 @@ SPECS = {
             "class_statement": Kind.CLASS,
         },
         frozenset({"subroutine_declaration_statement", "package_statement"}),
-        ("use_statement",),
         ("conditional_statement", "loop_statement", "for_statement", "cstyle_for_statement", "try_statement"),
     ),
     "javascript": LanguageSpec(
@@ -83,7 +79,6 @@ SPECS = {
         "javascript",
         _JS_NODES,
         frozenset({"function_declaration", "class_declaration", "method_definition", "arrow_function"}),
-        ("import_statement",),
         _JS_BRANCHES,
     ),
     "typescript": LanguageSpec(
@@ -100,7 +95,6 @@ SPECS = {
             "function_signature": Kind.FUNCTION,
         },
         frozenset({"function_declaration", "class_declaration", "method_definition", "interface_declaration"}),
-        ("import_statement",),
         _JS_BRANCHES,
     ),
 }
@@ -109,7 +103,6 @@ SPECS["tsx"] = LanguageSpec(
     "tsx",
     SPECS["typescript"].nodes,
     SPECS["typescript"].required,
-    SPECS["typescript"].imports,
     SPECS["typescript"].branches,
 )
 

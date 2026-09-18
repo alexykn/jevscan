@@ -173,3 +173,48 @@ def test_perl_block_namespace_restores_enclosing_package() -> None:
     assert {"Outer", "Outer::before", "Inner", "Inner::work", "Outer::after"} <= units.keys()
     assert units["Outer::after"].parent_id == units["Outer"].id
     assert units["Inner::work"].parent_id == units["Inner"].id
+
+
+def test_callback_labels_preserve_canonical_identity_and_contextual_roles():
+    source = """describe("retained renderer", () => {
+    test("renders a λ", async () => {
+        return new Promise((resolve) => {
+            queueMicrotask(() => resolve(items.map((item) => item.value)));
+        });
+    });
+});
+const first = () => 1;
+"""
+    parsed = parse_source(source.encode(), FileJob("sample.ts", "sample.ts", "typescript", "typescript"))
+    assert not parsed.failed
+    named = {unit.name: unit for unit in parsed.units if not unit.name.startswith("<anonymous")}
+    assert named["first"].display_name == "first"
+    callbacks = [unit for unit in parsed.units if unit.name.startswith("<anonymous")]
+    labels = [unit.display_name for unit in callbacks]
+    assert any('describe["retained renderer"].test["renders a λ"]' in label for label in labels)
+    assert any("Promise[executor]" in label for label in labels)
+    assert any("queueMicrotask[arg0]" in label for label in labels)
+    assert all("<anonymous" not in label for label in labels)
+    assert len({unit.id for unit in parsed.units}) == len(parsed.units)
+    assert all("<anonymous" in unit.qualified_name for unit in callbacks)
+    assert all(unit.id == f"sample.ts:{unit.start_byte}:{unit.kind.value}" for unit in parsed.units)
+    assert all(source.encode()[unit.start_byte : unit.end_byte].decode("utf-8") for unit in callbacks)
+
+
+def test_parser_retains_exact_ast_context_blocks_without_runtime_objects():
+    import pickle
+
+    source = """import { Helper } from "./helpers";
+class S {
+    value = 3;
+    run() {
+        const captured = this.value;
+        return () => captured;
+    }
+}
+"""
+    parsed = parse_source(source.encode(), FileJob("sample.ts", "sample.ts", "typescript", "typescript"))
+    assert not parsed.failed
+    assert pickle.loads(pickle.dumps(parsed)) == parsed  # noqa: S301 -- locally constructed data only
+    blocks = [source.encode()[block.start_byte : block.end_byte].decode() for block in parsed.blocks]
+    assert "value = 3" in "".join(blocks) and "const captured = this.value;" in blocks

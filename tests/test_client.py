@@ -7,12 +7,12 @@ import pytest
 
 from jevscan.core.assessment import assess
 from jevscan.core.client import JevClient, RequestLimiter
-from jevscan.core.config import Config
+from jevscan.core.config import Config, JevConfig
 from jevscan.core.context import ContextBuilder
 from jevscan.core.models import ParsedFile, Severity, Target, Unit
 from jevscan.core.planning import Planner, Request
 from jevscan.core.protocol import Check, ContextLimitError, JevError, validate_response
-from jevscan.core.rules import Rule
+from jevscan.core.rules import NoulQuestion, Rule
 
 
 def request_for(config: Config, unit: Unit) -> Request:
@@ -323,3 +323,41 @@ def test_ambiguous_noul_requires_a_directional_signal_for_tentative_severity(uni
             assert decision.finding is None
             probability = value if expected else 1 - value
             assert bool(decision.tentative_finding) is (probability >= 0.5)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"detail": [{"type": "missing", "loc": ["body", "state"], "input": "SECRET"}]},
+        {"detail": "max_tokens_exceeded"},
+        {"error": {"message": "context is too big", "input": "SECRET"}},
+        {"error": {"code": "unknown_code"}},
+    ],
+)
+async def test_unrecognized_validation_responses_do_not_trigger_source_reduction(payload):
+    from jevscan.core.protocol import ContextLimitError
+
+    config = JevConfig(requests_per_minute=0, retries=0)
+    async with JevClient(
+        config, "key", transport=httpx.MockTransport(lambda _: httpx.Response(422, json=payload))
+    ) as client:
+        with pytest.raises(JevError) as caught:
+            await client.evaluate(b"{}", {})
+    assert not isinstance(caught.value, ContextLimitError)
+    assert "SECRET" not in str(caught.value)
+
+
+async def test_provider_overload_retries_without_context_reduction():
+    count = 0
+
+    def handler(_request):
+        nonlocal count
+        count += 1
+        if count == 1:
+            return httpx.Response(529, headers={"retry-after": "0"})
+        return httpx.Response(200, json={"model": "test", "answers": {"q": {"type": "noul", "noul": 0.9}}})
+
+    config = JevConfig(requests_per_minute=0, retries=1)
+    async with JevClient(config, "key", transport=httpx.MockTransport(handler)) as client:
+        result = await client.evaluate(b"{}", {"q": NoulQuestion(type="noul", instructions="Is the target clear?")})
+    assert count == 2 and result.answers["q"].type == "noul"

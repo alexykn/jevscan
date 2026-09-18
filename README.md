@@ -2,7 +2,7 @@
 
 A configuration-driven semantic code-quality scanner for **Python, Rust, Perl, TypeScript, and JavaScript**. Tree-sitter extracts source; Jev answers independent typed questions. jevscan does not execute or import the code being scanned.
 
-**0.2.0rc4** introduces additive `jevscan.yaml` configuration, named rules and rulesets, and multi-label evidence routing. This is a release candidate, not a claim of calibrated semantic accuracy. [Verification](docs/VERIFICATION.md) separates software checks from live model acceptance.
+**0.2.0rc5** adds full-context attempts with bounded rejection recovery, AST-aware evidence preparation, rule-derived relevance selection, file-level coverage summaries, and contextual callback names. Additive YAML rules and multi-label enrichment remain available. This is a release candidate, not a claim of calibrated semantic accuracy. [Verification](docs/VERIFICATION.md) separates software checks from live model acceptance.
 
 ## Install and run
 
@@ -24,7 +24,7 @@ uv run jevscan src --format jsonl -o report.jsonl
 An installed wheel works without this checkout:
 
 ```bash
-uv tool install ./dist/py3_jevscan-0.2.0rc4-py3-none-any.whl
+uv tool install ./dist/py3_jevscan-0.2.0rc5-py3-none-any.whl
 ```
 
 The pinned `tree-sitter==0.25.2` and `tree-sitter-language-pack==0.13.0` bundle native grammars. Scans never download grammars. Updating these pins requires parser integration tests.
@@ -110,9 +110,26 @@ A method can be judged independently while Jev sees its whole class. Checks shar
 
 `unit` context means the target itself. `owner` means the enclosing class, impl, or callable for methods/nested functions; a top-level function uses its file. Owner-level checks see that owner. Rust owner context starts with the file to include sibling type declarations and impls, without claiming compiler-level resolution. File checks inspect the whole file, including top-level code; they are not averages of unit scores. Module/tree targets are unsupported.
 
-There is **no 32 KB unit cutoff**. The planner checks estimated state-plus-longest-question tokens, aggregate tokens, serialized bytes, and question count. Defaults are 28,000/56,000 estimated tokens, a 512-token reserve, 1 MiB, and 64 questions. The UTF-8 byte estimator is not TypeSafe's tokenizer or a guarantee about provider limits.
+There is **no 32 KB unit cutoff**. By default, jevscan attempts the requested source intact within the real 1 MiB serialized-request and 64-question limits. Local token estimates are not treated as an exact tokenizer: `evaluation.max_context_tokens` and `max_total_tokens` default to `null`. Explicit numeric limits remain enforceable.
 
-Oversized requests first split questions. `evaluation.oversized_context: reduce` permits narrower surrounding context but retains the entire target; `"skip"` requires the requested context unchanged. Explicit provider size rejection also triggers bounded recovery. Reduced context and omitted checks are reported as incomplete coverage. Smaller nested units can still be evaluated. Targets are never clipped or falsely reported as clean.
+**The provider still has a limit.** TypeSafe's current [model documentation](https://docs.typesafe.ai/models) lists 32k tokens for state plus the longest question and 64k for state plus all questions for Jev 1.13. A 46k *estimate* may be inaccurate; a genuinely over-window request cannot be made valid by changing our configuration. [Provider-error handling and research](docs/CONTEXT.md).
+
+On a recognized size rejection, the executor splits question batches first. Unit checks then use AST-aware preparation: complete target, owner headers/imports, directly referenced definitions and fields, captured setup, related members, and a bounded signature index. If candidate evidence still exceeds the recovery budget, independent relevance questions are built from the **active YAML rule's actual instructions and criteria**, not a built-in rule ID. No generated source or summary replaces the code.
+
+Preparation retains original source spans and hashes; non-contiguous fragments are separate documents with explicit omissions. The original target is never cut. Successively rejected compacted requests shrink their budget for at most three preparation rounds, then try the complete target alone if smaller and permitted. Whole-file targets require the whole file; an oversized/rejected file is reported as unevaluated, not scored from a sample. `evaluation.oversized_context: skip` forbids reducing requested evidence.
+
+After one singleton rejection, other unit checks sharing that exact source state may enter preparation without repeating the same large probe. This is a disclosed, file-local recovery policy, not a provider verdict about every other question or a persistent account/model limit. Prepared requests with identical evidence are packed together. Already completed checks are not repeated.
+
+```yaml
+evaluation:
+  max_context_tokens: null       # optional local estimate ceiling
+  max_total_tokens: null
+  recovery_context_tokens: 28000 # conservative preparation budget, not a provider limit
+  compaction_candidates: 32
+  compaction_calls_per_file: 12  # 0 keeps preparation deterministic/AST-only
+```
+
+Existing version-4 project files with explicit numeric token ceilings retain them; set those fields to `null` to opt into provider-first attempts. The byte/question caps, uncertainty reporting, and complete-target requirement remain unchanged. Reduced context and skipped targets still make coverage incomplete and produce exit 2.
 
 ## Bounded evidence enrichment
 
@@ -127,6 +144,8 @@ Candidates from all qualifying families are deduplicated and combined in determi
 ```bash
 uv run jevscan src --no-enrichment
 ```
+
+`--no-enrichment` disables post-answer repository retrieval, not same-file preparation. To disable preparation relevance calls as well, set `evaluation.compaction_calls_per_file: 0`; AST preparation remains available. Offline mode makes no model calls.
 
 Global `enrichment.enabled: false`, per-rule `enrich: false`, or `enrich_on: []` also disables refinement. Defaults limit reviews to 12 checks and 36 auxiliary prediction requests per file, 12 candidates total per review, 3 admitted evidence units, and a lazy project catalogue of at most 1,000 source files / 16 MiB. Cache hits count toward logical limits. Existing token/byte/question budgets apply in every phase.
 
@@ -146,9 +165,9 @@ src/service.py
 
 Confirmed warnings are yellow `!`; errors are red `x`. Signals that cross a configured threshold but lack sufficient confidence appear as cyan `?` uncertain warnings/errors **without `-v`**. An error-level signal remains an uncertain error rather than being downgraded to a confirmed warning. Tentative findings are distinct from confirmed findings and do not trigger `--fail-on`. `-v` adds green OK answers, ordinary uncertainty below finding thresholds, and not-applicable results.
 
-All text, including messages and long titles, wraps to terminal display width with continuation indentation. Colors are automatic for terminals; `COLOR=yes|no` overrides detection and `NO_COLOR` disables them. Display limits count targets after filtering. Diagnostics and summaries are never hidden. Offline inventory lists units without `-v`.
+All text, including messages and long titles, wraps to terminal display width with continuation indentation. Colors are automatic for terminals; `COLOR=yes|no` overrides detection and `NO_COLOR` disables them. Display limits count targets after filtering. Operational errors and summaries remain visible. Repeated `context-reduced` and size-omission notices are replaced in text by one coverage summary per affected file; their full structured events remain in JSON/JSONL. Offline inventory lists units without `-v`.
 
-JSON/JSONL **schema 5** includes all raw answers, stable rule IDs, `rule_metadata` (title/ruleset), statuses, separate confirmed/tentative findings, evidence/model/cache provenance, and review audits. Verbosity and display limits do not filter machine reports. Review audits preserve initial answers, disposition/family predictions, candidate family membership, selected spans, omissions, and stopping outcomes. JSONL flushes each event. File results are grouped when evaluation finishes; files may finish in any order.
+JSON/JSONL **schema 6** includes all raw answers, stable rule IDs, `rule_metadata` (title/ruleset), statuses, separate confirmed/tentative findings, evidence/model/cache provenance, and review/preparation audits. A new `coverage` event groups reduced/omitted check counts by file. Verbosity and display limits do not filter machine reports. Review audits preserve initial answers, disposition/family predictions, candidate family membership, selected spans, omissions, and stopping outcomes. JSONL flushes each event. File results are grouped when evaluation finishes; files may finish in any order.
 
 | Exit | Meaning |
 |---|---|
@@ -158,6 +177,8 @@ JSON/JSONL **schema 5** includes all raw answers, stable rule IDs, `rule_metadat
 | 130 | Interrupted |
 
 `--fail-on never` does not hide incomplete coverage. Model uncertainty is counted separately, not treated as an operational failure. Reported probabilities/confidence are provider values, not measured correctness rates.
+
+Callback headings now use source-derived call roles, for example `describe["renderer"].test["mounts"]`, `OutputWaitOwner.pump.then[arg0]@83:5`, and `Promise[executor]`. These are display labels, not invented symbol bindings: canonical byte-span IDs and `qualified_name` remain unchanged, and retrieval does not treat a test title as a callable name. Unknown roles retain a location-based callback label. Nested callbacks remain scanned; naming does not silently reduce coverage.
 
 ## Extraction, execution, and privacy
 
@@ -169,7 +190,7 @@ discovery → spawned Tree-sitter parsers → bounded file queue
           → terminal / JSON / JSONL
 ```
 
-Each evaluator owns one file's plan/results. Files run concurrently; requests within a file are sequential. Full source/context is retained for active files; the optional shared source catalogue has separate limits. Resource lifecycle belongs to `scanner.py`; selection/loading to `config.py`; question contracts to `rules.py`; packing to `planning.py`; evidence to `context.py`; assessment to `assessment.py`; HTTP/cache prediction to `inference.py`; local candidates to `retrieval.py`; refinement to `enrichment.py`; results to `evaluation.py`; presentation to `cli/`.
+Each evaluator owns one file's plan/results. Files run concurrently; requests within a file are sequential. Full source/context is retained for active files; the optional shared source catalogue has separate limits. Resource lifecycle belongs to `scanner.py`; selection/loading to `config.py`; question contracts to `rules.py`; packing to `planning.py`; exact evidence to `context.py`, AST fragments/labels to `syntax.py`, preparation to `compaction.py`, shared relevance questions to `selection.py`; assessment to `assessment.py`; HTTP/cache prediction to `inference.py`; local candidates to `retrieval.py`; refinement to `enrichment.py`; results to `evaluation.py`; presentation to `cli/`.
 
 Live requests use `POST https://api.typesafe.ai/v1/systemone`. Authentication comes only from `TYPESAFE_API_KEY`. Model precedence is CLI, then `TYPESAFE_DEFAULT_MODEL`, then YAML. `TYPESAFE_BASE_URL` is an environment-only origin override; project config cannot redirect credentials. HTTPS is required except for loopback tests, and redirects are disabled.
 

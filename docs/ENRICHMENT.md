@@ -20,6 +20,12 @@ initial answer
 
 Module/tree scoring, persistent model sessions, compiler-resolved call graphs, and arbitrary repository agents are not implemented.
 
+## Preparation is separate from uncertainty enrichment
+
+Before primary evaluation, requested source may need structural preparation because it exceeds configured bounds or the provider rejects it. This is owned by `compaction.py`, not this router. It builds same-file AST candidates and optionally ranks residual choices. Both phases share `selection.py` and the active YAML rule/criteria binding in `protocol.auxiliary_questions`; neither hardcodes a built-in rule ID or treats the report message as the question.
+
+Preparation has a separate bounded prediction allowance. Exhausting the uncertainty-review budget cannot prevent deterministic AST preparation of later targets in a large file. Conversely, `--no-enrichment` does not disable same-file preparation; set `evaluation.compaction_calls_per_file: 0` to disable its model ranking. Selected code remains an exact source snapshot. [Preparation and provider limits](CONTEXT.md).
+
 ## Admission and priority
 
 `review_trigger` uses the validated rule's `enrich_on` and assessment reason. It admits unknown checks only. Missing evidence precedes reduced context, applicability, explicit confidence/Choice ambiguity opt-ins, then explicit Noul ambiguity opt-ins. Reduced context can qualify even when low confidence is the primary displayed reason. File-local scheduling builds the priority queue before consuming the shared review budget, with deterministic source-position/rule-name ties. Source-order presentation is unaffected.
@@ -63,7 +69,7 @@ Every phase uses the shared inference/cache/transport validator and rate limiter
 
 ## Audit and accounting
 
-Report schema 5 records initial answer/cache/evidence provenance, scheduling trigger, uncertainty reason, each prediction's model/cache flag/request hash/raw answers, disposition, all family probabilities, admitted families, per-family retrieval coverage, candidate family membership/relevance, selected spans, omissions, and stop outcome.
+Report schema 6 records initial answer/cache/evidence provenance, scheduling trigger, uncertainty reason, each prediction's model/cache flag/request hash/raw answers, disposition, all family probabilities, admitted families, per-family retrieval coverage, candidate family membership/relevance, selected spans, omissions, and stop outcome.
 
 The `enrichment_calls` counter counts prediction requests, not individual questions: five routing questions can be one call; a constrained request budget can split them. `enrichment_reviewed` counts admitted checks. `enrichment_reruns` counts actual final reassessments. `enrichment_resolved` counts previously unknown checks whose final status becomes conclusive, including applicability-only decisions. Findings count once, not once per inference phase.
 
@@ -75,7 +81,7 @@ Reviewed on 2026-09-18:
 
 - [Official TypeSafe agent guidance](https://github.com/typesafe-ai/skills/blob/65a39f393687675ce170e6094757de20370365b9/skills/typesafe-ai/SKILL.md): independent shared-state questions, speculative premises, Noul for multiple simultaneous labels, and fresh calls when evidence must be acquired. It also distinguishes distribution confidence from workflow correctness.
 - [Official Python SDK](https://github.com/typesafe-ai/typesafe-sdk-python): typed `system_one(state=..., questions=...)` interface. This architecture does not assume a persistent provider conversation.
-- The live documentation index, Noul and fan-out Markdown pages at `docs.typesafe.ai` were attempted but inaccessible in this environment. The accessible official guidance supports this decomposition; it does not establish measured code-review accuracy or validate our numerical gates.
+- For RC5, the official documentation index, Models, API, SDK exceptions, State, Noul, fan-out, reranking and Jev 1.13 jaggedness pages were successfully retrieved in the isolated reference workflow even though the web fetcher returned cache misses. They support structured independent relevance queries, but do not establish code-review accuracy or validate our numeric gates.
 
 RC3's displayed routing failures did not include full distributions. The explanation that callers/definitions/tests were competing alternatives was a **design hypothesis**, not an observed probability distribution. RC4 removes that inappropriate mutual exclusivity; it does not guarantee that the disposition will become confident or that retrieval will improve a judgment.
 
