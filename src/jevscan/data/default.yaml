@@ -1,0 +1,178 @@
+# Project config replaces this rule set. Use `extends: default` for explicit inheritance.
+version: 1
+
+scan:
+  include: ['*.py', '*.pyi', '*.rs', '*.pl', '*.pm', '*.t', '*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs']
+  exclude: ['.git/', '.venv/', 'venv/', 'node_modules/', 'target/', 'dist/', 'build/', '__pycache__/', '.jevscan-cache/', 'vendor/', '*.min.js']
+  respect_gitignore: true
+  jobs: 0                 # auto: up to 8 parser processes
+  batch_size: 8
+  queue_size: 64          # maximum pending semantic units; not one task per unit
+  max_file_bytes: 2000000
+  max_units_per_file: 10000
+  max_unit_bytes: 32000   # oversized units are reported as skipped, never silently truncated
+  context_bytes: 6000
+  context_members: 32
+
+jev:
+  model: jev-latest       # pin an account-supported version when calibrating rules
+  concurrency: 16
+  requests_per_minute: 600  # starting budget, not a claim about your account's quota; 0 disables pacing
+  timeout_seconds: 30
+  retries: 3
+  max_retry_delay: 60
+  max_request_bytes: 60000
+  max_questions: 64
+
+cache:
+  enabled: true
+  path: .jevscan-cache/results.sqlite3
+  ttl_seconds: 86400
+
+rules:
+  mixed-responsibilities:
+    applies_to: [function, method, closure]
+    require_body: true
+    question:
+      type: noul
+      instructions: >-
+        Does `source` interleave independently meaningful responsibilities in a way that
+        makes this operation harder to understand? Do not flag a cohesive orchestration
+        function merely because it calls several different operations. Length alone is not evidence.
+    report:
+      severity: warning
+      min_probability: 0.90
+      message: This operation appears to interleave responsibilities that would be clearer as distinct operations.
+
+  unclear-control-flow:
+    applies_to: [function, method, closure]
+    require_body: true
+    question:
+      type: score
+      instructions: >-
+        How difficult is the main execution path through `source` to follow?
+        Distinguish unavoidable domain branching from avoidable structural confusion.
+      criteria:
+        - Clear execution path and explicit transitions, including necessary domain branching.
+        - Mostly clear, with some local complexity that does not obscure the operation.
+        - Interleaved concerns or nested branches substantially obscure the operation.
+        - Tangled control flow makes the operation and its important transitions difficult to determine.
+    report:
+      severity: warning
+      min_score: 2.0
+      min_confidence: 0.70
+      message: Interleaved concerns or nesting appear to obscure the main execution path.
+
+  mixed-abstraction-levels:
+    applies_to: [function, method, closure]
+    require_body: true
+    question:
+      type: noul
+      instructions: >-
+        Does `source` mix high-level orchestration with substantial low-level parsing,
+        resource bookkeeping, or implementation detail such that the main operation is obscured?
+        A small necessary detail or explicit cleanup does not by itself establish a problem.
+    report:
+      severity: warning
+      min_probability: 0.90
+      message: High-level orchestration appears mixed with substantial low-level implementation detail.
+
+  redundant-validation:
+    applies_to: [function, method, closure]
+    require_body: true
+    question:
+      type: choice
+      instructions: >-
+        Which statement about repeated validation in `source` is supported by the supplied code?
+        Type annotations, names, and absent callers do not prove that an invariant was established.
+        Revalidation across a new trust boundary or after relevant mutation/concurrency may be necessary.
+      criteria:
+        demonstrably_redundant: The supplied implementation explicitly establishes an invariant and later rechecks it without a new boundary or invalidating operation.
+        justified_or_absent: There is no repeated check, or the repeated check protects a real boundary or invalidation risk.
+        insufficient_context: An upstream guarantee or intervening behavior needed for the judgment is not established by the supplied evidence.
+    report:
+      severity: warning
+      choices: [demonstrably_redundant]
+      min_probability: 0.92
+      min_confidence: 0.70
+      message: A validation check appears to repeat an invariant explicitly established in the supplied code.
+
+  hidden-invariant-failure:
+    applies_to: [function, method, closure]
+    require_body: true
+    question:
+      type: choice
+      instructions: >-
+        Does a default value, swallowed exception, or best-effort continuation in `source`
+        conceal a violation of an internal invariant that is explicitly established in the
+        supplied code? Legitimate I/O failures, cancellation, user input errors, and documented
+        optional behavior are not invariant violations.
+      criteria:
+        concealed_bug: A clearly established internal invariant is violated and the implementation silently conceals it.
+        legitimate_behavior: The behavior handles a legitimate runtime condition or no such concealment is present.
+        insufficient_context: The invariant or intended failure behavior cannot be established from the supplied evidence.
+    report:
+      severity: warning
+      choices: [concealed_bug]
+      min_probability: 0.92
+      min_confidence: 0.70
+      message: A fallback or swallowed failure appears to conceal a violation of an established internal invariant.
+
+  unhelpful-decomposition:
+    applies_to: [class, impl, package, module]
+    question:
+      type: choice
+      instructions: >-
+        Do the helpers visible in `source` make their callers easier to understand by naming
+        coherent operations, or mainly add forwarding/line-splitting indirection? Small helpers,
+        interface adapters, decorators, and required protocol methods are not inherently bad.
+      criteria:
+        meaningful: Decomposition gives coherent operations meaningful names or serves an evident interface requirement.
+        needless_indirection: Visible helpers mainly move lines or forward arguments without hiding meaningful detail, and visibly make the caller harder to follow.
+        insufficient_context: The relevant helper implementations or callers are missing, or the evidence is inconclusive.
+    report:
+      severity: warning
+      choices: [needless_indirection]
+      min_probability: 0.90
+      min_confidence: 0.70
+      message: Helper indirection appears to obscure the caller without providing meaningful decomposition.
+
+  fragmented-ownership:
+    applies_to: [class, impl, package, module]
+    question:
+      type: noul
+      instructions: >-
+        Does `source` maintain duplicate authoritative state or distribute lifecycle bookkeeping
+        across conflicting owners in a way that visibly creates synchronization obligations?
+        Derived caches and deliberately synchronized representations are not problems merely
+        because data is repeated; require a concrete ownership conflict in the supplied implementation.
+    report:
+      severity: warning
+      min_probability: 0.92
+      message: State or lifecycle bookkeeping appears to have competing authoritative owners.
+
+  incohesive-owner:
+    applies_to: [class, impl, package, module]
+    question:
+      type: noul
+      instructions: >-
+        Does this owner in `source` combine unrelated responsibilities whose state and behavior
+        have little meaningful connection? A domain aggregate, a cohesive facade, or one implementation
+        of a required interface is not incohesive merely because it contains many methods.
+    report:
+      severity: warning
+      min_probability: 0.90
+      message: This owner appears to combine unrelated state and behavior.
+
+  duplicated-behavior:
+    applies_to: [class, impl, package, module]
+    question:
+      type: noul
+      instructions: >-
+        Does `source` contain materially duplicated implementations of the same owned behavior,
+        creating a clear maintenance obligation to keep them in sync? Similar syntax alone,
+        distinct trust boundaries, or required trait/interface implementations are insufficient.
+    report:
+      severity: warning
+      min_probability: 0.93
+      message: The same owned behavior appears implemented more than once and may need to be maintained in sync.

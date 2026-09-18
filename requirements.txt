@@ -1,0 +1,8 @@
+# Pinned together: compiled grammars are bundled; no runtime grammar downloads.
+tree-sitter==0.25.2
+tree-sitter-language-pack==0.13.0
+httpx>=0.28.1,<0.29
+pydantic>=2.10,<3
+PyYAML>=6.0.2,<7
+pathspec>=0.12.1,<2
+rich>=13.9,<15
