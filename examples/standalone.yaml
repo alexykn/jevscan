@@ -1,5 +1,5 @@
 # This file REPLACES the packaged rules; only these two checks run.
-version: 1
+version: 2
 jev:
   concurrency: 16
   requests_per_minute: 600
@@ -15,9 +15,12 @@ rules:
         that materially obscures its main operation? Do not flag
         necessary complexity or length alone.
     report:
-      severity: warning
       message: Several responsibilities appear interleaved in this operation.
-      min_probability: 0.90
+      levels:
+        warning:
+          min_probability: 0.50
+        error:
+          min_probability: 0.90
 
   owner-cohesion:
     applies_to: [class, impl, trait, interface, package, module]
@@ -31,8 +34,12 @@ rules:
         mixed: Several unrelated responsibilities are combined under one owner.
         unknown: The supplied implementation is too limited to judge.
     report:
-      severity: warning
       message: This owner appears to combine unrelated responsibilities.
       choices: [mixed]
-      min_probability: 0.92
-      min_confidence: 0.70
+      levels:
+        warning:
+          min_probability: 0.60
+          min_confidence: 0.50
+        error:
+          min_probability: 0.92
+          min_confidence: 0.70
