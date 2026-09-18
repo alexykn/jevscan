@@ -1,0 +1,52 @@
+name: RC5 workspace
+on:
+  push:
+    branches: [feat/rc5-structured-evidence]
+    paths: [.github/workflows/rc5-workspace.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - name: Export source, public references and dependency wheels
+        shell: bash
+        run: |
+          mkdir -p /tmp/rc5/wheels /tmp/rc5/references
+          git archive 6afbfe670df2bb79792bc076cf98a2c721d3a439 > /tmp/rc5/source.tar
+          python -m pip download --dest /tmp/rc5/wheels -r requirements.txt 'pytest>=8.3,<10' 'pytest-asyncio>=0.25,<2' 'ruff>=0.11,<1' 'ty>=0.0.1,<1' 'radon>=6,<7' 'build>=1.2,<2' 'setuptools>=77'
+          python - <<'PY'
+          import json, urllib.request, pathlib
+          root=pathlib.Path('/tmp/rc5/references')
+          paths=['llms.txt','api.md','concepts/state.md','primitives/noul.md','patterns/fan-out.md','cookbooks/rerank_typesafe.md']
+          status={}
+          for path in paths:
+              url='https://docs.typesafe.ai/'+path
+              try:
+                  with urllib.request.urlopen(url, timeout=20) as response:
+                      data=response.read(1000000)
+                      status[url]={'status':response.status,'content_type':response.headers.get('Content-Type'),'bytes':len(data)}
+                      (root/path.replace('/','__')).write_bytes(data)
+              except Exception as exc:
+                  status[url]={'error':str(exc)}
+          (root/'fetch-status.json').write_text(json.dumps(status,indent=2))
+          PY
+          git clone --depth 1 https://github.com/typesafe-ai/typesafe-sdk-python.git /tmp/sdk
+          git -C /tmp/sdk rev-parse HEAD > /tmp/rc5/references/sdk-commit.txt
+          git -C /tmp/sdk archive HEAD > /tmp/rc5/references/sdk.tar
+          git clone --depth 1 --branch agent/dom-occurrence-runtime https://github.com/alexykn/iyon-tui.git /tmp/iyon
+          git -C /tmp/iyon rev-parse HEAD > /tmp/rc5/references/iyon-commit.txt
+          git -C /tmp/iyon archive HEAD packages/iyon-tui/src/runtime/output-waiter.ts packages/iyon-tui/src/react/commit.ts packages/iyon-tui/tests/tui_react_renderer.test.ts packages/iyon-tui/tests/tui_react_key_bindings.test.ts > /tmp/rc5/references/iyon-fixtures.tar
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rc5-workspace
+          path: /tmp/rc5/
+          retention-days: 2
+          if-no-files-found: error
