@@ -63,7 +63,8 @@ def _initial_scopes(directory: Path, root: Path, respect: bool) -> tuple[IgnoreS
 
 def normalize_targets(targets: list[Path]) -> list[Path]:
     """Remove overlapping explicit targets, so the same file is never billed twice."""
-    resolved = sorted({Path(os.path.abspath(path)) for path in targets}, key=lambda p: (len(p.parts), str(p)))
+    # resolve() would follow symlinks before discover() can enforce the no-symlink policy.
+    resolved = sorted({Path(os.path.abspath(path)) for path in targets}, key=lambda p: (len(p.parts), str(p)))  # noqa: PTH100
     result: list[Path] = []
     for path in resolved:
         if not any(parent.is_dir() and path.is_relative_to(parent) for parent in result):
@@ -91,8 +92,14 @@ def discover(targets: list[Path], root: Path, config: ScanConfig) -> Generator[F
         yield from _walk_target(target, root, scopes, config, include, exclude)
 
 
-def _walk_target(target: Path, root: Path, scopes: tuple[IgnoreScope, ...], config: ScanConfig,
-                 include: GitIgnoreSpec, exclude: GitIgnoreSpec) -> Iterator[FileJob | Diagnostic]:
+def _walk_target(
+    target: Path,
+    root: Path,
+    scopes: tuple[IgnoreScope, ...],
+    config: ScanConfig,
+    include: GitIgnoreSpec,
+    exclude: GitIgnoreSpec,
+) -> Iterator[FileJob | Diagnostic]:
     if target.is_file():
         # Explicit files still obey filters; print why rather than silently report a clean scan.
         local = _read_ignore(target.parent) if config.respect_gitignore else None
@@ -145,8 +152,14 @@ def _walk_target(target: Path, root: Path, scopes: tuple[IgnoreScope, ...], conf
             entries.close()
 
 
-def _file(path: Path, root: Path, scopes: tuple[IgnoreScope, ...], include: GitIgnoreSpec,
-          exclude: GitIgnoreSpec, explicit: bool = False) -> Iterator[FileJob | Diagnostic]:
+def _file(
+    path: Path,
+    root: Path,
+    scopes: tuple[IgnoreScope, ...],
+    include: GitIgnoreSpec,
+    exclude: GitIgnoreSpec,
+    explicit: bool = False,
+) -> Iterator[FileJob | Diagnostic]:
     relative = _display(path, root)
     spec = language_for(path)
     selected = include.match_file(relative) and not exclude.match_file(relative) and not _ignored(path, False, scopes)

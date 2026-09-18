@@ -35,6 +35,9 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--format", choices=("text", "json", "jsonl"), default="text", help="report format (default: text)"
     )
+    result.add_argument(
+        "-v", "--verbose", action="store_true", help="show all evaluated answers, not just warnings/errors"
+    )
     result.add_argument("-o", "--output", type=Path, help="write report to this file instead of stdout")
     result.add_argument(
         "--fail-on",
@@ -43,6 +46,9 @@ def parser() -> argparse.ArgumentParser:
         help="minimum finding severity for exit 1; operational failures always exit 2",
     )
     result.add_argument(
-        "--max-display", type=int, default=0, help="text detail limit; 0 means unlimited (JSON is never limited)"
+        "--max-display",
+        type=int,
+        default=0,
+        help="text target limit after filtering; 0 means unlimited (JSON is never limited)",
     )
     return result

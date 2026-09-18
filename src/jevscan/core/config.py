@@ -4,159 +4,62 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self
+from typing import Any, Literal, Self
 
 import yaml
 import yaml.resolver
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
-from jevscan.core.models import Kind
+from jevscan.core.rules import Rule, StrictModel
 
 MAX_CONFIG_BYTES = 1_048_576
 CONFIG_NAMES = ("jevscan.yaml", "jevscan.yml")
-LANGUAGES = frozenset({"python", "rust", "perl", "typescript", "javascript"})
 
 
 class ConfigError(ValueError):
     """Invalid configuration or ambiguous configuration discovery."""
 
 
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
-
-
-class NoulQuestion(StrictModel):
-    type: Literal["noul"]
-    instructions: str = Field(min_length=1)
-
-
-class ChoiceQuestion(StrictModel):
-    type: Literal["choice"]
-    instructions: str = Field(min_length=1)
-    criteria: dict[str, str] = Field(min_length=2, max_length=64)
-
-    @field_validator("criteria")
-    @classmethod
-    def meaningful_labels(cls, value: dict[str, str]) -> dict[str, str]:
-        if any(not key.strip() or not description.strip() for key, description in value.items()):
-            raise ValueError("choice labels and descriptions must be nonempty")
-        return value
-
-
-class ScoreQuestion(StrictModel):
-    type: Literal["score"]
-    instructions: str = Field(min_length=1)
-    criteria: list[str] = Field(min_length=2, max_length=64)
-
-
-Question = Annotated[NoulQuestion | ChoiceQuestion | ScoreQuestion, Field(discriminator="type")]
-
-
-class ReportThreshold(StrictModel):
-    min_probability: float | None = Field(default=None, ge=0, le=1)
-    min_confidence: float | None = Field(default=None, ge=0, le=1)
-    min_score: float | None = None
-    max_score: float | None = None
-
-
-class ReportLevels(StrictModel):
-    warning: ReportThreshold
-    error: ReportThreshold
-
-
-class ReportPolicy(StrictModel):
-    message: str = Field(min_length=1)
-    levels: ReportLevels
-    choices: list[str] | None = None
-    expected: bool = True
-
-
-class Rule(StrictModel):
-    enabled: bool = True
-    applies_to: list[Kind] = Field(min_length=1)
-    languages: list[str] = Field(default_factory=lambda: sorted(LANGUAGES))
-    require_body: bool = False
-    question: Question
-    report: ReportPolicy
-
-    @field_validator("languages")
-    @classmethod
-    def known_languages(cls, value: list[str]) -> list[str]:
-        if not value or set(value) - LANGUAGES:
-            raise ValueError(f"languages must be drawn from {sorted(LANGUAGES)}")
-        return value
-
-    @model_validator(mode="after")
-    def compatible_report(self) -> Self:
-        question, report = self.question, self.report
-        warning, error = report.levels.warning, report.levels.error
-
-        for name, level in (("warning", warning), ("error", error)):
-            if isinstance(question, ScoreQuestion):
-                if (level.min_score is None) == (level.max_score is None):
-                    raise ValueError(f"{name} score level requires exactly one of min_score or max_score")
-                threshold = level.min_score if level.min_score is not None else level.max_score
-                assert threshold is not None
-                if not 0 <= threshold <= len(question.criteria) - 1:
-                    raise ValueError(f"{name} score threshold is outside the rubric")
-                if level.min_probability is not None or report.choices is not None or not report.expected:
-                    raise ValueError("score reports cannot use min_probability, choices, or expected=false")
-            elif isinstance(question, ChoiceQuestion):
-                if not report.choices or set(report.choices) - question.criteria.keys():
-                    raise ValueError("choice reports require choices present in question.criteria")
-                if level.min_probability is None:
-                    raise ValueError(f"{name} choice level requires min_probability")
-                if level.min_score is not None or level.max_score is not None or not report.expected:
-                    raise ValueError("choice reports cannot use score thresholds or expected=false")
-            else:
-                if level.min_probability is None:
-                    raise ValueError(f"{name} noul level requires min_probability")
-                if any(
-                    value is not None
-                    for value in (level.min_confidence, level.min_score, level.max_score, report.choices)
-                ):
-                    raise ValueError("noul reports use min_probability, not confidence, score, or choices")
-
-        self._validate_level_order(warning, error)
-        return self
-
-    @staticmethod
-    def _validate_level_order(warning: ReportThreshold, error: ReportThreshold) -> None:
-        if (warning.min_score is None) != (error.min_score is None):
-            raise ValueError("warning and error score levels must use the same threshold direction")
-        if (warning.max_score is None) != (error.max_score is None):
-            raise ValueError("warning and error score levels must use the same threshold direction")
-        if warning.min_probability is not None and error.min_probability is not None:
-            if warning.min_probability > error.min_probability:
-                raise ValueError("warning min_probability cannot exceed error min_probability")
-        if warning.min_confidence is not None:
-            if error.min_confidence is None or warning.min_confidence > error.min_confidence:
-                raise ValueError("error min_confidence must be at least as strict as warning min_confidence")
-        if warning.min_score is not None and error.min_score is not None and warning.min_score > error.min_score:
-            raise ValueError("warning min_score cannot exceed error min_score")
-        if warning.max_score is not None and error.max_score is not None and warning.max_score < error.max_score:
-            raise ValueError("warning max_score cannot be below error max_score")
-
-
 class ScanConfig(StrictModel):
-    include: list[str] = Field(default_factory=lambda: [
-        "*.py", "*.pyi", "*.rs", "*.pl", "*.pm", "*.t", "*.ts", "*.tsx", "*.mts", "*.cts",
-        "*.js", "*.jsx", "*.mjs", "*.cjs",
-    ])
-    exclude: list[str] = Field(default_factory=lambda: [
-        ".git/", ".venv/", "venv/", "node_modules/", "target/", "dist/", "build/",
-        "__pycache__/", ".jevscan-cache/", "vendor/", "*.min.js",
-    ])
+    include: list[str] = Field(
+        default_factory=lambda: [
+            "*.py",
+            "*.pyi",
+            "*.rs",
+            "*.pl",
+            "*.pm",
+            "*.t",
+            "*.ts",
+            "*.tsx",
+            "*.mts",
+            "*.cts",
+            "*.js",
+            "*.jsx",
+            "*.mjs",
+            "*.cjs",
+        ]
+    )
+    exclude: list[str] = Field(
+        default_factory=lambda: [
+            ".git/",
+            ".venv/",
+            "venv/",
+            "node_modules/",
+            "target/",
+            "dist/",
+            "build/",
+            "__pycache__/",
+            ".jevscan-cache/",
+            "vendor/",
+            "*.min.js",
+        ]
+    )
     respect_gitignore: bool = True
     max_file_bytes: int = Field(default=2_000_000, ge=1)
     max_units_per_file: int = Field(default=10_000, ge=1)
-    # These are explicit resource limits, never code-quality thresholds.
-    max_unit_bytes: int = Field(default=32_000, ge=256)
-    context_bytes: int = Field(default=6_000, ge=0)
-    context_members: int = Field(default=32, ge=0)
     batch_size: int = Field(default=8, ge=1, le=256)
     jobs: int = Field(default=0, ge=0, le=256)
-    queue_size: int = Field(default=64, ge=1)
+    queue_size: int = Field(default=8, ge=1)
 
 
 class JevConfig(StrictModel):
@@ -166,9 +69,25 @@ class JevConfig(StrictModel):
     timeout_seconds: float = Field(default=30, gt=0)
     retries: int = Field(default=3, ge=0, le=10)
     max_retry_delay: float = Field(default=60, ge=0)
-    max_request_bytes: int = Field(default=60_000, ge=1024)
-    max_questions: int = Field(default=64, ge=1, le=256)
 
+
+class EvaluationConfig(StrictModel):
+    # Estimates, not a claim that TypeSafe publishes this tokenizer or these quotas.
+    max_context_tokens: int = Field(default=28_000, ge=1024)
+    max_total_tokens: int = Field(default=56_000, ge=1024)
+    token_reserve: int = Field(default=512, ge=0)
+    bytes_per_token: float = Field(default=3.0, ge=1, le=8)
+    max_request_bytes: int = Field(default=1_048_576, ge=1024)
+    max_questions: int = Field(default=64, ge=1, le=256)
+    oversized_context: Literal["reduce", "skip"] = "reduce"
+
+    @model_validator(mode="after")
+    def coherent_budgets(self) -> Self:
+        if self.max_total_tokens < self.max_context_tokens:
+            raise ValueError("max_total_tokens must be at least max_context_tokens")
+        if self.token_reserve >= self.max_context_tokens:
+            raise ValueError("token_reserve must be smaller than max_context_tokens")
+        return self
 
 
 class CacheConfig(StrictModel):
@@ -180,16 +99,17 @@ class CacheConfig(StrictModel):
     @classmethod
     def project_relative_path(cls, value: str) -> str:
         path = Path(value)
-        if not value.strip() or path.is_absolute() or ".." in path.parts or path == Path("."):
+        if not value.strip() or path.is_absolute() or ".." in path.parts or path == Path():
             raise ValueError("cache.path must be a nonempty file path inside the project")
         return value
 
 
 class Config(StrictModel):
-    version: Literal[2] = 2
+    version: Literal[3] = 3
     scan: ScanConfig = Field(default_factory=ScanConfig)
     jev: JevConfig = Field(default_factory=JevConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
+    evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     rules: dict[str, Rule]
 
     @field_validator("rules")
@@ -301,6 +221,8 @@ def load_config(targets: list[Path], explicit: Path | None = None, cwd: Path | N
         document = _decode_yaml(default_yaml(), "packaged default")
         start = targets[0] if targets and targets[0].is_dir() else (targets[0].parent if targets else cwd)
         root, source = _project_root(start.resolve()), "packaged default"
+    if document.get("version", 3) != 3:
+        raise ConfigError("configuration version 3 is required; see docs/CONFIGURATION.md for migration")
     try:
         config = Config.model_validate(document)
     except (ValidationError, RecursionError) as exc:

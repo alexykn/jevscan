@@ -39,10 +39,10 @@ def test_machine_reports_are_valid_and_preserve_literal_text(format_name: str) -
 
 def test_missing_parser_produces_incomplete_json_not_fake_success(tmp_path: Path, monkeypatch, capsys) -> None:
     from jevscan.core import scanner
-    from jevscan.core.parser import ParserUnavailable
+    from jevscan.core.parser import ParserUnavailableError
 
     def unavailable() -> None:
-        raise ParserUnavailable("deliberate missing-dependency test")
+        raise ParserUnavailableError("deliberate missing-dependency test")
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(scanner, "require_parser_runtime", unavailable)
@@ -82,7 +82,7 @@ def _report_metadata() -> dict[str, object]:
 
 def test_text_report_groups_all_answers_under_one_unit() -> None:
     stream = io.StringIO()
-    reporter = Reporter(stream, "text", _report_metadata())
+    reporter = Reporter(stream, "text", _report_metadata(), verbose=True, width=120)
     unit = {
         "path": "src/example.py",
         "start_line": 25,
@@ -91,8 +91,14 @@ def test_text_report_groups_all_answers_under_one_unit() -> None:
     }
     reporter.emit({
         "event": "evaluation",
-        "unit": unit,
+        "target": unit,
         "cached": True,
+        "statuses": {
+            "mixed-responsibilities": "error",
+            "unclear-control-flow": "warning",
+            "redundant-validation": "ok",
+        },
+        "scales": {"unclear-control-flow": 3},
         "answers": {
             "mixed-responsibilities": {"type": "noul", "noul": 0.21},
             "unclear-control-flow": {
@@ -131,7 +137,7 @@ def test_text_report_groups_all_answers_under_one_unit() -> None:
     assert text.count("ContextBuilder.__init__") == 1
     assert "M 25 ContextBuilder.__init__  cached" in text
     assert "x mixed-responsibilities" in text and "noul=0.210" in text
-    assert "! unclear-control-flow" in text and "score=2.000  conf=0.840" in text
+    assert "! unclear-control-flow" in text and "score=2.000/3  conf=0.840" in text
     assert "redundant-validation" in text and "justified_or_absent  p=0.830  conf=0.740" in text
     assert "Responsibilities are interleaved." in text
     assert "Control flow is difficult to follow." in text
@@ -146,7 +152,7 @@ def test_text_report_colors_tty_output(monkeypatch) -> None:
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("COLOR", "auto")
     stream = TtyStream()
-    reporter = Reporter(stream, "text", _report_metadata())
+    reporter = Reporter(stream, "text", _report_metadata(), verbose=True, width=120)
     reporter.emit({
         "event": "unit",
         "unit": {
@@ -157,3 +163,124 @@ def test_text_report_colors_tty_output(monkeypatch) -> None:
         },
     })
     assert "\x1b[" in stream.getvalue()
+
+
+def _evaluation_event(name: str = "work", status: str = "warning") -> dict:
+    finding = {"rule": "cohesion", "severity": status, "message": "A configurable explanation."}
+    return {
+        "event": "evaluation",
+        "target": {
+            "scope": "unit",
+            "kind": "function",
+            "path": "src/demo.py",
+            "qualified_name": name,
+            "start_line": 10,
+            "end_line": 20,
+        },
+        "answers": {"cohesion": {"type": "noul", "noul": 0.95}},
+        "statuses": {"cohesion": status},
+        "findings": [finding] if status in {"warning", "error"} else [],
+        "scales": {},
+        "cached": False,
+    }
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+def test_default_filters_before_headers_and_display_limits(verbose: bool, monkeypatch) -> None:
+    monkeypatch.setenv("COLOR", "no")
+    stream = io.StringIO()
+    reporter = Reporter(stream, "text", _report_metadata(), max_display=1, verbose=verbose)
+    reporter.emit(_evaluation_event("clean_target", "ok"))
+    reporter.emit(_evaluation_event("warning_target", "warning"))
+    reporter.emit(_evaluation_event("error_target", "error"))
+    reporter.emit({
+        "event": "diagnostic",
+        "path": "other.py",
+        "severity": "warning",
+        "code": "coverage",
+        "message": "Still visible",
+    })
+    reporter.emit({"event": "summary", **asdict(Summary("live"))})
+    text = stream.getvalue()
+    assert ("clean_target" in text) is verbose
+    assert ("warning_target" in text) is not verbose
+    assert "error_target" not in text
+    assert "Still visible" in text
+    assert f"omitted={2 if verbose else 1} targets" in text
+    assert text.count("src/demo.py") == 1
+
+
+@pytest.mark.parametrize("format_name", ["json", "jsonl"])
+def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monkeypatch) -> None:
+    monkeypatch.setenv("COLOR", "yes")
+    stream = io.StringIO()
+    reporter = Reporter(stream, format_name, _report_metadata(), max_display=1)
+    events = [
+        _evaluation_event("clean", "ok"),
+        _evaluation_event("unknown", "unknown"),
+        _evaluation_event("bad", "error"),
+    ]
+    for event in events:
+        reporter.emit(event)
+    reporter.emit({"event": "summary", **asdict(Summary("live"))})
+    text = stream.getvalue()
+    assert "\x1b" not in text
+    if format_name == "json":
+        decoded = json.loads(text)
+        assert decoded["schema_version"] == 2 and decoded["events"] == events
+    else:
+        decoded = [json.loads(line) for line in text.splitlines()]
+        assert decoded[0]["schema_version"] == 2 and decoded[1:-1] == events
+
+
+@pytest.mark.parametrize("width", [32, 80])
+@pytest.mark.parametrize("color", [False, True])
+def test_wrapping_keeps_hanging_indent_and_display_cell_width(width: int, color: bool, monkeypatch) -> None:
+    from wcwidth import strip_sequences, wcswidth
+
+    from jevscan.cli.terminal import DIM, Terminal
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("COLOR", "yes" if color else "no")
+    stream = io.StringIO()
+    terminal = Terminal(stream, width)
+    message = "The café e\u0301 中文 execution path " + "verylongword" * 12 + " needs review.\nA second paragraph."
+    terminal.write(message, 10, DIM)
+    lines = [strip_sequences(line) for line in stream.getvalue().splitlines()]
+    assert len(lines) > 2
+    assert all(line.startswith(" " * 10) and wcswidth(line) <= width for line in lines)
+    # Wrapping does not delete non-whitespace characters or interpret literal markup.
+    assert "".join("".join(lines).split()) == "".join(message.split())
+
+
+@pytest.mark.parametrize("flag", [[], ["-v"], ["--verbose"]])
+def test_cli_verbose_flag_controls_only_text_details(flag: list[str], tmp_path: Path, monkeypatch, capsys) -> None:
+    import importlib
+
+    cli = importlib.import_module("jevscan.cli.main")
+
+    async def scan(_paths, _loaded, sink, **_options):
+        sink.emit(_evaluation_event("clean_target", "ok"))
+        sink.emit(_evaluation_event("bad_target", "error"))
+        summary = Summary("live", findings={"info": 0, "warning": 0, "error": 1})
+        sink.emit({"event": "summary", **asdict(summary)})
+        return summary
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "run_scan", scan)
+    assert main([".", *flag]) == 1
+    text = capsys.readouterr().out
+    assert ("clean_target" in text) == bool(flag)
+    assert "x cohesion" in text and "bad_target" in text
+
+
+def test_untrusted_terminal_text_cannot_inject_ansi(monkeypatch) -> None:
+    from jevscan.cli.terminal import Terminal
+
+    monkeypatch.setenv("COLOR", "no")
+    stream = io.StringIO()
+    Terminal(stream).write("[red] literal λ \x1b[2J \r \u202e text")
+    output = stream.getvalue()
+    assert "[red] literal λ" in output
+    assert "\x1b" not in output and "\r" not in output and "\u202e" not in output
+    assert "\\u001b[2J" in output

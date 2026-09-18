@@ -1,10 +1,10 @@
 """Native Tree-sitter queries, executed in process workers, produce lexical code units."""
 
+import re
 from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from functools import lru_cache
-import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -12,7 +12,7 @@ from jevscan.core.languages import SPECS
 from jevscan.core.models import Diagnostic, FileJob, Kind, ParsedFile, Severity, Unit
 
 
-class ParserUnavailable(RuntimeError):
+class ParserUnavailableError(RuntimeError):
     """Missing or incompatible Tree-sitter runtime/grammar installation."""
 
 
@@ -32,7 +32,9 @@ def require_parser_runtime() -> None:
         import tree_sitter  # noqa: F401
         import tree_sitter_language_pack  # noqa: F401
     except ImportError as exc:
-        raise ParserUnavailable("Tree-sitter dependencies are missing; install the project with 'uv sync'") from exc
+        raise ParserUnavailableError(
+            "Tree-sitter dependencies are missing; install the project with 'uv sync'"
+        ) from exc
 
 
 @lru_cache(maxsize=6)
@@ -43,11 +45,12 @@ def _frontend(grammar: str) -> tuple[Any, Any]:
     spec = SPECS[grammar]
     language_name = cast(SupportedLanguage, grammar)
     language = get_language(language_name)
-    available = {language.node_kind_for_id(i) for i in range(language.node_kind_count)
-                 if language.node_kind_is_named(i)}
+    available = {
+        language.node_kind_for_id(i) for i in range(language.node_kind_count) if language.node_kind_is_named(i)
+    }
     missing = spec.required - available
     if missing:
-        raise ParserUnavailable(f"{grammar} grammar lacks required syntax nodes: {', '.join(sorted(missing))}")
+        raise ParserUnavailableError(f"{grammar} grammar lacks required syntax nodes: {', '.join(sorted(missing))}")
     patterns = []
     for capture, names in (("unit", spec.nodes), ("import", spec.imports), ("branch", spec.branches)):
         supported = [name for name in names if name in available]
@@ -57,15 +60,21 @@ def _frontend(grammar: str) -> tuple[Any, Any]:
 
 
 def _text(node: Any, source: bytes) -> str:
-    return source[node.start_byte:node.end_byte].decode("utf-8")
+    return source[node.start_byte : node.end_byte].decode("utf-8")
 
 
 def _body(node: Any) -> Any:
     body = node.child_by_field_name("body")
     if body is not None:
         return body
-    return next((child for child in node.named_children
-                 if child.type in {"block", "class_body", "interface_body", "declaration_list"}), None)
+    return next(
+        (
+            child
+            for child in node.named_children
+            if child.type in {"block", "class_body", "interface_body", "declaration_list"}
+        ),
+        None,
+    )
 
 
 def _binding(node: Any, source: bytes) -> tuple[str | None, Kind | None]:
@@ -75,13 +84,21 @@ def _binding(node: Any, source: bytes) -> tuple[str | None, Kind | None]:
         if current is None:
             break
         fields = {
-            "variable_declarator": "name", "assignment_expression": "left", "let_declaration": "pattern",
-            "pair": "key", "public_field_definition": "name", "field_definition": "property",
+            "variable_declarator": "name",
+            "assignment_expression": "left",
+            "let_declaration": "pattern",
+            "pair": "key",
+            "public_field_definition": "name",
+            "field_definition": "property",
         }
         if current.type in fields:
             name = current.child_by_field_name(fields[current.type])
             if name is not None:
-                kind = Kind.METHOD if current.type in {"pair", "public_field_definition", "field_definition"} else Kind.FUNCTION
+                kind = (
+                    Kind.METHOD
+                    if current.type in {"pair", "public_field_definition", "field_definition"}
+                    else Kind.FUNCTION
+                )
                 return _text(name, source).strip("\"'"), kind
             break
         if current.type not in {"parenthesized_expression", "as_expression", "satisfies_expression"}:
@@ -116,8 +133,11 @@ def _extend_perl_namespaces(symbols: list[_Symbol]) -> None:
     """`package Foo; ...` has lexical extent even though its syntax node is only a statement."""
     scopes: dict[int, list[_Symbol]] = defaultdict(list)
     for symbol in symbols:
-        if (symbol.node.type in {"package_statement", "class_statement"}
-                and symbol.node.parent is not None and symbol.body is None):
+        if (
+            symbol.node.type in {"package_statement", "class_statement"}
+            and symbol.node.parent is not None
+            and symbol.body is None
+        ):
             # Block-scoped namespaces restore their enclosing namespace afterward.
             scopes[symbol.node.parent.id].append(symbol)
     for siblings in scopes.values():
@@ -144,8 +164,9 @@ def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: li
     stack: list[Unit] = []
     member_counts: dict[str, int] = defaultdict(int)
     for symbol in symbols:
-        while stack and not (stack[-1].start_byte <= symbol.start < stack[-1].end_byte
-                             and symbol.end <= stack[-1].end_byte):
+        while stack and not (
+            stack[-1].start_byte <= symbol.start < stack[-1].end_byte and symbol.end <= stack[-1].end_byte
+        ):
             stack.pop()
         parent = stack[-1] if stack else None
         kind = symbol.kind
@@ -159,17 +180,24 @@ def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: li
             # Perl package declarations and explicitly qualified subs name absolute namespaces.
             qualified = symbol.name
         signature_end = symbol.body.start_byte if symbol.body is not None else symbol.node.end_byte
-        signature = source[symbol.start:signature_end].decode("utf-8").strip()
+        signature = source[symbol.start : signature_end].decode("utf-8").strip()
         # Metadata is bounded; the full source unit sent for analysis remains untruncated.
         if len(signature) > 1024:
             signature = signature[:1024] + " [signature abbreviated]"
         unit = Unit(
-            id=f"{job.display_path}:{symbol.start}:{kind}", path=job.display_path, language=job.language,
-            kind=kind, name=symbol.name, qualified_name=qualified, parent_id=parent.id if parent else None,
-            start_byte=symbol.start, end_byte=symbol.end,
+            id=f"{job.display_path}:{symbol.start}:{kind}",
+            path=job.display_path,
+            language=job.language,
+            kind=kind,
+            name=symbol.name,
+            qualified_name=qualified,
+            parent_id=parent.id if parent else None,
+            start_byte=symbol.start,
+            end_byte=symbol.end,
             start_line=bisect_left(newlines, symbol.start) + 1,
             end_line=bisect_left(newlines, max(symbol.start, symbol.end - 1)) + 1,
-            signature=signature, has_body=symbol.body is not None,
+            signature=signature,
+            has_body=symbol.body is not None,
             branch_nodes=bisect_left(branches, symbol.end) - bisect_left(branches, symbol.start),
         )
         if parent:
@@ -186,8 +214,13 @@ def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> Parsed
     parser, query = _frontend(job.grammar)
     tree = parser.parse(source)
     if tree.root_node.has_error:
-        error = Diagnostic(job.display_path, "syntax-error", "Tree-sitter reported invalid or unsupported syntax; file not evaluated",
-                           Severity.ERROR, _first_error_line(tree.root_node))
+        error = Diagnostic(
+            job.display_path,
+            "syntax-error",
+            "Tree-sitter reported invalid or unsupported syntax; file not evaluated",
+            Severity.ERROR,
+            _first_error_line(tree.root_node),
+        )
         return ParsedFile(job.display_path, job.language, b"", (), diagnostics=(error,), failed=True)
     captures = QueryCursor(query).captures(tree.root_node)
     captured = captures.get("unit", [])
@@ -199,7 +232,9 @@ def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> Parsed
         _extend_perl_namespaces(symbols)
     branches = sorted(node.start_byte for node in captures.get("branch", []))
     units = _normalize(symbols, source, job, branches)
-    declarations = tuple(_text(node, source)[:1024] for node in sorted(captures.get("import", []), key=lambda n: n.start_byte)[:32])
+    declarations = tuple(
+        _text(node, source)[:1024] for node in sorted(captures.get("import", []), key=lambda n: n.start_byte)[:32]
+    )
     return ParsedFile(job.display_path, job.language, source, units, declarations)
 
 
@@ -210,8 +245,12 @@ def parse_batch(jobs: list[FileJob], max_file_bytes: int, max_units: int) -> lis
             with Path(job.absolute_path).open("rb") as stream:
                 source = stream.read(max_file_bytes + 1)
             if len(source) > max_file_bytes:
-                diagnostic = Diagnostic(job.display_path, "file-size-limit", f"file exceeds scan.max_file_bytes ({max_file_bytes})")
-                results.append(ParsedFile(job.display_path, job.language, b"", (), diagnostics=(diagnostic,), failed=True))
+                diagnostic = Diagnostic(
+                    job.display_path, "file-size-limit", f"file exceeds scan.max_file_bytes ({max_file_bytes})"
+                )
+                results.append(
+                    ParsedFile(job.display_path, job.language, b"", (), diagnostics=(diagnostic,), failed=True)
+                )
                 continue
             results.append(parse_source(source, job, max_units))
         except (OSError, UnicodeError) as exc:

@@ -48,7 +48,7 @@ def _list_rules(config: Config) -> None:
         error = rule.report.levels.error.model_dump(exclude_none=True)
         print(
             f"{name}\tenabled={rule.enabled}\ttype={rule.question.type}\t"
-            f"applies_to={','.join(rule.applies_to)}\twarning={warning}\terror={error}"
+            f"target={rule.target} context={rule.context} applies_to={','.join(rule.applies_to)}\twarning={warning}\terror={error}"
         )
 
 
@@ -62,6 +62,13 @@ def _validate_output(output: Path | None, paths: list[Path], config_source: str)
         target = target.resolve()
         if absolute == target or (target.is_dir() and absolute.is_relative_to(target) and language_for(absolute)):
             raise ConfigError("output path overlaps source being scanned; choose a .json, .jsonl, or .txt report path")
+
+
+def _validate_scan_options(config: Config, args: Any) -> None:
+    if args.max_display < 0:
+        raise ConfigError("--max-display must be nonnegative")
+    if not args.offline and not any(rule.enabled for rule in config.rules.values()):
+        raise ConfigError("there are no enabled rules; use --offline for an inventory or enable a rule")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -80,10 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.list_rules:
             _list_rules(loaded.config)
             return 0
-        if args.max_display < 0:
-            raise ConfigError("--max-display must be nonnegative")
-        if not args.offline and not any(rule.enabled for rule in loaded.config.rules.values()):
-            raise ConfigError("there are no enabled rules; use --offline for an inventory or enable a rule")
+        _validate_scan_options(loaded.config, args)
         _validate_output(args.output, paths, loaded.source)
         metadata = {
             "version": __version__,
@@ -97,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         context = args.output.open("w", encoding="utf-8") if args.output else nullcontext(sys.stdout)
         with context as output:
-            reporter = Reporter(output, args.format, metadata, max_display=args.max_display)
+            reporter = Reporter(output, args.format, metadata, max_display=args.max_display, verbose=args.verbose)
             summary = asyncio.run(
                 run_scan(
                     paths,
