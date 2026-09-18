@@ -36,14 +36,17 @@ def parser() -> argparse.ArgumentParser:
         "--format", choices=("text", "json", "jsonl"), default="text", help="report format (default: text)"
     )
     result.add_argument(
-        "-v", "--verbose", action="store_true", help="show all evaluated answers, not just warnings/errors"
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="show all answers, including below-threshold uncertainty and OK results",
     )
     result.add_argument("-o", "--output", type=Path, help="write report to this file instead of stdout")
     result.add_argument(
         "--fail-on",
         choices=("info", "warning", "error", "never"),
         default="warning",
-        help="minimum finding severity for exit 1; operational failures always exit 2",
+        help="minimum confirmed finding severity for exit 1; uncertain findings do not fail; operational failures exit 2",
     )
     result.add_argument(
         "--max-display",

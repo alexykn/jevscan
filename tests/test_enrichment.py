@@ -19,7 +19,7 @@ from jevscan.core.parser import parse_source
 from jevscan.core.planning import Planner
 from jevscan.core.protocol import JevError, NoulAnswer
 from jevscan.core.retrieval import SourceIndex
-from jevscan.core.rules import Rule
+from jevscan.core.rules import ChoiceQuestion, Rule
 
 pytestmark = [pytest.mark.parser, pytest.mark.usefixtures("grammar_runtime")]
 
@@ -321,3 +321,138 @@ async def test_confident_primary_answer_does_not_request_enrichment(tmp_path, ev
     events, summary, index = await run_review(tmp_path, evidence_rule, clean)
     assert events[0]["statuses"]["contract"] == "ok"
     assert not events[0]["reviews"] and summary.enrichment_calls == 0 and index._catalogue is None
+
+
+@pytest.mark.parametrize("kind", ["score", "noul", "choice"])
+async def test_intrinsic_uncertainty_does_not_route_or_load_the_catalogue(tmp_path, evidence_rule, kind):
+    if kind == "choice":
+        rule = evidence_rule
+    else:
+        question = {"type": kind, "instructions": "Judge the structure."}
+        levels = {"warning": {"min_probability": 0.5}, "error": {"min_probability": 0.9}}
+        if kind == "score":
+            question["criteria"] = ["Clear", "Local", "Obscured", "Tangled"]
+            levels = {
+                "warning": {"min_score": 1.0, "min_confidence": 0.6},
+                "error": {"min_score": 2.0, "min_confidence": 0.7},
+            }
+        rule = Rule.model_validate({
+            "applies_to": ["function"],
+            "question": question,
+            "report": {
+                "message": "Inspect structure",
+                "levels": levels,
+                **({"uncertain_range": [0.4, 0.6]} if kind == "noul" else {}),
+            },
+        })
+
+    def primary_only(request):
+        body = json.loads(request.content)
+        assert "route" not in body["questions"]
+        if kind == "score":
+            raw = {
+                "type": "score",
+                "score": 1.66,
+                "confidence": 0.58,
+                "probabilities": {"0": 0.05, "1": 0.3, "2": 0.59, "3": 0.06},
+            }
+        elif kind == "noul":
+            raw = {"type": "noul", "noul": 0.55}
+        else:
+            assert isinstance(rule.question, ChoiceQuestion)
+            raw = choice(rule.question.criteria, "clean", 0.3)
+        return httpx.Response(200, json={"model": "test", "answers": dict.fromkeys(body["questions"], raw)})
+
+    events, summary, index = await run_review(tmp_path, rule, primary_only)
+    assert summary.enrichment_calls == summary.enrichment_reviewed == 0 and index._catalogue is None
+    assert events[0]["statuses"]["contract"] == "unknown" and not events[0]["reviews"]
+    assert bool(events[0]["tentative_findings"]) is (kind != "choice")
+    assert summary.findings == {"info": 0, "warning": 0, "error": 0}
+    assert summary.tentative_findings["warning"] == (kind != "choice")
+
+
+async def test_evidence_gaps_win_the_budget_before_earlier_optional_reviews(tmp_path, evidence_rule):
+    document = evidence_rule.model_dump()
+    document["question"]["criteria"]["na"] = "No applicable operation"
+    document["report"]["not_applicable_choices"] = ["na"]
+    document["enrich_on"] = ["missing_evidence", "reduced_context", "applicability", "low_confidence"]
+    rule = Rule.model_validate(document)
+    assert isinstance(rule.question, ChoiceQuestion)
+    labels = rule.question.criteria
+    responses = Responses("sufficient")
+
+    def heterogeneous(request):
+        body = json.loads(request.content)
+        if "route" in body["questions"]:
+            return responses(request)
+        answers = {}
+        for key, question in body["questions"].items():
+            target = question["instructions"]["target"]["qualified_name"]
+            answers[key] = choice(labels, "missing" if target == "last_gap" else "na", 0.3)
+        return httpx.Response(200, json={"model": "test", "answers": answers})
+
+    source = "def first(v): return v\ndef second(v): return v\ndef last_gap(v): return v\n"
+    events, summary, _ = await run_review(
+        tmp_path, rule, heterogeneous, source=source, enrichment=EnrichmentConfig(max_checks_per_file=1)
+    )
+    assert len(responses.requests) == 1
+    route = responses.requests[0]["questions"]["route"]["instructions"]
+    assert route["target"]["qualified_name"] == "last_gap"
+    assert [event["target"]["qualified_name"] for event in events] == ["first", "second", "last_gap"]
+    assert [event["reviews"]["contract"]["outcome"] for event in events] == [
+        "check_budget",
+        "check_budget",
+        "sufficient",
+    ]
+    assert events[-1]["reviews"]["contract"]["trigger"] == "missing_evidence"
+    assert summary.enrichment_reviewed == 1
+
+
+async def test_reduced_context_is_actionable_even_when_reason_is_low_confidence(tmp_path, evidence_rule):
+    rule = evidence_rule.model_copy(update={"context": "file"})
+    responses = Responses("sufficient")
+
+    def low_confidence(request):
+        body = json.loads(request.content)
+        if "route" in body["questions"]:
+            return responses(request)
+        return httpx.Response(
+            200,
+            json={
+                "model": "test",
+                "answers": {key: choice(rule.question.criteria, "clean", 0.3) for key in body["questions"]},
+            },
+        )
+
+    source = 'PADDING = "' + "background " * 1000 + '"\ndef work(v): return v\n'
+    events, summary, _ = await run_review(
+        tmp_path,
+        rule,
+        low_confidence,
+        source=source,
+        evaluation=EvaluationConfig(max_context_tokens=1500, max_total_tokens=3000, token_reserve=100),
+    )
+    review = events[0]["reviews"]["contract"]
+    assert review["trigger"] == "reduced_context" and review["initial_reason"] == "low_confidence"
+    assert summary.enrichment_reviewed == 1 and summary.incomplete
+
+
+async def test_context_sensitive_rule_can_opt_into_low_confidence(tmp_path, evidence_rule):
+    rule = evidence_rule.model_copy(update={"enrich_on": ["low_confidence"]})
+    responses = Responses("sufficient")
+
+    def low_confidence(request):
+        body = json.loads(request.content)
+        if "route" in body["questions"]:
+            return responses(request)
+        return httpx.Response(
+            200,
+            json={
+                "model": "test",
+                "answers": {key: choice(rule.question.criteria, "clean", 0.3) for key in body["questions"]},
+            },
+        )
+
+    events, summary, _ = await run_review(tmp_path, rule, low_confidence)
+    assert summary.enrichment_reviewed == 1 and len(responses.requests) == 1
+    assert events[0]["reviews"]["contract"]["trigger"] == "low_confidence"

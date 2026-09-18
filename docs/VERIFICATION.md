@@ -1,42 +1,48 @@
-# Verification record — 0.2.0rc2
+# Verification record — 0.2.0rc3
 
 ## Local software checks
 
-Executed in a Linux x86-64 container with CPython 3.13.5, actual bundled Tree-sitter grammars, HTTPX 0.28.1, Pydantic 2.13.5, wcwidth 0.8.4, Ruff 0.16.8, and ty 0.0.82. Dependencies were installed from downloaded wheels because the working container cannot access a package index directly.
+Executed in a Linux x86-64 container with CPython 3.13.5, actual bundled Tree-sitter grammars, HTTPX 0.28.1, Pydantic 2.13.5, wcwidth 0.8.4, Ruff 0.16.8, and ty 0.0.82. Dependencies were installed through uv from the retained dependency wheels because the working container cannot access a package index directly. No dependency or lockfile change is required by RC3.
 
-The following checks were run against the RC2 production code:
+The final coordinated software pass ran:
 
 ```text
-ruff format --check src tests
-ruff check src tests
-ty check
-pytest -q -rs
-radon cc -s -n C src
+uv run --no-sync ruff format --check src tests
+uv run --no-sync ruff check src tests
+uv run --no-sync ty check
+uv run --no-sync pytest -q -rs
+uv run --no-sync radon cc -s -n C src
 uv build --offline --no-build-isolation
 ```
 
-Formatting, linting, and type checking pass. **132 tests passed, no skips.** The suite includes real parsing for all five languages, JSX/TSX, and the production spawned-process pipeline; parser tests were not skipped. Both source and wheel distributions were built. The wheel was installed into a separate environment and tested outside the checkout: package identity, v3 configuration/default enrichment and opt-out, report schema 3, five-language offline parsing, and zero offline provider/enrichment calls passed. The PR's CI results are the authoritative record for the locked dependency environment and cross-platform runs.
+Formatting, linting, and type checking pass. **166 tests passed, no skips.** Radon was reviewed as an informational report, not a claim that every function has low complexity. Both source and wheel distributions build. The wheel was installed in a separate virtual environment and exercised outside the checkout: package identity, configuration-v3 enrichment reasons and opt-out, schema-4 reports/tentative counters, and real five-language offline parsing pass. Offline work made no provider or enrichment calls.
 
-The retained RC1 regressions exercise shared owner/file evidence, a class larger than 32 KB, independent method bindings, Rust sibling declarations/impls, file targets without lexical units, Unicode byte ranges, exact request byte accounting, question-budget splitting, reduced-context disclosure, whole-target omissions, strict context policy, bounded provider size recovery, response-ID validation, reordered answers, cache reclassification, and partial results on abort. The pipeline tests retain the 80-file concurrency/cache fixture. Terminal tests cover warning/error-only defaults, verbose unknown/OK results, display-limit ordering, always-visible diagnostics, unlimited JSON/JSONL, Unicode/ANSI hanging indents, long unbroken words, and escaped terminal controls.
+The baseline is the source tree from merged RC2 (`2a4db57ac18b9f4004d9b73dd60a540ad34e8a88`); its local Git tree matched `7134c9268e35b5784fb87c0fe153fb4852ce5c00` before editing. The PR's final CI run, rather than a local environment claim, is authoritative for locked installation and cross-platform results.
 
-RC2 regressions additionally cover the complete primary → route → candidate relevance → fresh reassessment sequence through the actual HTTP client; no prior verdict in the reassessment state; strong stopping routes; no candidate/low relevance; no recursive retries after a still-uncertain result; per-phase question/byte/context budgets; review/call/source/candidate caps; changed-caller cache invalidation; unchanged-input cache reuse; explicit provider size rejection; malformed auxiliary IDs and server failure; opt-out; report audit preservation; UTF-8 overlap merging; and source-index cancellation. Real grammars verify lexical call extraction in all five languages without treating comments/strings as calls, as well as test/definition/Rust-impl candidates, declaration filtering, and expression bodies. Filesystem tests cover ignored inputs, symlinked files and parent directories, immutable selected snapshots and changed-primary protection.
+## Behavior covered
 
-Tests use the actual HTTPX client with MockTransport. Synthetic parser fixtures are limited to queue/cache isolation tests; separate integration cases use the actual native parser. Neither task-count assertions nor the self-scan are large-repository performance/accuracy benchmarks.
+RC3 tests exercise:
 
-## Continuous integration and distribution checks
+- Missing evidence at the end of a file receives a scarce review slot before earlier applicability/optional-confidence reviews; final target emission stays in source order.
+- Ordinary low-confidence Score/Choice answers and ambiguous Nouls make zero routing calls and do not load the source catalogue. Reduced context still requests review when the displayed reason is low confidence. A specific rule can opt into additional reasons; invalid reason names are rejected.
+- Both increasing and decreasing score rubrics preserve warning/error signals below confidence gates. A low-confidence error is not downgraded to a confident warning. Explicit missing-context, N/A and non-defect Choice answers cannot become tentative defects; weak defect probabilities below their gates are not assigned a severity.
+- Ambiguous Nouls have tentative severity only when their directional signal actually crosses a configured gate, including `expected: false`.
+- Tentative warnings and errors appear without `-v`, using cyan `?`, labelled severity, YAML messages, and an uncertainty reason. Ordinary uncertainty stays verbose-only. Filtering precedes headers/display limits; Unicode-width wrapping and color/no-color output are covered.
+- Tentative results are counted once, separately from confirmed findings and within the uncertainty total. They do not trip `--fail-on`. Changing a confidence threshold reclassifies the same cached raw answer from tentative to confirmed without another HTTP call.
+- JSON and JSONL preserve complete events and audits independently of verbosity, color and text limits.
 
-The workflow uses a committed `uv.lock` with `uv sync --locked --all-groups`. It checks Ruff formatting/lint and ty across the **whole source/test tree**, not just selected renderer files. Radon produces an informational complexity report; no numerical complexity threshold is represented as a correctness guarantee.
+Retained integration tests cover real parsing in all five languages and JSX/TSX; spawned-process discovery/parsing; large classes and shared evidence; independent answer bindings; every request budget; reduced context and omitted targets; provider-size recovery; reordered/malformed answers; caching, partial failure and cancellation. The full route/retrieve/relevance/reassess sequence still runs through the production HTTPX client with MockTransport. Candidate selection, unchanged final questions/no prior-verdict feedback, source snapshots, caller changes, ignored/symlinked sources, stopping conditions and enrichment limits remain tested.
 
-The test/package matrix targets Linux on Python 3.12, 3.13, and 3.14, plus macOS 14 on Python 3.12. Each job explicitly requires native parser dependencies, runs the test suite, builds distributions, replaces the editable install with the built wheel, changes to a temporary directory, verifies the actual site-packages import, and runs the CLI/configuration commands and five-language offline parsing. Distribution artifacts are retained for review; the workflow does not publish to PyPI or create a release.
+Tests establish observable software behavior and contracts. Neither test counts nor mock confidence values measure Jev's semantic accuracy.
 
-## Not established by these checks
+## Continuous integration and packages
 
-No live authenticated Jev request was made for this release candidate. The tests do not establish provider availability, exact token limits, account quotas, long-context semantic accuracy, or stability under larger shared states. The local token estimator is a configurable heuristic, not a provider tokenizer. Software tests verify explicit size-rejection recovery and coverage reporting, not that arbitrary 10,000-line files fit the model.
+Permanent CI keeps `uv sync --locked --all-groups`, whole-project Ruff formatting/lint, and ty. Radon is informational. The test/package matrix covers Linux Python 3.12, 3.13 and 3.14, and macOS 14 Python 3.12. Each job requires native parsers, runs the suite, builds distributions, installs the wheel instead of the editable checkout, and smoke-tests from a temporary directory. Distribution artifacts are retained; nothing is published or released automatically.
 
-Module/tree analysis, compiler-backed cross-file symbol resolution, macro expansion, resolved call-graph construction, and whole-repository architectural judgments are not implemented. RC2 adds bounded lexical evidence candidates, not these stronger guarantees. The model-selected route, relevance and final decision still need live evaluation; fewer uncertain outcomes alone does not establish accuracy. Oversized whole targets are not silently clipped or scored from fragments. Default warning/error boundaries are review-policy choices, not calibrated defect probabilities; wider evidence and file targets require their own semantic evaluation.
+## Remaining acceptance boundary
 
-No massive-repository throughput/peak-memory benchmark or Windows run was performed. Parser/read/queue/evaluator limits bound admitted work, but configured file size, nesting, and question count still affect memory and latency. Cache/model reproducibility requires a pinned model rather than a moving provider alias.
+No live authenticated Jev request was made for RC3. The prior supplied self-scan motivated the policy change; it is not a fresh test of the new policy or a labelled precision/recall benchmark. Scheduling a previously starved evidence gap does not guarantee the router will choose useful source or that a reassessment will become conclusive. Router thresholds, rule thresholds, and Noul uncertainty intervals are unchanged policy starting points, not calibrated correctness guarantees.
 
-## Optional live acceptance check
+No new semantic question, provider session API, compiler-resolved call graph, module/tree evaluation, or recursive retrieval was added. The source index remains lexical and bounded; it can miss aliases, dynamic dispatch, macros or external contracts. Existing request-token estimates remain heuristic. Windows and massive-repository performance/peak-memory benchmarks were not run.
 
-After reviewing source-sharing policy and selecting an account-supported model, run a small representative project both normally and with `-v`. Compare `--no-enrichment` with the default enabled pass. Inspect JSONL `target`, `evidence`, `reviews`, `uncertainty_reasons`, and `skipped_rules`, particularly on classes with helpers and Rust files with multiple impl blocks. Compare known-positive, known-negative, and insufficient-context cases before making semantic findings a mandatory merge gate. A passing offline suite is not a substitute for this provider-level acceptance check.
+For live acceptance, pin a model and keep source/configuration fixed. Compare enabled enrichment with `--no-enrichment`, inspect `reviews.trigger` and budget outcomes for missing/reduced evidence, and inspect `tentative_findings` alongside confirmed `findings`. Confirm that high-signal low-confidence results are visible without treating them as verified defects. Fewer auxiliary calls or fewer question marks alone is not evidence of better judgments.

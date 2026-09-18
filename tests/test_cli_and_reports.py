@@ -101,6 +101,7 @@ def test_text_report_groups_all_answers_under_one_unit() -> None:
         "uncertainty_reasons": {},
         "reviews": {},
         "scales": {"unclear-control-flow": 3},
+        "tentative_findings": [],
         "answers": {
             "mixed-responsibilities": {"type": "noul", "noul": 0.21},
             "unclear-control-flow": {
@@ -182,6 +183,7 @@ def _evaluation_event(name: str = "work", status: str = "warning") -> dict:
         "answers": {"cohesion": {"type": "noul", "noul": 0.95}},
         "statuses": {"cohesion": status},
         "findings": [finding] if status in {"warning", "error"} else [],
+        "tentative_findings": [],
         "uncertainty_reasons": {},
         "reviews": {},
         "scales": {},
@@ -231,10 +233,10 @@ def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monke
     assert "\x1b" not in text
     if format_name == "json":
         decoded = json.loads(text)
-        assert decoded["schema_version"] == 3 and decoded["events"] == events
+        assert decoded["schema_version"] == 4 and decoded["events"] == events
     else:
         decoded = [json.loads(line) for line in text.splitlines()]
-        assert decoded[0]["schema_version"] == 3 and decoded[1:-1] == events
+        assert decoded[0]["schema_version"] == 4 and decoded[1:-1] == events
 
 
 @pytest.mark.parametrize("width", [32, 80])
@@ -310,6 +312,7 @@ def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
         "cached": False,
         "scales": {},
         "findings": [],
+        "tentative_findings": [],
         "answers": {"test": {"type": "noul", "noul": 0.5}},
         "statuses": {"test": "unknown"},
         "uncertainty_reasons": {"test": "probability_ambiguous"},
@@ -324,6 +327,47 @@ def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
         assert "? test" in text and "probability ambiguous" in text and "no relevant evidence" in text
     else:
         payload = json.loads(text) if format_name == "json" else json.loads(text.splitlines()[0])
-        assert payload["schema_version"] == 3
+        assert payload["schema_version"] == 4
         actual = payload["events"][0] if format_name == "json" else json.loads(text.splitlines()[1])
         assert actual == event
+
+
+@pytest.mark.parametrize("color", [False, True])
+def test_tentative_warning_and_error_are_visible_without_verbose(color, monkeypatch):
+    from wcwidth import strip_sequences, wcswidth
+
+    from jevscan.cli.terminal import CYAN
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("COLOR", "yes" if color else "no")
+    stream = io.StringIO()
+    reporter = Reporter(stream, "text", _report_metadata(), max_display=2, width=76)
+    reporter.emit(_evaluation_event("ordinary_ambiguity", "unknown"))
+    for severity in ("warning", "error"):
+        event = _evaluation_event("tentative_" + severity, "unknown")
+        event["answers"]["cohesion"] = {
+            "type": "score",
+            "score": 1.66 if severity == "warning" else 2.5,
+            "confidence": 0.58,
+        }
+        event["scales"] = {"cohesion": 3}
+        event["uncertainty_reasons"] = {"cohesion": "low_confidence"}
+        event["tentative_findings"] = [
+            {"rule": "cohesion", "severity": severity, "message": "Review this independently of confidence."}
+        ]
+        reporter.emit(event)
+    reporter.emit(_evaluation_event("third_visible_target", "warning"))
+    summary = Summary("live", uncertain=3, tentative_findings={"warning": 1, "error": 1})
+    reporter.emit({"event": "summary", **asdict(summary)})
+    raw = stream.getvalue()
+    text = strip_sequences(raw)
+    assert "ordinary_ambiguity" not in text and "third_visible_target" not in text
+    assert "tentative_warning" in text and "tentative_error" in text
+    assert text.count("? cohesion") == 2 and "! cohesion" not in text and "x cohesion" not in text
+    assert "[uncertain warning]" in text and "[uncertain error]" in text
+    assert text.count("Uncertain: low confidence") == 2
+    assert "Uncertain findings: 1 warnings, 1 errors" in text and "omitted=1 targets" in text
+    assert all(wcswidth(line) <= 76 for line in text.splitlines())
+    if color:
+        assert CYAN + "?" in raw
+    assert summary.exit_code("warning") == summary.exit_code("error") == summary.exit_code("never") == 0

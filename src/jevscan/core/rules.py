@@ -7,6 +7,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from jevscan.core.models import Kind
 
 LANGUAGES = frozenset({"python", "rust", "perl", "typescript", "javascript"})
+EnrichmentTrigger = Literal[
+    "missing_evidence",
+    "reduced_context",
+    "applicability",
+    "low_confidence",
+    "low_choice_probability",
+    "weak_defect_signal",
+    "probability_ambiguous",
+]
+DEFAULT_ENRICHMENT_TRIGGERS: tuple[EnrichmentTrigger, ...] = ("missing_evidence", "reduced_context", "applicability")
 
 
 class StrictModel(BaseModel):
@@ -79,6 +89,7 @@ class Rule(StrictModel):
     require_body: bool = False
     require_members: bool = False
     enrich: bool = True
+    enrich_on: list[EnrichmentTrigger] = Field(default_factory=lambda: list(DEFAULT_ENRICHMENT_TRIGGERS))
     question: Question
     report: ReportPolicy
 

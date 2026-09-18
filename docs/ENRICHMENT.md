@@ -1,4 +1,4 @@
-# Evidence enrichment in 0.2.0rc2
+# Evidence enrichment in 0.2.0rc3
 
 ## Design and research basis
 
@@ -17,11 +17,21 @@ The live documentation introduction and official skill were accessible; deeper s
 
 A Noul near 0.5 is indecision about a proposition, not medium severity. Low Choice/Score confidence can reflect adjacent acceptable alternatives, a broad rubric, or insufficient evidence. These cases should not all trigger a caller search. The model's route is also a prediction: it cannot diagnose its own hidden internal cause with certainty.
 
-The first stage asks which additional evidence would be useful, based on the actual source, target, and original question. `sufficient` means no missing source was identified and leaves the initial uncertainty unchanged. `unavailable` means source retrieval is unlikely to establish the missing runtime/external fact. A confidently selected `not_applicable` ends separately from OK. Weak routing predictions stop rather than guessing a path.
+After code admits an actionable check, the first model stage asks which additional evidence would be useful, based on the actual source, target, and original question. `sufficient` means no missing source was identified and leaves the initial uncertainty unchanged. `unavailable` means source retrieval is unlikely to establish the missing runtime/external fact. A confidently selected `not_applicable` ends separately from OK. Weak routing predictions stop rather than guessing a path.
 
 For missing source, the routes are possible callers, referenced definitions, test references, or enclosing owner/file. The caller supplies no prior verdict to the router. Selection likewise asks whether each candidate can help decide the rule, not whether it supports an expected conclusion. Candidate relevance uses independent Nouls instead of a single forced-choice winner: several candidates may be useful, and no candidate may qualify. Only questions sharing that candidate-batch state are batched; dependent stages remain separate calls.
 
 On reassessment, the original target and question remain unchanged. The model sees original evidence plus admitted complete source, provenance, and coverage. It does not see the initial answer, router verdict, or relevance scores. This avoids explicitly anchoring the new judgment on the old one, but it does not prove the model will reason correctly. Stop after one reassessment, including an unchanged unknown result.
+
+## Admission and priority (RC3)
+
+RC2's supplied self-scan performed 111 routing predictions but no reassessments. Most reviews concerned ordinary probability/rubric ambiguity, while two explicit missing-evidence results exhausted the per-file check budget. This is evidence about that run, not proof that other projects never need callers.
+
+RC3 therefore makes admission a deterministic, configurable policy before the existing model-assisted sequence. Missing-evidence judgments go first, reduced-context judgments second, and ambiguous applicability third. Reduced evidence remains a reason to review even if the assessment also has low confidence. Applicability is available only when the rule declares a not-applicable option. Plain score/Noul ambiguity does not invoke the router by default. Projects can deliberately opt a particular rule into broader reasons through `enrich_on`.
+
+The file evaluator orders eligible reviews before consuming either budget. It still emits results in the original target order. Skipped intrinsic ambiguity remains unknown without a misleading `sufficient` audit entry. No new state machine, model endpoint, threshold change, or retrieval loop is introduced.
+
+Indicated severity and confidence are independent. A signal above a warning/error gate can remain uncertain and be visible in the default report. `assessment.py` computes confirmed or tentative findings from the same thresholds; rendering does not invent cutoffs. A low-confidence error indication is not relabelled a confirmed warning, and neither an evidence gap nor a not-applicable label is itself a defect.
 
 ## Ownership
 
@@ -53,7 +63,7 @@ A partial evidence search is recorded but is not automatically an operational sc
 
 ## Audit and release acceptance
 
-JSON/JSONL schema 3 exposes per-rule `reviews` and `uncertainty_reasons`. The audit includes the initial answer/model/evidence, routing and selection predictions, request hashes, cache flags, candidate metadata/relevance, admitted source locations/hashes, retrieval coverage, and the final stop outcome. It does not contain copied candidate previews or arbitrary model-generated explanations. Final findings/counts are not duplicated with the initial judgment. Text remains warning/error-first; verbose output shows unknown reasons, not-applicable results and evidence-review details.
+JSON/JSONL schema 4 exposes per-rule `reviews` and `uncertainty_reasons`. The audit includes the initial answer/model/evidence, routing and selection predictions, request hashes, cache flags, candidate metadata/relevance, admitted source locations/hashes, retrieval coverage, and the final stop outcome. It does not contain copied candidate previews or arbitrary model-generated explanations. Final findings/counts are not duplicated with the initial judgment. Text shows confirmed and tentative warning/error signals; below-threshold uncertainty and not-applicable results require verbose output. Tentative signals stay cyan `?`, remain `unknown`, and do not trigger `--fail-on`.
 
 No live authenticated semantic test was run for this release. Mocked provider tests validate the production orchestration and contracts, not whether more evidence improves Jev's accuracy. A useful acceptance comparison is:
 

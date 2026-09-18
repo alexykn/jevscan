@@ -8,13 +8,38 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any
 
+from jevscan.core.assessment import Assessment
 from jevscan.core.config import EnrichmentConfig
 from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.inference import Inference, Prediction
 from jevscan.core.planning import RequestBudget
 from jevscan.core.protocol import QUESTION_POLICY, Answer, Check, ChoiceAnswer, ContextLimitError, NoulAnswer, encode
 from jevscan.core.retrieval import Candidate, SourceIndex
-from jevscan.core.rules import ChoiceQuestion, NoulQuestion, Question
+from jevscan.core.rules import ChoiceQuestion, EnrichmentTrigger, NoulQuestion, Question
+
+# Code owns admission and ordering; Jev only chooses useful evidence after admission.
+REVIEW_PRIORITY: dict[EnrichmentTrigger, int] = {
+    "missing_evidence": 0,
+    "reduced_context": 1,
+    "applicability": 2,
+    "low_confidence": 3,
+    "low_choice_probability": 3,
+    "weak_defect_signal": 3,
+    "probability_ambiguous": 4,
+}
+
+
+def review_trigger(check: Check, decision: Assessment, context_complete: bool) -> EnrichmentTrigger | None:
+    """Admit actionable uncertainty, prioritizing evidence gaps even when confidence is also low."""
+    if decision.status != "unknown" or not check.rule.enrich:
+        return None
+    reasons = {decision.reason}
+    if not context_complete:
+        reasons.add("reduced_context")
+    if check.rule.report.not_applicable_choices:
+        reasons.add("applicability")
+    return next((reason for reason in REVIEW_PRIORITY if reason in reasons and reason in check.rule.enrich_on), None)
+
 
 ROUTES = {
     "not_applicable": "The target does not exhibit the kind of operation this rule evaluates; more callers would not make the rule applicable.",

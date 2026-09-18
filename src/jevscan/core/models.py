@@ -188,6 +188,7 @@ class Summary:
     diagnostics: int = 0
     incomplete: bool = False
     findings: dict[str, int] = field(default_factory=lambda: {str(s): 0 for s in Severity})
+    tentative_findings: dict[str, int] = field(default_factory=lambda: {"warning": 0, "error": 0})
     elapsed_seconds: float = 0.0
 
     def exit_code(self, fail_on: str) -> int:

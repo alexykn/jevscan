@@ -178,7 +178,7 @@ Include/exclude use Git-style patterns, not `Path.glob`: `*.py` matches that bas
 3. Move `jev.max_request_bytes` and `jev.max_questions` to `evaluation` when previously configured. Reconsider their values: the old 60,000-byte request cap defeats richer context.
 4. Keep existing `report.levels.warning/error`; add `target/context` as needed. A standalone unit rule defaults to owner context. File rules must remove `applies_to` and `require_body` and use file context.
 5. Review inherited file-level defaults: `duplicated-behavior` and `fragmented-ownership` now apply once per file, not once per owner. Add `uncertain_choices` to custom Choice rules with an unknown category.
-6. Consumers of machine reports must accept **report schema 3** (schema 2 introduced the target fields; RC2 adds the audit/status changes below): evaluations and findings contain `target`, not `unit`; evaluations add `statuses`, `evidence`, `models`, `scales`, `cached_rules`, and `skipped_rules`. Offline `unit` inventory events remain lexical metadata.
+6. Consumers of machine reports must accept **report schema 4** (schema 2 introduced target fields; schema 3 added audits; schema 4 separates tentative findings): evaluations and findings contain `target`, not `unit`; evaluations add `statuses`, `evidence`, `models`, `scales`, `cached_rules`, and `skipped_rules`. Offline `unit` inventory events remain lexical metadata.
 
 Version-1 configurations first need their single severity/threshold moved into explicit warning/error levels. Old-version configurations are rejected before scanning. Cache entries are versioned and the new request shape invalidates prior unit-only answers; subsequent reporting-only changes can reuse the new raw-answer cache.
 
@@ -229,8 +229,36 @@ Noul rules may set `report.uncertain_range: [lower, upper]`, which must enclose 
 
 Standalone/copied v3 rules do not inherit the new Noul band or decomposition filter. With `extends: default` they do. The numerical warning/error gates are unchanged, but the band deliberately changes handling around the Noul warning boundary.
 
-### Machine report schema 3
+### Machine reports
 
 RC2 adds `not_applicable` to statuses, plus per-rule `uncertainty_reasons` and `reviews`. A review records its trigger, original answer/model/evidence, each prediction's request hash/model/cache/raw answer, candidate identities/relevance, retrieval limits, selected source hashes/ranges, and stop outcome. Final `answers`, `findings`, `evidence`, and summary counts describe the final assessment only; earlier judgments do not count twice. `cached_rules` and the target `cached` marker require every contributing prediction to be cached.
 
 `summary.enrichment_calls` includes cached predictions; `summary.requests` counts actual HTTP attempts across primary and auxiliary work. `enrichment_resolved` includes transitions from unknown to OK, warning, error, or not-applicable; it is a workflow count, not measured model accuracy. Provider context rejection in enrichment preserves the earlier uncertain answer with a specific stop reason. Other API, cache, and validation errors remain operational failures and make the scan incomplete.
+
+
+## RC3: selective enrichment and tentative findings
+
+Configuration remains version 3. A rule's `enrich_on` list controls which unknown judgments may request refinement. Omitted lists default to `[missing_evidence, reduced_context, applicability]`; packaged non-applicability rules explicitly use the first two. `enrich: false`, `enrichment.enabled: false`, and `--no-enrichment` still disable review. An empty `enrich_on` disables it for that rule.
+
+```yaml
+version: 3
+extends: default
+rules:
+  redundant-validation:
+    # Optional: a project-specific reason to revisit low-confidence contract judgments.
+    enrich_on: [missing_evidence, reduced_context, low_confidence]
+```
+
+Review priority is fixed independently of list order: missing evidence, reduced context, applicability, then explicitly enabled `low_confidence` / `low_choice_probability` / `weak_defect_signal`, then `probability_ambiguous`. Within a priority, source position and rule ID give a stable order. All judgments in a file are considered before the shared per-file budgets are consumed. Reduced context is considered independently of the displayed uncertainty reason. Applicability requires declared `not_applicable_choices`; adding its trigger alone does not make an unrelated rule eligible. Unknown trigger names are configuration errors.
+
+Non-admitted unknowns do not consume review/call budgets, load the source index, or claim that a model judged the evidence sufficient. They retain their raw answer and uncertainty reason, without a fabricated review entry. Admitted checks that reach a limit still have explicit budget outcomes. Model routing/retrieval remains bounded and unchanged; no threshold is lowered to manufacture a conclusive result.
+
+### Indicated severity versus confidence
+
+Severity comes from the highest matching numeric signal gate (`min_score` / `max_score`, or a defect Choice's `min_probability`). Its `min_confidence` decides whether that level is confirmed. For example `score=2.4, conf=0.65` with warning `1.0/0.60` and error `2.0/0.70` is an **uncertain error**, not a downgraded confirmed warning. Tentative results have status `unknown` and retain `low_confidence`; their indicated severity is stored in `tentative_findings`.
+
+The same separation applies to Noul uncertainty bands: a directional probability that crosses a severity gate inside the band is tentative; an uncertain value below that gate has no tentative severity. With the packaged positive rules, `0.48` is verbose-only and `0.51` is a cyan tentative warning. Inverse (`expected: false`) rules use `1 - noul` for the signal gate, while the configured uncertainty interval still refers to the raw `noul` value. Explicit missing-context/N/A choices never become tentative defects. A weak defect choice below its probability gate remains verbose-only.
+
+Default text displays confirmed findings and tentative findings, retaining cyan `?` for the latter and adding `[uncertain warning]` or `[uncertain error]`. Messages still come from `report.message`. `-v` includes the remaining answers. Filtering happens before file/target headers and `--max-display`. Messages/labels preserve hanging indents, including with ANSI color disabled.
+
+**Machine-report schema 4** adds `evaluation.tentative_findings` (same item structure as `findings`) and `summary.tentative_findings` (`warning` and `error` counts). A result occurs in at most one findings list. Tentative results are a subset of `summary.uncertain`, not additional checks. Confirmed `findings` alone determine `--fail-on`; low-confidence error signals no longer qualify as confirmed warnings via the lower gate. Operational failures still exit 2. Schema-3 consumers must accept the new schema and must not treat tentative findings as confirmed failures. Raw answers, evidence, reviews and cache provenance remain available regardless of text verbosity. Review entries now distinguish the admitted `trigger` from the original `initial_reason`.

@@ -130,3 +130,22 @@ def test_enrichment_policy_is_validated_at_configuration_boundary(tmp_path, patc
     (tmp_path / "jevscan.yaml").write_text(yaml.safe_dump({"extends": "default", **patch}))
     with pytest.raises(ConfigError):
         load_config([tmp_path], cwd=tmp_path)
+
+
+@pytest.mark.parametrize("triggers", ["[missing_evidence, reduced_context]", "[]", "[low_confidence]"])
+def test_project_selects_enrichment_reasons(tmp_path, triggers):
+    (tmp_path / "jevscan.yaml").write_text(
+        "version: 3\nextends: default\nrules:\n  redundant-validation:\n    enrich_on: " + triggers + "\n"
+    )
+    rule = load_config([tmp_path], cwd=tmp_path).config.rules["redundant-validation"]
+    import yaml
+
+    assert rule.enrich_on == yaml.safe_load(triggers)
+
+
+def test_unknown_enrichment_reason_is_rejected(tmp_path):
+    (tmp_path / "jevscan.yaml").write_text(
+        "extends: default\nrules:\n  redundant-validation:\n    enrich_on: [invented]\n"
+    )
+    with pytest.raises(ConfigError, match="enrich_on"):
+        load_config([tmp_path], cwd=tmp_path)
