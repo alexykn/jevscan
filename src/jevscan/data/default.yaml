@@ -30,6 +30,20 @@ evaluation:
   max_questions: 64
   oversized_context: reduce  # reduce surrounding evidence only; never truncate a target
 
+# At most one enrichment round per uncertain check. Files under the project root
+# obey the same source filters and gitignore rules, including test files.
+enrichment:
+  enabled: true
+  max_checks_per_file: 12
+  max_calls_per_file: 36
+  max_candidates: 12
+  max_evidence: 3
+  min_route_probability: 0.70
+  min_route_confidence: 0.50
+  min_relevance: 0.65
+  max_source_files: 1000
+  max_source_bytes: 16777216
+
 cache:
   enabled: true
   path: .jevscan-cache/results.sqlite3
@@ -49,6 +63,7 @@ rules:
         function merely because it calls several different operations. Length alone is not evidence.
     report:
       message: This operation appears to interleave responsibilities that would be clearer as distinct operations.
+      uncertain_range: [0.40, 0.60]
       levels:
         warning:
           min_probability: 0.50
@@ -93,6 +108,7 @@ rules:
         A small necessary detail or explicit cleanup does not by itself establish a problem.
     report:
       message: High-level orchestration appears mixed with substantial low-level implementation detail.
+      uncertain_range: [0.40, 0.60]
       levels:
         warning:
           min_probability: 0.50
@@ -155,6 +171,7 @@ rules:
           min_confidence: 0.70
 
   unhelpful-decomposition:
+    require_members: true
     target: unit
     context: file
     applies_to: [class, impl, package, module]
@@ -167,10 +184,12 @@ rules:
       criteria:
         meaningful: Decomposition gives coherent operations meaningful names or serves an evident interface requirement.
         needless_indirection: Visible helpers mainly move lines or forward arguments without hiding meaningful detail, and visibly make the caller harder to follow.
+        not_applicable: No helper decomposition is present in the target; a data-only type, exception, enum or interface declaration is not a decomposition defect.
         insufficient_context: The relevant helper implementations or callers are missing, or the evidence is inconclusive.
     report:
       message: Helper indirection appears to obscure the caller without providing meaningful decomposition.
       choices: [needless_indirection]
+      not_applicable_choices: [not_applicable]
       uncertain_choices: [insufficient_context]
       levels:
         warning:
@@ -192,6 +211,7 @@ rules:
         because data is repeated; require a concrete ownership conflict in the supplied implementation.
     report:
       message: State or lifecycle bookkeeping appears to have competing authoritative owners.
+      uncertain_range: [0.40, 0.60]
       levels:
         warning:
           min_probability: 0.50
@@ -210,6 +230,7 @@ rules:
         of a required interface is not incohesive merely because it contains many methods.
     report:
       message: This owner appears to combine unrelated state and behavior.
+      uncertain_range: [0.40, 0.60]
       levels:
         warning:
           min_probability: 0.50
@@ -227,6 +248,7 @@ rules:
         distinct trust boundaries, or required trait/interface implementations are insufficient.
     report:
       message: The same owned behavior appears implemented more than once and may need to be maintained in sync.
+      uncertain_range: [0.40, 0.60]
       levels:
         warning:
           min_probability: 0.50

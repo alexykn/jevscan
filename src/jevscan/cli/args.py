@@ -51,4 +51,7 @@ def parser() -> argparse.ArgumentParser:
         default=0,
         help="text target limit after filtering; 0 means unlimited (JSON is never limited)",
     )
+    result.add_argument(
+        "--no-enrichment", action="store_true", help="disable uncertainty routing and supplemental source retrieval"
+    )
     return result

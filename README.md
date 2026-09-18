@@ -2,7 +2,7 @@
 
 A configuration-driven semantic code-quality scanner for **Python, Rust, Perl, TypeScript, and JavaScript**. Tree-sitter extracts code; Jev answers independent typed questions about it. jevscan does not execute or import the source being scanned.
 
-**0.2.0rc1** introduces file and unit targets, shared-context requests, and a warning/error-first terminal report. This is a release candidate, not a claim of calibrated semantic accuracy. See [verification](docs/VERIFICATION.md) for tested behavior and remaining limits.
+**0.2.0rc2** adds a bounded evidence-enrichment pass to file/unit evaluation: uncertain checks can request relevant local evidence and then be reassessed once. This is a release candidate, not a claim of calibrated semantic accuracy. See [verification](docs/VERIFICATION.md) for tested behavior and remaining limits.
 
 ## Install and run
 
@@ -17,14 +17,15 @@ uv run jevscan src --offline
 # Live analysis sends selected source and context to TypeSafe.
 export TYPESAFE_API_KEY='your-key'
 uv run jevscan src                  # warnings and errors, plus coverage diagnostics
-uv run jevscan src -v               # every evaluated answer
+uv run jevscan src -v               # every evaluated answer and evidence-review details
+uv run jevscan src --no-enrichment  # primary judgments only; no extra source discovery
 uv run jevscan src --format jsonl -o report.jsonl
 ```
 
 An installed wheel works without this checkout:
 
 ```bash
-uv tool install ./dist/py3_jevscan-0.2.0rc1-py3-none-any.whl
+uv tool install ./dist/py3_jevscan-0.2.0rc2-py3-none-any.whl
 ```
 
 The pinned `tree-sitter==0.25.2` and `tree-sitter-language-pack==0.13.0` bundle the native grammars. A scan never downloads grammars. Updating those pins requires rerunning parser integration tests.
@@ -68,7 +69,7 @@ A target that cannot fit even by itself is explicitly omitted. Smaller nested un
 ```text
 src/service.py
     M 42 Coordinator.commit
-        ! mixed-responsibilities  noul=0.570
+        ! mixed-responsibilities  noul=0.670
           This operation appears to interleave responsibilities that would be
           clearer as distinct operations.
     FILE 1-230 whole file
@@ -77,11 +78,11 @@ src/service.py
           need to be maintained in sync.
 ```
 
-The default text report shows **yellow `!` warnings and red `x` errors**. `-v` / `--verbose` adds green `·` OK answers and cyan `?` uncertain answers. An uncertainty answer is not a clean bill of health. Score rows include their rubric maximum, for example `score=1.140/3`; probabilities/confidence remain the provider's values, not measured correctness rates.
+The default text report shows **yellow `!` warnings and red `x` errors**. `-v` / `--verbose` adds green `·` OK answers cyan `?` uncertain answers, and dim `-` not-applicable answers. An uncertainty answer is not a clean bill of health. Score rows include their rubric maximum, for example `score=1.140/3`; probabilities/confidence remain the provider's values, not measured correctness rates.
 
 All text, including explanatory messages and long names, wraps to terminal width with continuation indentation. ANSI color is automatic for terminals; `COLOR=yes|no` overrides detection and `NO_COLOR` disables it. Text files are plain unless color is explicitly forced. Display limits count targets **after** severity filtering; `--max-display 0` means unlimited. Diagnostics and the summary are never hidden. Offline inventory lists units even without `-v`.
 
-JSON and JSONL use **report schema 2** and always contain all completed answers, target metadata, statuses, findings, per-rule evidence/model/cache provenance, explicit skipped rules, and a final summary. They are unaffected by verbosity, color, or display limits. A file's results are grouped when its evaluation finishes; files can finish in any order. JSONL flushes each event and preserves already-written events during an interrupted scan.
+JSON and JSONL use **report schema 3** and always contain all completed answers, target metadata, statuses, findings, per-rule evidence/model/cache provenance, explicit skipped rules, and a final summary. The additive `reviews` and `uncertainty_reasons` maps preserve initial judgments, routing/selection results, source hashes/ranges, omissions, and final outcomes; the new `not_applicable` status is distinct from OK. They are unaffected by verbosity, color, or display limits. A file's results are grouped when its evaluation finishes; files can finish in any order. JSONL flushes each event and preserves already-written events during an interrupted scan.
 
 Exit codes:
 
@@ -93,6 +94,29 @@ Exit codes:
 | `130` | Interrupted with Ctrl-C |
 
 `--fail-on never` does not hide incomplete coverage. Model uncertainty alone does not mean an operational failure; it is counted separately. No-rule units are skipped by configuration, not counted as failed scans.
+
+## Evidence enrichment
+
+An uncertain answer does not automatically mean that callers are missing. The default workflow is:
+
+```text
+primary judgment
+  → uncertain only: closed evidence-routing Choice
+  → missing source only: bounded local candidate discovery
+  → independent relevance Noul per candidate (batched)
+  → selected complete source + original evidence
+  → original question once more, then stop
+```
+
+Jev selects among fixed routes and candidate identities. It cannot invent a path, execute a command, or recursively fetch more source. Confident primary answers are not revisited. A routing result of “sufficient evidence” leaves the original uncertainty intact; it does not manufacture an OK result. A confident not-applicable result is displayed separately. Candidate selection asks for evidence that can decide the question, not evidence supporting the earlier verdict. The final question is unchanged and receives no prior answer or relevance scores.
+
+**Source-sharing scope:** a live enrichment pass may read and send allowed source anywhere under the resolved project root, even when the command targets only `src/` or one file. This includes matching tests. It uses the same include/exclude and Git-ignore rules and rejects symlinked evidence paths. Only candidate previews and selected complete source ranges are sent; the whole index is not uploaded. Use `--no-enrichment`, YAML `enrichment.enabled: false`, or per-rule `enrich: false` to disable it. Offline inventory never builds the index or calls Jev.
+
+Defaults allow one reassessment per check, at most 12 reviewed checks and 36 enrichment predictions per active file, 12 candidates per review, and 3 selected evidence units. The shared source index reads at most 1,000 files and 16 MiB (plus a one-byte overflow sentinel). Every phase also respects the ordinary request budgets. Limits and retrieval omissions remain visible in machine reports; they never imply that missing code is clean. These are adjustable application policies, not provider quotas.
+
+Two sources of avoidable uncertainty are handled before retrieval. `require_body` excludes obvious declaration/pass/ellipsis-only callables, while the decomposition rule uses `require_members` to avoid querying data-only owners. Default Noul rules treat `[0.40, 0.60)` as undecided **before** applying severity levels; a near-0.5 answer is not automatically yellow. Existing project YAML remains valid, but projects that copied older defaults must opt into these policy fields or regenerate their configuration.
+
+See [architecture, evidence contracts, and research](docs/ENRICHMENT.md) and [configuration](docs/CONFIGURATION.md). Lexical candidates are not a resolved call graph: aliases, dynamic dispatch, macros, and external contracts remain limitations. No live semantic-accuracy improvement is claimed from mock tests.
 
 ## Configuration
 
@@ -150,7 +174,7 @@ discovery → spawned Tree-sitter parsers → bounded file queue
           → terminal / JSON / JSONL
 ```
 
-Each evaluator owns one file's plan and results. Requests within that file run sequentially; files run concurrently up to `jev.concurrency`. This keeps target results together and avoids one task per method or retaining an entire repository's results. Parser processes, file batches, queue depth, read limits, and evaluation workers are bounded/configurable. Full source envelopes and results remain in memory only for active files; memory depends on configured file/worker limits, unit nesting, and question count, not merely source byte size.
+Each evaluator owns one file's plan and results. Requests within that file run sequentially; files run concurrently up to `jev.concurrency`. This keeps target results together and avoids one task per method or retaining an entire repository's results. Parser processes, file batches, queue depth, read limits, and evaluation workers are bounded/configurable. Initial source envelopes and results remain in memory only for active files; enrichment also retains one lazily built, bounded project source index; memory depends on configured file/worker limits, unit nesting, and question count, not merely source byte size.
 
 Module ownership in `src/jevscan/`:
 
@@ -162,7 +186,11 @@ Module ownership in `src/jevscan/`:
 | `core/context.py` | Exact evidence envelopes and coverage descriptions |
 | `core/planning.py` | Target/question bindings, request packing, size-recovery decisions |
 | `core/protocol.py`, `client.py` | Wire contracts and response validation; HTTP, pacing, retries |
-| `core/evaluation.py` | File-local execution, answer attribution, severity classification, result lifecycle |
+| `core/assessment.py` | One severity/applicability/uncertainty policy for raw answers |
+| `core/inference.py` | Shared validated prediction/cache path for all phases |
+| `core/retrieval.py` | Bounded local snapshots and lexical evidence candidates |
+| `core/enrichment.py` | Closed routing, independent relevance judgments, one fresh reassessment |
+| `core/evaluation.py` | File-local execution, answer attribution, result lifecycle |
 | `core/cache.py`, `scanner.py` | Raw-answer persistence; bounded pipeline/resource orchestration |
 | `cli/args.py`, `main.py`, `render.py`, `terminal.py` | Arguments/entry point; report formatting; safe width-aware terminal output |
 
@@ -170,7 +198,7 @@ Module ownership in `src/jevscan/`:
 
 Live requests go to `POST https://api.typesafe.ai/v1/systemone`; source and bounded context leave the machine. Authentication is read only from `TYPESAFE_API_KEY`. Model precedence is CLI `--model`, then `TYPESAFE_DEFAULT_MODEL`, then YAML. `TYPESAFE_BASE_URL` is an environment-only origin override; repository YAML cannot redirect the API key. HTTPS is required except for loopback tests, and redirects are disabled.
 
-The SQLite cache stores raw answers, not submitted source or credentials. Keys include endpoint, request body, package version, and prompt version. Reports include declaration metadata and should also be treated as potentially sensitive. A moving model alias can reuse cached responses until expiration; pin a model for reproducibility. `--no-cache` disables both cache reads and writes.
+The SQLite cache stores raw answers, not submitted source or credentials. Keys include endpoint, request body, package version, and prompt version. Reports include declaration metadata and an audit of evidence selection (paths, symbols, hashes, locations and raw judgments), and should also be treated as potentially sensitive. Raw candidate source previews are not copied into reports. A moving model alias can reuse cached responses until expiration; pin a model for reproducibility. `--no-cache` disables both cache reads and writes.
 
 Retries can duplicate provider costs. Rate pacing counts all attempts, including recovery calls. The scanner is not a sandbox for hostile filesystems or a proven defense against prompt injection. [API contracts and evidence semantics](docs/JEV_API.md).
 

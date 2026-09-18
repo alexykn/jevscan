@@ -6,9 +6,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import islice
 
-from jevscan.core.config import Config
+from jevscan.core.config import Config, EvaluationConfig
 from jevscan.core.context import ContextBuilder, Evidence
-from jevscan.core.models import Target
+from jevscan.core.models import CALLABLE_KINDS, Target
 from jevscan.core.protocol import Check, encode
 from jevscan.core.rules import Question
 
@@ -30,66 +30,90 @@ class Omission:
     reason: str
 
 
+class RequestBudget:
+    """Use identical context, aggregate, question-count and byte limits in every phase."""
+
+    def __init__(self, limits: EvaluationConfig, model: str) -> None:
+        self.limits = limits
+        self.model = encode(model)
+
+    @staticmethod
+    def _parts(questions: dict[str, bytes]) -> list[bytes]:
+        return [encode(key) + b":" + value for key, value in questions.items()]
+
+    def estimate(self, state: bytes, questions: dict[str, bytes]) -> tuple[int, int, int]:
+        assert questions, "a prediction requires at least one question"
+        parts = self._parts(questions)
+        sizes = [math.ceil(len(part) / self.limits.bytes_per_token) for part in parts]
+        fixed = len(b'{"model":,"questions":{},"state":}') + len(self.model)
+        state_tokens = math.ceil((len(state) + fixed) / self.limits.bytes_per_token) + self.limits.token_reserve
+        body_bytes = fixed + len(state) + sum(map(len, parts)) + len(parts) - 1
+        return state_tokens + max(sizes), state_tokens + sum(sizes), body_bytes
+
+    def fits(self, state: bytes, questions: dict[str, bytes]) -> bool:
+        context, total, size = self.estimate(state, questions)
+        return (
+            len(questions) <= self.limits.max_questions
+            and context <= self.limits.max_context_tokens
+            and total <= self.limits.max_total_tokens
+            and size <= self.limits.max_request_bytes
+        )
+
+    def body(self, state: bytes, questions: dict[str, bytes]) -> bytes:
+        return (
+            b'{"model":'
+            + self.model
+            + b',"questions":{'
+            + b",".join(self._parts(questions))
+            + b'},"state":'
+            + state
+            + b"}"
+        )
+
+
 class Planner:
     def __init__(self, context: ContextBuilder, config: Config) -> None:
         self.context = context
         self.limits = config.evaluation
-        self.model = encode(config.jev.model)
+        self.budget = RequestBudget(config.evaluation, config.jev.model)
         self.checks = self._checks(config)
         self.questions = {check.id: encode(check.question()) for check in self.checks}
 
     def _checks(self, config: Config) -> tuple[Check, ...]:
         targets = [self.context.file, *(Target.from_unit(unit) for unit in self.context.parsed.units)]
         checks = []
+        owners_with_members = {
+            unit.parent_id
+            for unit in self.context.parsed.units
+            if unit.kind in CALLABLE_KINDS and unit.has_implementation
+        }
         for target in targets:
             for name, rule in sorted(config.rules.items()):
                 if not rule.enabled or rule.target != target.scope or target.language not in rule.languages:
                     continue
                 if target.scope == "unit":
                     unit = self.context.units[target.id]
-                    if unit.kind not in rule.applies_to or (rule.require_body and not unit.has_body):
+                    if unit.kind not in rule.applies_to or (
+                        rule.require_body and (not unit.has_body or not unit.has_implementation)
+                    ):
+                        continue
+                    if rule.require_members and target.id not in owners_with_members:
                         continue
                 checks.append(Check(f"q{len(checks):05d}", target, name, rule))
         return tuple(checks)
 
-    def _tokens(self, value: bytes) -> int:
-        return math.ceil(len(value) / self.limits.bytes_per_token)
-
-    def _parts(self, checks: tuple[Check, ...]) -> list[bytes]:
-        return [encode(check.id) + b":" + self.questions[check.id] for check in checks]
+    def _encoded_questions(self, checks: tuple[Check, ...]) -> dict[str, bytes]:
+        return {check.id: self.questions[check.id] for check in checks}
 
     def estimate(self, evidence: Evidence, checks: tuple[Check, ...]) -> tuple[int, int, int]:
-        parts = self._parts(checks)
-        sizes = [self._tokens(part) for part in parts]
-        fixed = len(b'{"model":,"questions":{},"state":}') + len(self.model)
-        state_tokens = math.ceil((len(evidence.encoded) + fixed) / self.limits.bytes_per_token)
-        state_tokens += self.limits.token_reserve
-        body_bytes = fixed + len(evidence.encoded) + sum(map(len, parts)) + len(parts) - 1
-        return state_tokens + max(sizes), state_tokens + sum(sizes), body_bytes
+        return self.budget.estimate(evidence.encoded, self._encoded_questions(checks))
 
     def fits(self, evidence: Evidence, checks: tuple[Check, ...]) -> bool:
-        context_tokens, total_tokens, body_bytes = self.estimate(evidence, checks)
-        limits = self.limits
-        return (
-            len(checks) <= limits.max_questions
-            and context_tokens <= limits.max_context_tokens
-            and total_tokens <= limits.max_total_tokens
-            and body_bytes <= limits.max_request_bytes
-        )
-
-    def _body(self, evidence: Evidence, checks: tuple[Check, ...]) -> bytes:
-        return (
-            b'{"model":'
-            + self.model
-            + b',"questions":{'
-            + b",".join(self._parts(checks))
-            + b'},"state":'
-            + evidence.encoded
-            + b"}"
-        )
+        return self.budget.fits(evidence.encoded, self._encoded_questions(checks))
 
     def request(self, evidence: Evidence, checks: tuple[Check, ...]) -> Request:
-        return Request(evidence, checks, self._body(evidence, checks))
+        body = self.budget.body(evidence.encoded, self._encoded_questions(checks))
+        return Request(evidence, checks, body)
 
     def _select(self, check: Check) -> Evidence | None:
         variants = self.context.variants(check)

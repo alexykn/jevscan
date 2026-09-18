@@ -24,6 +24,7 @@ from jevscan.core.evaluation import evaluate_file
 from jevscan.core.models import Diagnostic, EventSink, FileJob, ParsedFile, Severity, Summary, emit_diagnostic
 from jevscan.core.parser import parse_batch, require_parser_runtime
 from jevscan.core.planning import Planner
+from jevscan.core.retrieval import SourceIndex
 
 ParseFunction = Callable[[list[FileJob]], Awaitable[list[ParsedFile]]]
 
@@ -105,12 +106,13 @@ async def _evaluate_worker(
     cache: AnswerCache | None,
     sink: EventSink,
     summary: Summary,
+    index: SourceIndex | None,
 ) -> None:
     while (parsed := await queue.get()) is not None:
         planner = Planner(ContextBuilder(parsed), loaded.config)
         selected = {check.target.id for check in planner.checks if check.target.scope == "unit"}
         summary.units_skipped += len(parsed.units) - len(selected)
-        await evaluate_file(planner, client, cache, sink, summary)
+        await evaluate_file(planner, client, cache, sink, summary, index)
 
 
 async def pipeline(
@@ -125,6 +127,7 @@ async def pipeline(
     config = loaded.config
     parsers = worker_count(config)
     evaluators = config.jev.concurrency if client else 0
+    index = SourceIndex(loaded.root, config.scan, config.enrichment) if client and config.enrichment.enabled else None
     file_queue: asyncio.Queue[list[FileJob] | None] = asyncio.Queue(maxsize=parsers * 2)
     work_queue: asyncio.Queue[ParsedFile | None] = asyncio.Queue(maxsize=config.scan.queue_size)
 
@@ -140,7 +143,7 @@ async def pipeline(
         group.create_task(parse_stage())
         if client:
             for _ in range(evaluators):
-                group.create_task(_evaluate_worker(work_queue, loaded, client, cache, sink, summary))
+                group.create_task(_evaluate_worker(work_queue, loaded, client, cache, sink, summary, index))
 
 
 def _exception_message(exc: BaseException) -> str:

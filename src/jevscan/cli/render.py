@@ -5,7 +5,7 @@ from typing import Any, TextIO
 
 from jevscan.cli.terminal import BOLD, CYAN, DIM, GREEN, KIND_STYLE, LEVEL_MARKER, LEVEL_STYLE, RED, YELLOW, Terminal
 
-REPORT_SCHEMA_VERSION = 2
+REPORT_SCHEMA_VERSION = 3
 
 
 class Reporter:
@@ -27,7 +27,7 @@ class Reporter:
         self.terminal = Terminal(stream, width)
         if self.format == "json":
             self.stream.write(
-                '{"schema_version":2,"metadata":' + json.dumps(metadata, ensure_ascii=False) + ',"events":['
+                '{"schema_version":3,"metadata":' + json.dumps(metadata, ensure_ascii=False) + ',"events":['
             )
         elif self.format == "jsonl":
             self._line({"event": "start", "schema_version": REPORT_SCHEMA_VERSION, **metadata})
@@ -35,7 +35,9 @@ class Reporter:
             self.terminal.write(f"jevscan {metadata['mode']}  model={metadata['model']}", style=BOLD + CYAN)
             self.terminal.write(str(metadata["root"]), style=DIM)
             if self.verbose:
-                self.terminal.write("· ok  ! warning  x error  ? uncertain; conf is not severity", style=DIM)
+                self.terminal.write(
+                    "· ok  ! warning  x error  ? uncertain  - not applicable; conf is not severity", style=DIM
+                )
             self.stream.write("\n")
             self.stream.flush()
 
@@ -107,6 +109,21 @@ class Reporter:
             self.terminal.row(LEVEL_MARKER[status], f"{name:<{width}}", text, LEVEL_STYLE[status])
             if name in findings:
                 self.terminal.write(findings[name]["message"], 10, DIM)
+            self._review_detail(event, name, status)
+
+    def _review_detail(self, event: dict[str, Any], name: str, status: str) -> None:
+        reason = event["uncertainty_reasons"].get(name)
+        if self.verbose and status == "unknown" and reason:
+            self.terminal.write("Uncertain: " + reason.replace("_", " "), 10, DIM)
+        review = event["reviews"].get(name)
+        if not review:
+            return
+        self.terminal.write("Evidence review: " + review["outcome"].replace("_", " "), 10, DIM)
+        for item in review["selected"]:
+            target = item["target"]
+            self.terminal.write(
+                f"+ {target['path']}:{target['start_line']}-{target['end_line']} ({item['relation']})", 12, DIM
+            )
 
     def _text_event(self, event: dict[str, Any]) -> None:
         if event["event"] == "unit" and self._admit():
@@ -142,7 +159,7 @@ class Reporter:
         self.stream.write("\n")
         self.terminal.write(
             f"{status}: {findings['warning']} warnings, {findings['error']} errors; "
-            f"{summary['uncertain']} uncertain checks",
+            f"{summary['uncertain']} uncertain checks; {summary['not_applicable']} not applicable",
             style=BOLD + style,
         )
         self.terminal.write(
@@ -153,6 +170,13 @@ class Reporter:
             f"elapsed={summary['elapsed_seconds']:.2f}s",
             style=DIM,
         )
+        if summary["enrichment_reviewed"]:
+            self.terminal.write(
+                f"enrichment: reviewed={summary['enrichment_reviewed']} rerun={summary['enrichment_reruns']} "
+                f"resolved={summary['enrichment_resolved']} calls={summary['enrichment_calls']} "
+                f"cached={summary['enrichment_cache_hits']}",
+                style=DIM,
+            )
         if self.hidden:
             self.terminal.write(
                 f"omitted={self.hidden} targets (--max-display); machine reports remain complete", style=DIM

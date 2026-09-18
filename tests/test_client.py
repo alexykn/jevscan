@@ -5,10 +5,10 @@ import time
 import httpx
 import pytest
 
+from jevscan.core.assessment import assess
 from jevscan.core.client import JevClient, RequestLimiter
 from jevscan.core.config import Config
 from jevscan.core.context import ContextBuilder
-from jevscan.core.evaluation import assess
 from jevscan.core.models import ParsedFile, Severity, Target, Unit
 from jevscan.core.planning import Planner, Request
 from jevscan.core.protocol import Check, ContextLimitError, JevError, validate_response
@@ -50,8 +50,8 @@ async def test_actual_http_contract_and_retry_attempts(config: Config, unit: Uni
     async with JevClient(settings, "test-key", transport=httpx.MockTransport(handle)) as client:
         result = await client.evaluate(plan.body, plan.questions)
         assert client.requests == 3
-    status, finding = assess(plan.checks[0], result.answers["q00000"])
-    assert status == "warning" and finding is not None and finding.probability == 0.93
+    decision = assess(plan.checks[0], result.answers["q00000"])
+    assert decision.status == "warning" and decision.finding is not None and decision.finding.probability == 0.93
 
 
 @pytest.mark.parametrize("status", [400, 401])
@@ -140,12 +140,12 @@ def test_choice_and_score_thresholds(unit: Unit) -> None:
     }
     result = validate_response(json.dumps(body), questions)
     checks = {name: Check(name, Target.from_unit(unit), name, rule) for name, rule in rules.items()}
-    findings = [assess(checks[name], answer)[1] for name, answer in result.answers.items()]
+    findings = [assess(checks[name], answer).finding for name, answer in result.answers.items()]
     assert [finding.severity for finding in findings if finding] == [Severity.ERROR, Severity.WARNING]
     body["answers"]["choice"].update(choice="unknown", confidence=0.99, probabilities={"bad": 0.01, "unknown": 0.99})
     body["answers"]["score"].update(score=0.8, confidence=0.4)
     result = validate_response(json.dumps(body), questions)
-    assert all(assess(checks[name], answer) == ("unknown", None) for name, answer in result.answers.items())
+    assert all(assess(checks[name], answer).status == "unknown" for name, answer in result.answers.items())
 
 
 async def test_limiter_paces_and_respects_a_later_deferral() -> None:
@@ -210,4 +210,4 @@ def test_inverse_noul_and_descending_score_levels(unit: Unit, basic_rule: Rule) 
         questions,
     )
     for key, rule in (("n", noul), ("s", score)):
-        assert assess(Check(key, Target.from_unit(unit), key, rule), response.answers[key])[0] == "error"
+        assert assess(Check(key, Target.from_unit(unit), key, rule), response.answers[key]).status == "error"
