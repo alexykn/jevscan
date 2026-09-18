@@ -13,6 +13,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+          ref: 6afbfe670df2bb79792bc076cf98a2c721d3a439
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.13'
@@ -20,7 +21,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p /tmp/rc5/wheels /tmp/rc5/references
-          git archive 6afbfe670df2bb79792bc076cf98a2c721d3a439 > /tmp/rc5/source.tar
+          git archive HEAD > /tmp/rc5/source.tar
           python -m pip download --dest /tmp/rc5/wheels -r requirements.txt 'pytest>=8.3,<10' 'pytest-asyncio>=0.25,<2' 'ruff>=0.11,<1' 'ty>=0.0.1,<1' 'radon>=6,<7' 'build>=1.2,<2' 'setuptools>=77'
           python - <<'PY'
           import json, urllib.request, pathlib
