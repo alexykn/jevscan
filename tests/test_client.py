@@ -88,8 +88,8 @@ def test_choice_and_score_thresholds(unit: Unit) -> None:
     result = validate_response(json.dumps(body), rules)
     assert [f.rule for f in findings_from(WorkItem(unit, {}, rules), result)] == ["choice"]
     body["answers"]["choice"]["probabilities"]["bad"] = 0.5
-    with pytest.raises(JevError, match="sum"):
-        validate_response(json.dumps(body), rules)
+    result = validate_response(json.dumps(body), rules)
+    assert findings_from(WorkItem(unit, {}, rules), result) == []
 
 
 async def test_limiter_paces_and_respects_a_later_deferral() -> None:

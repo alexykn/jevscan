@@ -28,7 +28,7 @@ Content-Type: application/json
 
 Several rules can inspect one state in one request. Noul returns `noul`; Choice returns `choice`, `confidence`, and a label probability map; Score returns `score`, `confidence`, and a zero-based rubric probability map. Score maps use string keys in raw JSON. The response also names the model and can include token usage.
 
-jevscan validates response types, question IDs, option labels, rubric ranges, finite probabilities, and probability sums at the network/cache boundary. The rest of the pipeline operates on that validated contract. A malformed response is an operational failure, not a clean result or a reason to invent missing answers.
+jevscan validates response types, question IDs, option labels, and rubric ranges at the network/cache boundary. The rest of the pipeline operates on that validated contract. A malformed response is an operational failure, not a clean result or a reason to invent missing answers.
 
 ## Minimal standalone Python call
 

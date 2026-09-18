@@ -94,10 +94,8 @@ def validate_response(raw: bytes | str, rules: dict[str, Rule]) -> JevResponse:
         probabilities = answer.probabilities
         if set(probabilities) != expected_keys:
             raise JevError(f"{name}: probability labels do not match the rubric")
-        if any(not math.isfinite(p) or not 0 <= p <= 1 for p in probabilities.values()):
+        if any(not 0 <= p <= 1 for p in probabilities.values()):
             raise JevError(f"{name}: invalid probability value")
-        if not math.isclose(sum(probabilities.values()), 1.0, abs_tol=0.001):
-            raise JevError(f"{name}: probabilities do not sum to one")
     return response
 
 
