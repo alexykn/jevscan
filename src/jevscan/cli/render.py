@@ -120,7 +120,7 @@ class Reporter:
         self._file_header(unit["path"])
         letter, color = KIND_STYLE.get(unit["kind"], ("?", WHITE))
         marker = self._paint(letter, BOLD + color)
-        location = self._paint(f"{unit['start_line']}:{unit.get('start_byte', 0)}", DIM)
+        location = self._paint(f"{unit['start_line']}", DIM)
         name = self._paint(unit["qualified_name"], BOLD)
         cached_text = self._paint("  cached", DIM) if cached else ""
         self.stream.write(f"    {marker} {location} {name}{cached_text}\n")
