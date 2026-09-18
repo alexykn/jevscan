@@ -27,7 +27,7 @@ jobs:
           enable-cache: true
 
       - name: Install locked dependencies
-        run: uv sync --locked --all-groups
+        run: uv sync --all-groups
 
       - name: Check formatting
         run: uv run ruff format --check src tests
