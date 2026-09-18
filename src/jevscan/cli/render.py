@@ -1,20 +1,11 @@
-"""Rich terminal presentation and streaming machine-readable reports."""
+"""Plain-text terminal presentation and streaming machine-readable reports."""
 
 import json
 from typing import Any, TextIO
 
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.table import Table
-from rich.text import Text
-
-LEVEL_STYLES = {"info": "cyan", "warning": "yellow", "error": "red"}
-
 
 class Reporter:
-    def __init__(self, stream: TextIO, format_name: str, metadata: dict[str, Any], *, no_color: bool = False,
-                 quiet: bool = False, max_display: int = 100) -> None:
+    def __init__(self, stream: TextIO, format_name: str, metadata: dict[str, Any], *, max_display: int = 0) -> None:
         self.stream = stream
         self.format = format_name
         self.first = True
@@ -22,30 +13,14 @@ class Reporter:
         self.limit = max_display
         self.shown = 0
         self.hidden = 0
-        self.files = 0
-        self.evaluated = 0
-        self.console = Console(file=stream, no_color=no_color, highlight=False)
-        self.progress: Progress | None = None
-        self.task: Any = None
         if self.format == "json":
-            self.stream.write('{"schema_version":1,"metadata":' + json.dumps(metadata, ensure_ascii=False) + ',"events":[')
+            self.stream.write(
+                '{"schema_version":1,"metadata":' + json.dumps(metadata, ensure_ascii=False) + ',"events":['
+            )
         elif self.format == "jsonl":
             self._line({"event": "start", "schema_version": 1, **metadata})
         else:
-            heading = Text("jevscan", style="bold cyan")
-            heading.append("  /  code quality scanner", style="dim")
-            details = Text(f"{metadata['root']}\n", style="bold")
-            details.append(f"{metadata['mode']} · {metadata['parser_processes']} parser processes · ")
-            details.append(f"{metadata['concurrency']} API slots\n")
-            details.append(f"Config: {metadata['config']}", style="dim")
-            self.console.print(Panel(Group(heading, details), border_style="cyan", padding=(1, 2)))
-            if metadata["mode"] == "offline":
-                self.console.print("Offline inventory — no semantic judgments, no network requests.\n", style="dim")
-            if self.console.is_terminal and not quiet:
-                self.progress = Progress(SpinnerColumn(), TextColumn("{task.description}"), TimeElapsedColumn(),
-                                         console=self.console, transient=True)
-                self.task = self.progress.add_task("Discovering source files", total=None)
-                self.progress.start()
+            self.stream.write(f"jevscan {metadata['mode']} root={metadata['root']} model={metadata['model']}\n")
 
     def _line(self, event: dict[str, Any]) -> None:
         self.stream.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
@@ -64,7 +39,7 @@ class Reporter:
             self.first = False
             self.stream.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")))
         else:
-            self._rich_event(event)
+            self._text_event(event)
 
     def _admit_detail(self) -> bool:
         if self.limit and self.shown >= self.limit:
@@ -73,44 +48,40 @@ class Reporter:
         self.shown += 1
         return True
 
-    def _rich_event(self, event: dict[str, Any]) -> None:
-        kind = event["event"]
-        if kind == "file":
-            self.files += 1
-        elif kind == "unit" and self._admit_detail():
-            unit = event["unit"]
-            text = Text(f"  {unit['kind']:<10} ", style="cyan")
-            text.append(unit["qualified_name"], style="bold")
-            text.append(f"  {unit['path']}:{unit['start_line']}–{unit['end_line']}", style="dim")
-            self.console.print(text)
-        elif kind == "evaluation":
-            self.evaluated += 1
-            for finding in event["findings"]:
-                if self._admit_detail():
-                    self._finding(finding, event["cached"])
-        elif kind == "diagnostic":
-            text = Text(f"{event['severity'].upper()}  {event['code']}  ", style=LEVEL_STYLES[event["severity"]])
-            text.append(event["message"])
-            if event["path"]:
-                text.append(f"\n  {event['path']}" + (f":{event['line']}" if event.get("line") else ""), style="dim")
-            self.console.print(text)
-        if self.progress:
-            self.progress.update(self.task, description=f"{self.files:,} files parsed · {self.evaluated:,} units evaluated")
+    @staticmethod
+    def _answer_text(answer: dict[str, Any]) -> str:
+        kind = answer["type"]
+        if kind == "noul":
+            return f"noul={answer['noul']:.3f}"
+        if kind == "choice":
+            probability = answer["probabilities"][answer["choice"]]
+            return f"choice={answer['choice']} p={probability:.3f} confidence={answer['confidence']:.3f}"
+        return f"score={answer['score']:.3f} confidence={answer['confidence']:.3f}"
 
-    def _finding(self, finding: dict[str, Any], cached: bool) -> None:
-        unit = finding["unit"]
-        level = finding["severity"]
-        heading = Text(f"{level.upper()}  ", style=f"bold {LEVEL_STYLES[level]}")
-        heading.append(finding["rule"], style="bold")
-        if finding["probability"] is not None:
-            heading.append(f"   model P={finding['probability']:.3f}", style="dim")
-        else:
-            heading.append(f"   score={finding['value']:.2f}", style="dim")
-        if cached:
-            heading.append("  cached", style="dim")
-        location = Text(f"{unit['path']}:{unit['start_line']}–{unit['end_line']}  {unit['qualified_name']}", style="cyan")
-        message = Text(finding["message"])
-        self.console.print(Panel(Group(heading, location, message), border_style=LEVEL_STYLES[level], padding=(0, 1)))
+    def _text_event(self, event: dict[str, Any]) -> None:
+        kind = event["event"]
+        if kind == "unit" and self._admit_detail():
+            unit = event["unit"]
+            self.stream.write(f"unit {unit['path']}:{unit['start_line']}-{unit['end_line']} {unit['qualified_name']}\n")
+        elif kind == "evaluation" and self._admit_detail():
+            unit = event["unit"]
+            findings = {finding["rule"]: finding for finding in event["findings"]}
+            cached = " cached" if event["cached"] else ""
+            for rule, answer in event["answers"].items():
+                finding = findings.get(rule)
+                marker = "!" if finding else " "
+                detail = self._answer_text(answer)
+                suffix = f" — {finding['message']}" if finding else ""
+                self.stream.write(
+                    f"{marker} {unit['path']}:{unit['start_line']} {unit['qualified_name']} "
+                    f"{rule} {detail}{cached}{suffix}\n"
+                )
+        elif kind == "diagnostic":
+            location = event["path"]
+            if location and event.get("line"):
+                location += f":{event['line']}"
+            suffix = f" ({location})" if location else ""
+            self.stream.write(f"{event['severity']}: {event['code']}: {event['message']}{suffix}\n")
 
     def _finish(self, event: dict[str, Any]) -> None:
         summary = {key: value for key, value in event.items() if key != "event"}
@@ -119,25 +90,20 @@ class Reporter:
         elif self.format == "jsonl":
             self._line(event)
         else:
-            if self.progress:
-                self.progress.stop()
-            table = Table.grid(padding=(0, 3))
-            table.add_column(style="dim")
-            table.add_column(justify="right")
-            rows = [
-                ("Files parsed / discovered", f"{summary['files_parsed']:,} / {summary['files_discovered']:,}"),
-                ("Code units", f"{summary['units_found']:,}"),
-                ("Evaluated / cache hits", f"{summary['units_evaluated']:,} / {summary['units_cached']:,}"),
-                ("Skipped / failed units", f"{summary['units_skipped']:,} / {summary['units_failed']:,}"),
-                ("Findings", " · ".join(f"{n:,} {level}" for level, n in summary["findings"].items())),
-                ("API attempts", f"{summary['requests']:,}"),
-                ("Elapsed", f"{summary['elapsed_seconds']:.2f}s"),
-            ]
-            for label, value in rows:
-                table.add_row(label, value)
-            label = "INCOMPLETE" if summary["incomplete"] else ("INVENTORY COMPLETE" if summary["mode"] == "offline" else "SCAN COMPLETE")
-            self.console.print(Panel(table, title=label, border_style="red" if summary["incomplete"] else "cyan"))
+            status = (
+                "incomplete"
+                if summary["incomplete"]
+                else ("complete" if summary["mode"] == "live" else "inventory-complete")
+            )
+            findings = " ".join(f"{level}={count}" for level, count in summary["findings"].items())
+            self.stream.write(
+                f"{status}: files={summary['files_parsed']}/{summary['files_discovered']} "
+                f"units={summary['units_found']} evaluated={summary['units_evaluated']} "
+                f"cached={summary['units_cached']} skipped={summary['units_skipped']} "
+                f"failed={summary['units_failed']} findings={findings} "
+                f"requests={summary['requests']} elapsed={summary['elapsed_seconds']:.2f}s\n"
+            )
             if self.hidden:
-                self.console.print(f"{self.hidden:,} additional details omitted from terminal display; use --format jsonl for the full report.", style="dim")
+                self.stream.write(f"omitted={self.hidden} details (use --format jsonl for the full report)\n")
         self.stream.flush()
         self.closed = True

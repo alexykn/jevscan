@@ -2,7 +2,7 @@
 
 ## Executed locally
 
-Environment: Linux x86-64, CPython **3.13.5**. Dependencies already present included HTTPX, Pydantic, PyYAML, pathspec, Rich, pytest, pytest-asyncio, and setuptools 82.0.1.
+Environment: Linux x86-64, CPython **3.13.5**. Dependencies already present included HTTPX, Pydantic, PyYAML, pathspec, pytest, pytest-asyncio, and setuptools 82.0.1.
 
 ```text
 PYTHONPATH=src pytest -q -rs --disable-warnings

@@ -2,7 +2,7 @@
 
 A configurable semantic code-quality scanner for **Python, Rust, Perl, TypeScript, and JavaScript**.
 
-Tree-sitter finds lexical code units. Jev evaluates the applicable YAML rules. jevscan applies the reporting thresholds and produces a Rich terminal report or streaming JSON/JSONL. It does not execute or import the code being scanned.
+Tree-sitter finds lexical code units. Jev evaluates the applicable YAML rules. jevscan applies the reporting thresholds and produces a plain-text terminal report or streaming JSON/JSONL. The text report prints every evaluated answer, including scores that do not cross a finding threshold. It does not execute or import the code being scanned.
 
 **Status: initial implementation.** See [verification](docs/VERIFICATION.md) for the exact checks performed and the integration checks not run in the delivery environment. Default semantic thresholds are starting points, not calibrated accuracy guarantees.
 
@@ -94,9 +94,9 @@ uv run jevscan . --no-cache --fail-on error
 uv run jevscan . --offline --format jsonl -o inventory.jsonl
 ```
 
-Rich output has a live progress indicator, finding panels with qualified names and line ranges, and a final coverage summary. Terminal details are limited to 100 by default (`--max-display 0` removes this limit); diagnostics remain visible, and JSON/JSONL are never display-limited. Machine reports include unit metadata, typed answers, findings, diagnostics, and a final summary. Reports contain names and declaration signatures; treat them as potentially sensitive.
+Text output is a compact line-oriented report: every evaluated answer is printed with its probability, choice, score, or confidence, and findings are marked with `!`. The default text report is unlimited; `--max-display` can cap detail lines. JSON/JSONL are never display-limited. Machine reports include unit metadata, typed answers, findings, diagnostics, and a final summary. Reports contain names and declaration signatures; treat them as potentially sensitive.
 
-`model P` is the model's assigned probability, not a measured probability that a finding is correct. Severity comes from the rule, not from confidence. Score thresholds use the configured rubric's zero-based scale. Findings currently refer to the **whole extracted unit**; there is no second-pass line localization or generated repair advice.
+Reported probabilities and confidence values are the model's returned values, not measured probabilities that findings are correct. Severity comes from the rule, not from confidence. Score thresholds use the configured rubric's zero-based scale. Findings currently refer to the **whole extracted unit**; there is no second-pass line localization or generated repair advice.
 
 The default rules address mixed responsibilities, control-flow clarity, abstraction levels, redundant validation, hidden invariant failures, decomposition, ownership, cohesion, and duplicated behavior. Context is bounded **same-file declarations and imports**, not resolved caller bodies or a repository-wide call graph. Rules that need an upstream contract have an explicit insufficient-context option. No whole-repository architecture, duplication, or test-coverage claim is inferred from a local snippet.
 
