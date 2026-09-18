@@ -7,7 +7,7 @@ The packaged `jevscan/data/default.yaml` is the full default configuration. Gene
 Without `extends: default`, these are the only rules that run:
 
 ```yaml
-version: 1
+version: 2
 rules:
   mixed-work:
     applies_to: [function, method, closure]
@@ -20,14 +20,17 @@ rules:
         that makes this operation materially harder to understand?
         Inherent domain complexity alone is not evidence of a problem.
     report:
-      severity: warning
       message: Several responsibilities appear interleaved in this operation.
-      min_probability: 0.90
+      levels:
+        warning:
+          min_probability: 0.50
+        error:
+          min_probability: 0.90
 ```
 
 Supported kinds: `function`, `method`, `closure`, `class`, `struct`, `enum`, `trait`, `impl`, `interface`, `type`, `module`, `package`. TSX uses language `typescript`; JSX uses `javascript`.
 
-`enabled` defaults to true. `languages` defaults to all five. `require_body` defaults to false; enable it for checks that need an implementation rather than a declaration. `applies_to`, `question`, and `report.message` are required. IDs contain lowercase letters, digits, hyphens, or underscores.
+`enabled` defaults to true. `languages` defaults to all five. `require_body` defaults to false; enable it for checks that need an implementation rather than a declaration. `applies_to`, `question`, `report.message`, and both `report.levels.warning` and `report.levels.error` are required. Answers below the warning gate are OK/green; warning findings are yellow and error findings are red. IDs contain lowercase letters, digits, hyphens, or underscores.
 
 ## Question and report forms
 
@@ -41,12 +44,15 @@ question:
   instructions: Is the control flow in `source` straightforward to follow?
 report:
   message: The control flow appears hard to follow.
-  severity: warning
   expected: false
-  min_probability: 0.90
+  levels:
+    warning:
+      min_probability: 0.50
+    error:
+      min_probability: 0.90
 ```
 
-Noul does not use a separate confidence threshold. jevscan does not support optional Noul criteria descriptions in this initial schema; put a focused distinction in `instructions` or use Choice.
+Noul does not use a separate confidence threshold. The warning gate must be no stricter than the error gate. jevscan does not support optional Noul criteria descriptions in this initial schema; put a focused distinction in `instructions` or use Choice.
 
 ### Choice
 
@@ -65,11 +71,15 @@ question:
     absent: No redundant validation is apparent.
     unknown: The evidence is insufficient to establish the upstream guarantee.
 report:
-  severity: warning
   message: This check appears to repeat an explicitly established invariant.
   choices: [redundant]
-  min_probability: 0.95
-  min_confidence: 0.70
+  levels:
+    warning:
+      min_probability: 0.60
+      min_confidence: 0.50
+    error:
+      min_probability: 0.95
+      min_confidence: 0.70
 ```
 
 ### Score
@@ -86,13 +96,17 @@ question:
     - Several competing concerns substantially obscure the main path.
     - The main path is tangled and difficult to establish.
 report:
-  severity: warning
   message: The main execution path appears difficult to follow.
-  min_score: 2.4
-  min_confidence: 0.70
+  levels:
+    warning:
+      min_score: 1.0
+      min_confidence: 0.60
+    error:
+      min_score: 2.0
+      min_confidence: 0.70
 ```
 
-A Score report cannot use `min_probability`, `choices`, or `expected: false`. Default threshold values are heuristic starting points: evaluate precision and false positives on labelled examples from your languages before using semantic findings to block changes.
+A Score report cannot use `min_probability`, `choices`, or `expected: false`. For `min_score`, the warning threshold must be less than or equal to the error threshold; for `max_score`, the warning threshold must be greater than or equal to the error threshold. Confidence gates follow the same warning-before-error ordering. Default threshold values are heuristic starting points: evaluate precision and false positives on labelled examples from your languages before using semantic findings to block changes.
 
 ## State visible to every question
 
