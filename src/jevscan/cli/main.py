@@ -14,7 +14,15 @@ from jevscan import __version__
 from jevscan.cli.args import parser
 from jevscan.cli.render import Reporter
 from jevscan.cli.terminal import safe_text
-from jevscan.core.config import Config, ConfigError, LoadedConfig, initial_toml, load_config, resolved_toml
+from jevscan.core.config import (
+    Config,
+    ConfigError,
+    LoadedConfig,
+    initial_yaml,
+    load_config,
+    resolved_yaml,
+    validate_config_path,
+)
 from jevscan.core.languages import language_for
 from jevscan.core.scanner import run_scan, worker_count
 
@@ -77,14 +85,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         if args.init_config:
+            validate_config_path(args.init_config)
             with args.init_config.open("x", encoding="utf-8") as stream:
-                stream.write(initial_toml())
+                stream.write(initial_yaml())
             print(f"Created {args.init_config}")
             return 0
         paths = [path.absolute() for path in (args.paths or [Path.cwd()])]
         loaded = _overrides(load_config(paths, args.config), args)
         if args.show_config:
-            sys.stdout.write(resolved_toml(loaded.config))
+            sys.stdout.write(resolved_yaml(loaded.config))
             return 0
         if args.list_rules:
             _list_rules(loaded.config)

@@ -2,9 +2,9 @@
 
 ## Local checks
 
-Executed on Linux x86-64, CPython 3.13.5, with real bundled Tree-sitter grammars, HTTPX 0.28.1, Pydantic 2.13.5, Ruff 0.16.8 and ty 0.0.82. The starting source tree was checked against merged RC3 commit `3f7ca8dcfb5e19fa88ade1352a418a2ca2bf894d`, tree `f10345c75cf56595a6f8695940a415edf2a140fc`.
+Executed on Linux x86-64, CPython 3.13.5, with real bundled Tree-sitter grammars, HTTPX 0.28.1, Pydantic 2.13.5, Ruff 0.16.8 and ty 0.0.82. The YAML correction starts from PR #6 commit `326bf72d0c48f661161a580421a030488927cc64`; the extracted reference tree was verified as `700995f0df5754f61d802a9650e35799e8f290f6`. Routing, retrieval, rule selection and assessment code are unchanged by this correction.
 
-The container could not access a package index directly. Existing verified dependency wheels were reused; the new Tomli-W wheel and updated registry-backed uv lockfile were resolved by an isolated GitHub dependency-preparation run and downloaded through the connector. Tomli-W 1.2.0's SHA-256 was checked against published PyPI metadata. PyYAML is no longer a runtime dependency; the unrelated bundled Tree-sitter YAML grammar remains a transitive parser dependency.
+The prior registry-resolved PyYAML dependency set and lockfile are restored unchanged from RC3. Existing verified wheels were reused for local testing. There is no Tomli-W dependency or configuration-format migration; project input/output and packaged rules remain YAML.
 
 The coordinated checks were:
 
@@ -17,13 +17,13 @@ uv run --no-sync radon cc -s -n C src
 uv build --offline --no-build-isolation
 ```
 
-Formatting, lint, and type checking passed. **186 tests passed, no skips.** Radon was reviewed as an informational report; no claim is made that every existing function has low complexity. The new disposition/family helpers are separate from candidate ranking and file-local result ownership.
+Formatting, lint, and type checking passed. **200 tests passed, no skips.** Radon was reviewed as an informational report; no claim is made that every existing function has low complexity. The new disposition/family helpers are separate from candidate ranking and file-local result ownership.
 
-Both sdist and wheel built. A clean, separate virtual environment installed the wheel and was exercised outside the source checkout: package identity, absence of a PyYAML import, minimal TOML initialization, resolved TOML, enrichment opt-out, rule/set selection, schema-5 reporting, and all five real native grammar frontends passed. Both checked-in example TOML files resolve successfully. A direct comparison confirmed that all nine original primary questions, criteria, numerical reporting thresholds, and uncertainty/enrichment admission policies were preserved exactly under their new IDs.
+Both sdist and wheel built. A clean, separate virtual environment installed the wheel and was exercised outside the source checkout: package identity, PyYAML SafeLoader input, minimal YAML initialization, resolved YAML, enrichment opt-out, rule/set selection, schema-5 reporting, and all five real native grammar frontends passed. Both checked-in example YAML files resolve successfully. A direct comparison confirmed that all nine original primary questions, criteria, numerical reporting thresholds, and uncertainty/enrichment admission policies were preserved exactly under their new IDs.
 
 ## Behavioral coverage
 
-Configuration tests exercise empty/additive project configs, stable named rule overrides, new rules and sets, rule/set disablement, ignore/select precedence, effective planner selection, unknown selectors, duplicate names, invalid report/budget contracts, legacy YAML detection, Git discovery boundaries, and resolved TOML round trips. The CLI exposes stable IDs/titles/membership without turning display metadata into model instructions.
+Configuration tests exercise empty/additive project configs, stable named rule overrides, new rules and sets, rule/set disablement, ignore/select precedence, effective planner selection, unknown selectors, duplicate names, invalid report/budget contracts, old schema rejection, both YAML filenames, duplicate keys, non-string keys, unsafe tags, malformed/recursive YAML, optional-field clearing, Git discovery boundaries, and resolved YAML round trips that preserve explicit nulls. The CLI exposes stable IDs/titles/membership without turning display metadata into model instructions.
 
 Routing tests use the actual HTTPX client with MockTransport. They cover multiple simultaneously useful evidence families in one routing request, no qualifying families, high speculative family scores that cannot override a terminal disposition, low disposition confidence, family deduplication, a shared global candidate cap with fair pooling, preserved per-family omission provenance, small question/call budgets, partial routing audits, and exactly one unchanged-question reassessment. Changed callers invalidate affected relevance/final requests while eligible initial/routing answers remain reusable.
 
@@ -31,7 +31,7 @@ Retained tests exercise intrinsic-uncertainty admission, priority for late missi
 
 ## Continuous integration
 
-Permanent CI retains read-only repository permissions and locked dependency installation. It checks the whole project and tests/builds/smoke-tests installed wheels on Linux Python 3.12, 3.13, 3.14 and macOS 14 Python 3.12. Final PR checks, rather than the local environment, are authoritative for that matrix. Distribution artifacts are retained; nothing is automatically merged or published.
+Permanent CI retains read-only repository permissions and locked dependency installation. It checks the whole project and tests/builds/smoke-tests installed wheels on Linux Python 3.12, 3.13, 3.14 and macOS 14 Python 3.12. The revised YAML source must pass the final PR checks again; the earlier TOML-head run is not evidence for this correction. Final PR checks, rather than the local environment, are authoritative for that matrix. Distribution artifacts are retained; nothing is automatically merged or published.
 
 ## Acceptance boundary
 

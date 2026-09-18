@@ -80,7 +80,7 @@ A schematic request with two independent method judgments:
 
 The placeholder source/ranges above illustrate the shape; actual spans come from Tree-sitter, and actual source is sent without clipping. Byte ranges are UTF-8 offsets into the original file, zero-based and end-exclusive. Lines are one-based and inclusive. A method's span remains its own even when the evidence document is the entire file or class.
 
-`Check` owns the binding between request key, target, and TOML rule ID. Each question says that `source` in its instructions/criteria means only that target. It can use the rest of the supplied document as evidence, but must not assign a class-wide concern indiscriminately to every method. The fixed policy also says source strings/comments are evidence, not instructions; this is a guardrail, not a proven prompt-injection defense.
+`Check` owns the binding between request key, target, and YAML rule ID. Each question says that `source` in its instructions/criteria means only that target. It can use the rest of the supplied document as evidence, but must not assign a class-wide concern indiscriminately to every method. The fixed policy also says source strings/comments are evidence, not instructions; this is a guardrail, not a proven prompt-injection defense.
 
 No absolute home directory is added to an ordinary project-relative path merely to describe file identity. Source outside the selected project root may retain the discovery layer's absolute display path. Primary envelopes do not read cross-file source. Enrichment can conditionally discover and supply allowed source from the resolved project root; see the data-sharing contract below.
 
@@ -113,7 +113,7 @@ An `evaluation` event contains:
 | Field | Meaning |
 | --- | --- |
 | `target` | Complete unit/file identity and source span |
-| `answers` | Raw typed answers keyed by TOML rule name |
+| `answers` | Raw typed answers keyed by YAML rule name |
 | `rule_metadata` | Per-rule title and ruleset membership, separate from identity |
 | `statuses` | `ok`, `unknown`, `not_applicable`, `warning`, or `error` per answer |
 | `uncertainty_reasons`, `reviews` | Decision reasons and an auditable, bounded enrichment history |
@@ -142,6 +142,6 @@ The routing request contains a disposition Choice and four independent family No
 
 Report reviews record disposition, all family probabilities, admitted families, per-family coverage, candidate memberships, selected source, omissions, and stopping outcomes. The resulting `retrieval_coverage` contains `families`, `candidate_families`, and combined-pool omission counts. Family membership is lexical/provenance information, not a resolved contract.
 
-Configuration version 4 is additive TOML. Rule names (JEV01–JEV09 for built-ins) are stable identifiers. Titles/rulesets are report metadata, not model instructions. Disabling a rule or set prevents creating those questions; selection may also change request batching/cache identities.
+Configuration version 4 is additive YAML. Rule names (JEV01–JEV09 for built-ins) are stable identifiers. Titles/rulesets are report metadata, not model instructions. Disabling a rule or set prevents creating those questions; selection may also change request batching/cache identities.
 
 Source outside the scanned subdirectory can be selected only under the resolved project root and filters. Selected evidence does not imply all callers have been seen or that per-file snapshots form an atomic repository revision. See [ENRICHMENT.md](ENRICHMENT.md) for the precise algorithm, research basis, and live-acceptance boundary.

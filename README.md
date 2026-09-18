@@ -2,7 +2,7 @@
 
 A configuration-driven semantic code-quality scanner for **Python, Rust, Perl, TypeScript, and JavaScript**. Tree-sitter extracts source; Jev answers independent typed questions. jevscan does not execute or import the code being scanned.
 
-**0.2.0rc4** introduces additive `jevscan.toml` configuration, named rules and rulesets, and multi-label evidence routing. This is a release candidate, not a claim of calibrated semantic accuracy. [Verification](docs/VERIFICATION.md) separates software checks from live model acceptance.
+**0.2.0rc4** introduces additive `jevscan.yaml` configuration, named rules and rulesets, and multi-label evidence routing. This is a release candidate, not a claim of calibrated semantic accuracy. [Verification](docs/VERIFICATION.md) separates software checks from live model acceptance.
 
 ## Install and run
 
@@ -31,18 +31,18 @@ The pinned `tree-sitter==0.25.2` and `tree-sitter-language-pack==0.13.0` bundle 
 
 ## Named rules and additive configuration
 
-A project `jevscan.toml` **adds to the built-in catalogue**. There is no `extends` switch and an empty project configuration does not remove the defaults. Rules merge by their unique `name`; nested settings merge, while lists replace. A new name adds a rule. An existing name overrides only the supplied fields.
+A project `jevscan.yaml` (or `jevscan.yml`) **adds to the built-in catalogue**. There is no `extends` switch and an empty project configuration does not remove the defaults. Rules merge by their unique `name`; nested settings merge, while lists replace. A new name adds a rule. An existing name overrides only the supplied fields.
 
-```toml
-version = 4
-
-[lint]
-ignore = ["JEV09"]  # Ignore one rule. Use "JEV" to ignore the built-in ruleset.
-
-[[rules]]
-name = "JEV02"
-[rules.report.levels.warning]
-min_score = 1.2     # Override just this threshold; the rest stays inherited.
+```yaml
+version: 4
+lint:
+  ignore: [JEV09]
+rules:
+  - name: JEV02
+    report:
+      levels:
+        warning:
+          min_score: 1.2
 ```
 
 Names are stable identities; titles describe the check. The built-in ruleset is `JEV`:
@@ -61,39 +61,38 @@ Names are stable identities; titles describe the check. The built-in ruleset is 
 
 Custom rules use the same selection and reporting contracts:
 
-```toml
-[rulesets.TEAM]
-description = "Team-specific conventions"
-
-[[rules]]
-name = "TEAM01"
-title = "blocking-io-in-async-code"
-ruleset = "TEAM"
-target = "unit"
-context = "file"
-applies_to = ["function", "method"]
-require_body = true
-
-[rules.question]
-type = "noul"
-instructions = "Does this async operation perform clearly blocking I/O on the event-loop thread?"
-
-[rules.report]
-message = "Review blocking I/O in this async operation."
-uncertain_range = [0.4, 0.6]
-[rules.report.levels.warning]
-min_probability = 0.75
-[rules.report.levels.error]
-min_probability = 0.95
+```yaml
+rulesets:
+  TEAM:
+    description: Team-specific conventions
+rules:
+  - name: TEAM01
+    title: blocking-io-in-async-code
+    ruleset: TEAM
+    target: unit
+    context: file
+    applies_to: [function, method]
+    require_body: true
+    question:
+      type: noul
+      instructions: Does this async operation perform clearly blocking I/O on the event-loop thread?
+    report:
+      message: Review blocking I/O in this async operation.
+      uncertain_range: [0.4, 0.6]
+      levels:
+        warning:
+          min_probability: 0.75
+        error:
+          min_probability: 0.95
 ```
 
-This adds `TEAM01` without removing `JEV01`–`JEV09`. A rule without `ruleset` belongs to the built-in empty `project` group. Other groups must be declared. To disable a whole set, set `[rulesets.TEAM] enabled = false`; to disable a rule, override its `enabled = false`. `[lint] ignore = ["TEAM"]` also suppresses the whole set. To run only custom rules, explicitly use `[lint] select = ["TEAM"]`. Definitions remain available for inspection.
+This adds `TEAM01` without removing `JEV01`–`JEV09`. A rule without `ruleset` belongs to the built-in empty `project` group. Other groups must be declared. To disable a whole set, set `enabled: false` under `rulesets.TEAM`; to disable a rule, override its `enabled: false`. `ignore: [TEAM]` under `lint` also suppresses the whole set. To run only custom rules, explicitly use `select: [TEAM]` under `lint`. Definitions remain available for inspection.
 
-Selectors accept exact rule names, exact ruleset names, or `ALL`, not arbitrary prefixes or globs. Ignore wins; `enabled = false` on either a rule or its set also wins. Unknown selectors and duplicate rule names are errors, not silently ignored typos.
+Selectors accept exact rule names, exact ruleset names, or `ALL`, not arbitrary prefixes or globs. Ignore wins; `enabled: false` on either a rule or its set also wins. Unknown selectors and duplicate rule names are errors, not silently ignored typos.
 
 ```bash
-uv run jevscan --init-config          # minimal additive TOML; refuses to overwrite
-uv run jevscan --show-config          # full resolved, round-trippable TOML
+uv run jevscan --init-config          # minimal additive YAML; refuses to overwrite
+uv run jevscan --show-config          # full resolved, round-trippable YAML
 uv run jevscan --list-rules           # identities, titles, sets, effective enablement
 uv run jevscan src --select JEV --ignore JEV09
 uv run jevscan src --rule TEAM01      # --rule is an alias for --select
@@ -101,7 +100,7 @@ uv run jevscan src --rule TEAM01      # --rule is an alias for --select
 
 Repeat `--select`/`--ignore` for several names. CLI selection replaces the configured selection; CLI ignores add to configured ignores. Explicitly disabled rules are not re-enabled.
 
-**Migration:** YAML versions 1–3 are retired. Legacy `jevscan.yaml`/`.yml` files are detected and produce migration errors; they are not silently bypassed. Read the [v3-to-v4 migration guide](docs/CONFIGURATION.md#migration-from-yaml-v3). Rule IDs and machine reports changed too; numerical finding thresholds did not.
+**Configuration schema:** YAML and the existing filenames are retained. Version 4 changes the rule catalogue to named entries; an older schema version produces an explicit migration error rather than silently changing rule selection. Read the [v3-to-v4 migration guide](docs/CONFIGURATION.md#migration-from-yaml-v3). Rule IDs and machine reports changed too; numerical finding thresholds did not.
 
 ## Targets and evidence are different
 
@@ -113,7 +112,7 @@ A method can be judged independently while Jev sees its whole class. Checks shar
 
 There is **no 32 KB unit cutoff**. The planner checks estimated state-plus-longest-question tokens, aggregate tokens, serialized bytes, and question count. Defaults are 28,000/56,000 estimated tokens, a 512-token reserve, 1 MiB, and 64 questions. The UTF-8 byte estimator is not TypeSafe's tokenizer or a guarantee about provider limits.
 
-Oversized requests first split questions. `evaluation.oversized_context = "reduce"` permits narrower surrounding context but retains the entire target; `"skip"` requires the requested context unchanged. Explicit provider size rejection also triggers bounded recovery. Reduced context and omitted checks are reported as incomplete coverage. Smaller nested units can still be evaluated. Targets are never clipped or falsely reported as clean.
+Oversized requests first split questions. `evaluation.oversized_context: reduce` permits narrower surrounding context but retains the entire target; `"skip"` requires the requested context unchanged. Explicit provider size rejection also triggers bounded recovery. Reduced context and omitted checks are reported as incomplete coverage. Smaller nested units can still be evaluated. Targets are never clipped or falsely reported as clean.
 
 ## Bounded evidence enrichment
 
@@ -129,7 +128,7 @@ Candidates from all qualifying families are deduplicated and combined in determi
 uv run jevscan src --no-enrichment
 ```
 
-Global `enrichment.enabled = false`, per-rule `enrich = false`, or `enrich_on = []` also disables refinement. Defaults limit reviews to 12 checks and 36 auxiliary prediction requests per file, 12 candidates total per review, 3 admitted evidence units, and a lazy project catalogue of at most 1,000 source files / 16 MiB. Cache hits count toward logical limits. Existing token/byte/question budgets apply in every phase.
+Global `enrichment.enabled: false`, per-rule `enrich: false`, or `enrich_on: []` also disables refinement. Defaults limit reviews to 12 checks and 36 auxiliary prediction requests per file, 12 candidates total per review, 3 admitted evidence units, and a lazy project catalogue of at most 1,000 source files / 16 MiB. Cache hits count toward logical limits. Existing token/byte/question budgets apply in every phase.
 
 **Source-sharing boundary:** enrichment may select source outside the scanned subdirectory, but only inside the resolved project root and existing source/include/exclude/Git-ignore filters. Reads reject symlinks, including parent components, nonregular files, and observed read-time changes. Previews and selected source use the same immutable per-file snapshot. A lexical match is a *possible* caller/definition, not a resolved call graph or proof of a universal guarantee. [Design and limitations](docs/ENRICHMENT.md).
 
@@ -172,7 +171,7 @@ discovery → spawned Tree-sitter parsers → bounded file queue
 
 Each evaluator owns one file's plan/results. Files run concurrently; requests within a file are sequential. Full source/context is retained for active files; the optional shared source catalogue has separate limits. Resource lifecycle belongs to `scanner.py`; selection/loading to `config.py`; question contracts to `rules.py`; packing to `planning.py`; evidence to `context.py`; assessment to `assessment.py`; HTTP/cache prediction to `inference.py`; local candidates to `retrieval.py`; refinement to `enrichment.py`; results to `evaluation.py`; presentation to `cli/`.
 
-Live requests use `POST https://api.typesafe.ai/v1/systemone`. Authentication comes only from `TYPESAFE_API_KEY`. Model precedence is CLI, then `TYPESAFE_DEFAULT_MODEL`, then TOML. `TYPESAFE_BASE_URL` is an environment-only origin override; project config cannot redirect credentials. HTTPS is required except for loopback tests, and redirects are disabled.
+Live requests use `POST https://api.typesafe.ai/v1/systemone`. Authentication comes only from `TYPESAFE_API_KEY`. Model precedence is CLI, then `TYPESAFE_DEFAULT_MODEL`, then YAML. `TYPESAFE_BASE_URL` is an environment-only origin override; project config cannot redirect credentials. HTTPS is required except for loopback tests, and redirects are disabled.
 
 The SQLite cache stores raw responses, not submitted source or credentials. Identity includes endpoint, request body, package version, and prompt version. Threshold/title/selection-only edits reuse eligible cached answers when the actual request is unchanged. Batch composition changes may change that identity. Pin the model for reproducibility; an alias may reuse cached results until expiry. `--no-cache` disables reads and writes. Reports contain source metadata and are potentially sensitive.
 

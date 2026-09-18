@@ -1,24 +1,24 @@
-import tomllib
 from pathlib import Path
 from typing import Any
 
 import pytest
-import tomli_w
+import yaml
 
-from jevscan.core.config import ConfigError, default_toml, load_config, resolved_toml
+from jevscan.core.config import ConfigError, default_yaml, load_config, resolved_yaml
 
 
 def write_config(path: Path, document: dict) -> Path:
-    target = path / "jevscan.toml"
-    target.write_text(tomli_w.dumps(document))
+    target = path / "jevscan.yaml"
+    target.write_text(yaml.safe_dump(document, sort_keys=False))
     return target
 
 
-def test_packaged_default_and_empty_project_are_additive(tmp_path: Path) -> None:
+@pytest.mark.parametrize("text", ["", "# Project defaults\n", "{}\n", "version: 4\nrules: []\n"])
+def test_packaged_default_and_empty_project_are_additive(tmp_path: Path, text: str) -> None:
     original = load_config([tmp_path], cwd=tmp_path)
     assert original.source == "packaged default"
     assert list(original.config.rules) == [f"JEV{i:02}" for i in range(1, 10)]
-    write_config(tmp_path, {"version": 4, "rules": []})
+    (tmp_path / "jevscan.yaml").write_text(text)
     child = tmp_path / "src" / "nested"
     child.mkdir(parents=True)
     loaded = load_config([child], cwd=child)
@@ -60,7 +60,7 @@ def test_rule_overrides_custom_sets_and_selection_are_independent(tmp_path, basi
     assert set(load_config([tmp_path], cwd=tmp_path).config.selected_rules()) == {"JEV02"}
 
 
-def test_resolved_toml_round_trips_selection_and_full_rule_contract(tmp_path, basic_rule):
+def test_resolved_yaml_round_trips_selection_and_full_rule_contract(tmp_path, basic_rule):
     write_config(
         tmp_path,
         {
@@ -69,39 +69,47 @@ def test_resolved_toml_round_trips_selection_and_full_rule_contract(tmp_path, ba
         },
     )
     config = load_config([tmp_path], cwd=tmp_path).config
-    text = resolved_toml(config)
-    assert isinstance(tomllib.loads(text)["rules"], list)
-    (tmp_path / "jevscan.toml").write_text(text)
+    text = resolved_yaml(config)
+    assert isinstance(yaml.safe_load(text)["rules"], list)
+    (tmp_path / "jevscan.yaml").write_text(text)
     assert load_config([tmp_path], cwd=tmp_path).config == config
 
 
 @pytest.mark.parametrize(
     "text",
     [
-        "version = 4\nversion = 4",
-        "version = 3",
-        "version = 4.0",
-        "unknown = true",
-        'extends = "default"',
-        "rules = {}",
-        "rules = [7]",
-        '[[rules]]\ntitle="no name"',
-        '[[rules]]\nname="bad.name"',
-        '[[rules]]\nname="JEV01"\n[[rules]]\nname="JEV01"',
-        '[[rules]]\nname="MISSPELLED"\nenabled=false',
-        '[[rules]]\nname="JEV02"\n[rules.report.levels.error]\nmin_score=999',
-        '[[rules]]\nname="JEV04"\n[rules.report]\nchoices=["invented"]',
-        '[[rules]]\nname="JEV01"\n[rules.report.levels.warning]\nmin_probability=0.99',
-        '[jev]\nbase_url="https://untrusted.example"',
-        '[lint]\nignore=["JVE01"]',
-        '[lint]\nselect=["unknown-group"]',
-        "[rulesets.JEV01]\nenabled=false",
-        '[[rules]]\nname="JEV01"\nruleset="absent"',
-        "[rulesets.ALL]\nenabled=true",
+        "version: 4\nversion: 4",
+        "version: 3",
+        "version: 4.0",
+        "version: true",
+        "unknown: true",
+        "extends: default",
+        "[]",
+        "false",
+        "rules: {}",
+        "rules: [7]",
+        "rules:\n- title: no name",
+        "rules:\n- name: bad.name",
+        "rules:\n- name: JEV01\n- name: JEV01",
+        "rules:\n- name: MISSPELLED\n  enabled: false",
+        "rules:\n- name: JEV02\n  report:\n    levels:\n      error:\n        min_score: 999",
+        "rules:\n- name: JEV04\n  report:\n    choices: [invented]",
+        "rules:\n- name: JEV01\n  report:\n    levels:\n      warning:\n        min_probability: 0.99",
+        "jev:\n  base_url: https://untrusted.example",
+        "lint:\n  ignore: [JVE01]",
+        "lint:\n  select: [unknown-group]",
+        "rulesets:\n  JEV01:\n    enabled: false",
+        "rules:\n- name: JEV01\n  ruleset: absent",
+        "rulesets:\n  ALL:\n    enabled: true",
+        "rules:\n- name: JEV01\n  enabled: false\n  enabled: true",
+        "7: value",
+        "!!python/object/apply:builtins.print [unsafe]",
+        "rules: [",
+        "enrichment: &recursive\n  child: *recursive",
     ],
 )
 def test_invalid_config_fails_at_boundary(tmp_path: Path, text: str) -> None:
-    (tmp_path / "jevscan.toml").write_text(text)
+    (tmp_path / "jevscan.yaml").write_text(text)
     with pytest.raises(ConfigError):
         load_config([tmp_path], cwd=tmp_path)
 
@@ -115,20 +123,40 @@ def test_git_boundary_and_explicit_override(tmp_path: Path) -> None:
     assert not load_config([repo], explicit=path, cwd=repo).config.selected_rules()
 
 
-def test_legacy_yaml_is_not_silently_ignored_or_reinterpreted(tmp_path: Path) -> None:
-    legacy = tmp_path / "jevscan.yaml"
-    legacy.write_text("version: 3\nrules: {}\n")
-    with pytest.raises(ConfigError, match="YAML.*migration"):
+@pytest.mark.parametrize("name", ["jevscan.yaml", "jevscan.yml"])
+def test_yaml_discovery_explicit_override_and_ambiguity(tmp_path: Path, name: str) -> None:
+    path = tmp_path / name
+    path.write_text("version: 4\nlint:\n  ignore: [JEV09]\n")
+    implicit = load_config([tmp_path], cwd=tmp_path)
+    explicit = load_config([tmp_path], explicit=path, cwd=tmp_path)
+    assert implicit == explicit
+    assert "JEV09" not in implicit.config.selected_rules()
+    other = "jevscan.yml" if name == "jevscan.yaml" else "jevscan.yaml"
+    (tmp_path / other).write_text("version: 4\n")
+    with pytest.raises(ConfigError, match="both jevscan.yaml and jevscan.yml"):
         load_config([tmp_path], cwd=tmp_path)
-    with pytest.raises(ConfigError, match="YAML.*migration"):
-        load_config([tmp_path], explicit=legacy, cwd=tmp_path)
-    write_config(tmp_path, {})
-    with pytest.raises(ConfigError, match="multiple"):
+    # An explicit path deliberately disambiguates discovery.
+    assert load_config([tmp_path], explicit=path, cwd=tmp_path) == explicit
+
+
+def test_previous_yaml_schema_needs_named_rule_migration(tmp_path: Path) -> None:
+    path = tmp_path / "jevscan.yaml"
+    path.write_text("version: 3\nrules: {}\n")
+    with pytest.raises(ConfigError, match="version 4.*migration"):
         load_config([tmp_path], cwd=tmp_path)
+
+
+def test_yaml_optional_field_can_be_cleared_without_deleting_other_settings(tmp_path):
+    write_config(tmp_path, {"rules": [{"name": "JEV01", "report": {"uncertain_range": None}}]})
+    config = load_config([tmp_path], cwd=tmp_path).config
+    assert config.rules["JEV01"].report.uncertain_range is None
+    assert config.rules["JEV01"].report.levels.warning.min_probability == 0.5
+    (tmp_path / "jevscan.yaml").write_text(resolved_yaml(config))
+    assert load_config([tmp_path], cwd=tmp_path).config == config
 
 
 def test_default_has_no_personal_document_reference() -> None:
-    assert "AGENTS.md" not in default_toml()
+    assert "AGENTS.md" not in default_yaml()
 
 
 @pytest.mark.parametrize("value", ["/tmp/cache.sqlite3", "../cache.sqlite3", "", "."])

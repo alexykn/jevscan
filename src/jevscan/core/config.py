@@ -1,21 +1,20 @@
-"""Bounded TOML loading, additive named rules, and explicit rule selection."""
+"""Bounded YAML loading, additive named rules, and explicit rule selection."""
 
 import re
-import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, Self
 
-import tomli_w
+import yaml
+import yaml.resolver
 from pydantic import Field, ValidationError, field_validator, model_validator
 
 from jevscan.core.rules import Rule, StrictModel
 
 MAX_CONFIG_BYTES = 1_048_576
-CONFIG_NAME = "jevscan.toml"
-LEGACY_CONFIG_NAMES = ("jevscan.yaml", "jevscan.yml")
+CONFIG_NAMES = ("jevscan.yaml", "jevscan.yml")
 IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,63}\Z")
 
 
@@ -187,27 +186,50 @@ class LoadedConfig:
     source: str
 
 
-def default_toml() -> str:
-    return files("jevscan").joinpath("data/default.toml").read_text(encoding="utf-8")
+def default_yaml() -> str:
+    return files("jevscan").joinpath("data/default.yaml").read_text(encoding="utf-8")
 
 
-def initial_toml() -> str:
-    return "# Built-in rules are included automatically. See --show-config and --list-rules.\nversion = 4\n\n[lint]\nignore = []\n"
+def initial_yaml() -> str:
+    return "# Built-in rules are included automatically. See --show-config and --list-rules.\nversion: 4\n\nlint:\n  ignore: []\n"
 
 
-def resolved_toml(config: Config) -> str:
-    document = config.model_dump(mode="json", exclude_none=True)
+def resolved_yaml(config: Config) -> str:
+    document = config.model_dump(mode="json")
     document["rules"] = [{"name": name, **rule} for name, rule in document["rules"].items()]
-    return tomli_w.dumps(document)
+    return yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
 
 
-def _decode_toml(text: str, source: str) -> dict[str, Any]:
+class UniqueLoader(yaml.SafeLoader):
+    """Reject duplicate mapping keys before configuration is merged or validated."""
+
+
+def _unique_mapping(loader: UniqueLoader, node: yaml.MappingNode, deep: bool = False) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if not isinstance(key, str):
+            raise ConfigError("YAML mapping keys must be strings")
+        if key in result:
+            raise ConfigError(f"duplicate YAML key: {key!r}")
+        result[key] = loader.construct_object(value_node, deep=deep)
+    return result
+
+
+UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_mapping)
+
+
+def _decode_yaml(text: str, source: str) -> dict[str, Any]:
     if len(text.encode("utf-8")) > MAX_CONFIG_BYTES:
         raise ConfigError(f"{source}: config exceeds {MAX_CONFIG_BYTES} bytes")
     try:
-        document = tomllib.loads(text)
-    except (tomllib.TOMLDecodeError, RecursionError) as exc:
-        raise ConfigError(f"{source}: invalid TOML: {exc}") from exc
+        document = yaml.load(text, Loader=UniqueLoader)  # noqa: S506 -- SafeLoader, no object constructors
+    except (yaml.YAMLError, RecursionError) as exc:
+        raise ConfigError(f"{source}: invalid YAML: {exc}") from exc
+    if document is None:
+        document = {}  # An empty project adds nothing; packaged rules remain active.
+    if not isinstance(document, dict):
+        raise ConfigError(f"{source}: expected a YAML mapping")
     if type(document.get("version", 4)) is not int or document.get("version", 4) != 4:
         raise ConfigError("configuration version 4 is required; see docs/CONFIGURATION.md for migration")
     document["rules"] = _named_rules(document.get("rules", []), source)
@@ -216,11 +238,11 @@ def _decode_toml(text: str, source: str) -> dict[str, Any]:
 
 def _named_rules(entries: Any, source: str) -> dict[str, Any]:
     if not isinstance(entries, list):
-        raise ConfigError(f"{source}: rules must use [[rules]] tables with a name")
+        raise ConfigError(f"{source}: rules must be a list of mappings with a name")
     rules = {}
     for entry in entries:
         if not isinstance(entry, dict):
-            raise ConfigError(f"{source}: each rule must be a table")
+            raise ConfigError(f"{source}: each rule must be a mapping")
         name = entry.get("name")
         if not isinstance(name, str) or not IDENTIFIER.fullmatch(name) or name == "ALL":
             raise ConfigError(f"{source}: each rule needs a valid name")
@@ -230,13 +252,17 @@ def _named_rules(entries: Any, source: str) -> dict[str, Any]:
     return rules
 
 
+def validate_config_path(path: Path) -> None:
+    if path.suffix not in {".yaml", ".yml"}:
+        raise ConfigError("configuration must be YAML (.yaml or .yml)")
+
+
 def _read_project(path: Path) -> dict[str, Any]:
-    if path.suffix != ".toml":
-        raise ConfigError("use jevscan.toml; YAML configuration is retired; see docs/CONFIGURATION.md for migration")
+    validate_config_path(path)
     try:
         with path.open("rb") as stream:
             raw = stream.read(MAX_CONFIG_BYTES + 1)
-        return _decode_toml(raw.decode("utf-8"), str(path))
+        return _decode_yaml(raw.decode("utf-8"), str(path))
     except (OSError, UnicodeError) as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
 
@@ -257,9 +283,9 @@ def find_config(start: Path) -> Path | None:
     """Find the nearest config, without inheriting one from outside a Git worktree."""
     start = start.resolve()
     for directory in (start, *start.parents):
-        matches = [directory / name for name in (CONFIG_NAME, *LEGACY_CONFIG_NAMES) if (directory / name).is_file()]
+        matches = [directory / name for name in CONFIG_NAMES if (directory / name).is_file()]
         if len(matches) > 1:
-            raise ConfigError(f"multiple jevscan configuration files exist in {directory}; keep only jevscan.toml")
+            raise ConfigError(f"both jevscan.yaml and jevscan.yml exist in {directory}; keep only one")
         if matches:
             return matches[0]
         if (directory / ".git").exists():
@@ -282,7 +308,7 @@ def load_config(targets: list[Path], explicit: Path | None = None, cwd: Path | N
         if len(found) > 1:
             raise ConfigError("targets belong to different configs; scan separately or supply --config")
         selected = next(iter(found), None)
-    document = _decode_toml(default_toml(), "packaged default")
+    document = _decode_yaml(default_yaml(), "packaged default")
     if selected:
         document = _merge(document, _read_project(selected))
         root, source = selected.parent, str(selected)
