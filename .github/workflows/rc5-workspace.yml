@@ -26,9 +26,8 @@ jobs:
           python - <<'PY'
           import json, urllib.request, pathlib
           root=pathlib.Path('/tmp/rc5/references')
-          paths=['llms.txt','api.md','concepts/state.md','primitives/noul.md','patterns/fan-out.md','cookbooks/rerank_typesafe.md']
           status={}
-          for path in paths:
+          for path in ['llms.txt','api.md','concepts/state.md','primitives/noul.md','patterns/fan-out.md','cookbooks/rerank_typesafe.md']:
               url='https://docs.typesafe.ai/'+path
               try:
                   with urllib.request.urlopen(url, timeout=20) as response:
@@ -44,8 +43,9 @@ jobs:
           git -C /tmp/sdk archive HEAD > /tmp/rc5/references/sdk.tar
           git clone --depth 1 --branch agent/dom-occurrence-runtime https://github.com/alexykn/iyon-tui.git /tmp/iyon
           git -C /tmp/iyon rev-parse HEAD > /tmp/rc5/references/iyon-commit.txt
-          git -C /tmp/iyon archive HEAD packages/iyon-tui/src/runtime/output-waiter.ts packages/iyon-tui/src/react/commit.ts packages/iyon-tui/tests/tui_react_renderer.test.ts packages/iyon-tui/tests/tui_react_key_bindings.test.ts > /tmp/rc5/references/iyon-fixtures.tar
+          git -C /tmp/iyon archive HEAD packages/iyon-tui > /tmp/rc5/references/iyon-fixtures.tar
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
         with:
           name: rc5-workspace
           path: /tmp/rc5/
