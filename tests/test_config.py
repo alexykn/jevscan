@@ -5,6 +5,7 @@ import pytest
 import yaml
 
 from jevscan.core.config import ConfigError, default_yaml, load_config, resolved_yaml
+from jevscan.core.rules import ChoiceQuestion
 
 
 def write_config(path: Path, document: dict) -> Path:
@@ -153,6 +154,20 @@ def test_yaml_optional_field_can_be_cleared_without_deleting_other_settings(tmp_
     assert config.rules["JEV01"].report.levels.warning.min_probability == 0.5
     (tmp_path / "jevscan.yaml").write_text(resolved_yaml(config))
     assert load_config([tmp_path], cwd=tmp_path).config == config
+
+
+def test_default_context_sensitive_choices_require_visible_phenomena(tmp_path: Path) -> None:
+    config = load_config([tmp_path], cwd=tmp_path).config
+    expectations = {
+        "JEV04": ("repeated check is visible", "A concrete repeated validation is visible"),
+        "JEV05": ("fallback behavior is visible", "A concrete fallback"),
+        "JEV06": ("helper decomposition is visibly present", "Helper decomposition is visibly present"),
+    }
+    for name, (instruction_phrase, criterion_phrase) in expectations.items():
+        question = config.rules[name].question
+        assert isinstance(question, ChoiceQuestion)
+        assert instruction_phrase in question.instructions
+        assert criterion_phrase in question.criteria["insufficient_context"]
 
 
 def test_default_has_no_personal_document_reference() -> None:
