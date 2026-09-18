@@ -11,7 +11,13 @@ def basic_rule() -> Rule:
     return Rule.model_validate({
         "applies_to": ["function", "method", "class"],
         "question": {"type": "noul", "instructions": "Is this operation incohesive?"},
-        "report": {"message": "Mixed responsibilities.", "min_probability": 0.85, "severity": "warning"},
+        "report": {
+            "message": "Mixed responsibilities.",
+            "levels": {
+                "warning": {"min_probability": 0.85},
+                "error": {"min_probability": 0.99},
+            },
+        },
     })
 
 

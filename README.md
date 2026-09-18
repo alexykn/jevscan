@@ -50,7 +50,7 @@ A discovered configuration applies to the whole invocation. jevscan does not swi
 **A custom file replaces the default rule set.** Operational settings omitted from it receive schema defaults. Add `extends: default` explicitly to inherit packaged rules and override selected fields:
 
 ```yaml
-version: 1
+version: 2
 extends: default
 
 scan:
@@ -62,7 +62,9 @@ jev:
 rules:
   redundant-validation:
     report:
-      min_probability: 0.95
+      levels:
+        error:
+          min_probability: 0.95
   unclear-control-flow:
     enabled: false
 ```
@@ -94,9 +96,9 @@ uv run jevscan . --no-cache --fail-on error
 uv run jevscan . --offline --format jsonl -o inventory.jsonl
 ```
 
-Text output follows a Radon-style hierarchy: each source file is a heading, each evaluated code unit is printed once beneath it, and every applicable Jev rule is shown as an aligned score row below that unit. Clean answers use green, findings use their configured severity color, and cached units are marked once on the unit line. ANSI color is automatic for terminals (`COLOR=yes|no` overrides it; `NO_COLOR` disables it) and is never written to normal redirected files. The default text report is unlimited; `--max-display` can cap displayed units. JSON/JSONL are never display-limited. Machine reports include unit metadata, typed answers, findings, diagnostics, and a final summary. Reports contain names and declaration signatures; treat them as potentially sensitive.
+Text output follows a Radon-style hierarchy: each source file is a heading, each evaluated code unit is printed once beneath it, and every applicable Jev rule is shown as an aligned score row below that unit. Answers below a rule's configured warning gate are green, warnings are yellow with `!`, errors are red with `x`, and cached units are marked once on the unit line. ANSI color is automatic for terminals (`COLOR=yes|no` overrides it; `NO_COLOR` disables it) and is never written to normal redirected files. The default text report is unlimited; `--max-display` can cap displayed units. JSON/JSONL are never display-limited. Machine reports include unit metadata, typed answers, findings, diagnostics, and a final summary. Reports contain names and declaration signatures; treat them as potentially sensitive.
 
-Reported probabilities and confidence values are the model's returned values, not measured probabilities that findings are correct. Severity comes from the rule, not from confidence. Score thresholds use the configured rubric's zero-based scale. Findings currently refer to the **whole extracted unit**; there is no second-pass line localization or generated repair advice.
+Reported probabilities and confidence values are the model's returned values, not measured probabilities that findings are correct. Each rule defines warning and error gates in YAML; the most severe matching gate wins. Score thresholds use the configured rubric's zero-based scale. Findings currently refer to the **whole extracted unit**; there is no second-pass line localization or generated repair advice.
 
 The default rules address mixed responsibilities, control-flow clarity, abstraction levels, redundant validation, hidden invariant failures, decomposition, ownership, cohesion, and duplicated behavior. Context is bounded **same-file declarations and imports**, not resolved caller bodies or a repository-wide call graph. Rules that need an upstream contract have an explicit insufficient-context option. No whole-repository architecture, duplication, or test-coverage claim is inferred from a local snippet.
 

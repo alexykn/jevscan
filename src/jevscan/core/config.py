@@ -10,7 +10,7 @@ import yaml
 import yaml.resolver
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from jevscan.core.models import Kind, Severity
+from jevscan.core.models import Kind
 
 MAX_CONFIG_BYTES = 1_048_576
 CONFIG_NAMES = ("jevscan.yaml", "jevscan.yml")
@@ -52,13 +52,21 @@ class ScoreQuestion(StrictModel):
 Question = Annotated[NoulQuestion | ChoiceQuestion | ScoreQuestion, Field(discriminator="type")]
 
 
-class ReportPolicy(StrictModel):
-    severity: Severity = Severity.WARNING
-    message: str = Field(min_length=1)
+class ReportThreshold(StrictModel):
     min_probability: float | None = Field(default=None, ge=0, le=1)
     min_confidence: float | None = Field(default=None, ge=0, le=1)
     min_score: float | None = None
     max_score: float | None = None
+
+
+class ReportLevels(StrictModel):
+    warning: ReportThreshold
+    error: ReportThreshold
+
+
+class ReportPolicy(StrictModel):
+    message: str = Field(min_length=1)
+    levels: ReportLevels
     choices: list[str] | None = None
     expected: bool = True
 
@@ -80,29 +88,54 @@ class Rule(StrictModel):
 
     @model_validator(mode="after")
     def compatible_report(self) -> Self:
-        q, r = self.question, self.report
-        if isinstance(q, ScoreQuestion):
-            if (r.min_score is None) == (r.max_score is None):
-                raise ValueError("score reports require exactly one of min_score or max_score")
-            threshold = r.min_score if r.min_score is not None else r.max_score
-            assert threshold is not None
-            if not 0 <= threshold <= len(q.criteria) - 1:
-                raise ValueError("score threshold is outside the rubric")
-            if r.choices is not None or r.min_probability is not None or not r.expected:
-                raise ValueError("score reports cannot use choices, min_probability, or expected=false")
-        elif isinstance(q, ChoiceQuestion):
-            if not r.choices or set(r.choices) - q.criteria.keys():
-                raise ValueError("choice reports require choices present in question.criteria")
-            if r.min_probability is None:
-                raise ValueError("choice reports require min_probability")
-            if r.min_score is not None or r.max_score is not None or not r.expected:
-                raise ValueError("choice reports cannot use score thresholds or expected=false")
-        else:
-            if r.min_probability is None:
-                raise ValueError("noul reports require min_probability")
-            if any(x is not None for x in (r.min_confidence, r.min_score, r.max_score, r.choices)):
-                raise ValueError("noul reports use min_probability, not confidence, score, or choices")
+        question, report = self.question, self.report
+        warning, error = report.levels.warning, report.levels.error
+
+        for name, level in (("warning", warning), ("error", error)):
+            if isinstance(question, ScoreQuestion):
+                if (level.min_score is None) == (level.max_score is None):
+                    raise ValueError(f"{name} score level requires exactly one of min_score or max_score")
+                threshold = level.min_score if level.min_score is not None else level.max_score
+                assert threshold is not None
+                if not 0 <= threshold <= len(question.criteria) - 1:
+                    raise ValueError(f"{name} score threshold is outside the rubric")
+                if level.min_probability is not None or report.choices is not None or not report.expected:
+                    raise ValueError("score reports cannot use min_probability, choices, or expected=false")
+            elif isinstance(question, ChoiceQuestion):
+                if not report.choices or set(report.choices) - question.criteria.keys():
+                    raise ValueError("choice reports require choices present in question.criteria")
+                if level.min_probability is None:
+                    raise ValueError(f"{name} choice level requires min_probability")
+                if level.min_score is not None or level.max_score is not None or not report.expected:
+                    raise ValueError("choice reports cannot use score thresholds or expected=false")
+            else:
+                if level.min_probability is None:
+                    raise ValueError(f"{name} noul level requires min_probability")
+                if any(
+                    value is not None
+                    for value in (level.min_confidence, level.min_score, level.max_score, report.choices)
+                ):
+                    raise ValueError("noul reports use min_probability, not confidence, score, or choices")
+
+        self._validate_level_order(warning, error)
         return self
+
+    @staticmethod
+    def _validate_level_order(warning: ReportThreshold, error: ReportThreshold) -> None:
+        if (warning.min_score is None) != (error.min_score is None):
+            raise ValueError("warning and error score levels must use the same threshold direction")
+        if (warning.max_score is None) != (error.max_score is None):
+            raise ValueError("warning and error score levels must use the same threshold direction")
+        if warning.min_probability is not None and error.min_probability is not None:
+            if warning.min_probability > error.min_probability:
+                raise ValueError("warning min_probability cannot exceed error min_probability")
+        if warning.min_confidence is not None:
+            if error.min_confidence is None or warning.min_confidence > error.min_confidence:
+                raise ValueError("error min_confidence must be at least as strict as warning min_confidence")
+        if warning.min_score is not None and error.min_score is not None and warning.min_score > error.min_score:
+            raise ValueError("warning min_score cannot exceed error min_score")
+        if warning.max_score is not None and error.max_score is not None and warning.max_score < error.max_score:
+            raise ValueError("warning max_score cannot be below error max_score")
 
 
 class ScanConfig(StrictModel):
@@ -153,7 +186,7 @@ class CacheConfig(StrictModel):
 
 
 class Config(StrictModel):
-    version: Literal[1] = 1
+    version: Literal[2] = 2
     scan: ScanConfig = Field(default_factory=ScanConfig)
     jev: JevConfig = Field(default_factory=JevConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)

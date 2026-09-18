@@ -1,5 +1,5 @@
 # Project config replaces this rule set. Use `extends: default` for explicit inheritance.
-version: 1
+version: 2
 
 scan:
   include: ['*.py', '*.pyi', '*.rs', '*.pl', '*.pm', '*.t', '*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs']
@@ -40,9 +40,12 @@ rules:
         makes this operation harder to understand? Do not flag a cohesive orchestration
         function merely because it calls several different operations. Length alone is not evidence.
     report:
-      severity: warning
-      min_probability: 0.90
       message: This operation appears to interleave responsibilities that would be clearer as distinct operations.
+      levels:
+        warning:
+          min_probability: 0.50
+        error:
+          min_probability: 0.90
 
   unclear-control-flow:
     applies_to: [function, method, closure]
@@ -58,10 +61,14 @@ rules:
         - Interleaved concerns or nested branches substantially obscure the operation.
         - Tangled control flow makes the operation and its important transitions difficult to determine.
     report:
-      severity: warning
-      min_score: 2.0
-      min_confidence: 0.70
       message: Interleaved concerns or nesting appear to obscure the main execution path.
+      levels:
+        warning:
+          min_score: 1.0
+          min_confidence: 0.60
+        error:
+          min_score: 2.0
+          min_confidence: 0.70
 
   mixed-abstraction-levels:
     applies_to: [function, method, closure]
@@ -73,9 +80,12 @@ rules:
         resource bookkeeping, or implementation detail such that the main operation is obscured?
         A small necessary detail or explicit cleanup does not by itself establish a problem.
     report:
-      severity: warning
-      min_probability: 0.90
       message: High-level orchestration appears mixed with substantial low-level implementation detail.
+      levels:
+        warning:
+          min_probability: 0.50
+        error:
+          min_probability: 0.90
 
   redundant-validation:
     applies_to: [function, method, closure]
@@ -91,11 +101,15 @@ rules:
         justified_or_absent: There is no repeated check, or the repeated check protects a real boundary or invalidation risk.
         insufficient_context: An upstream guarantee or intervening behavior needed for the judgment is not established by the supplied evidence.
     report:
-      severity: warning
-      choices: [demonstrably_redundant]
-      min_probability: 0.92
-      min_confidence: 0.70
       message: A validation check appears to repeat an invariant explicitly established in the supplied code.
+      choices: [demonstrably_redundant]
+      levels:
+        warning:
+          min_probability: 0.60
+          min_confidence: 0.50
+        error:
+          min_probability: 0.92
+          min_confidence: 0.70
 
   hidden-invariant-failure:
     applies_to: [function, method, closure]
@@ -112,11 +126,15 @@ rules:
         legitimate_behavior: The behavior handles a legitimate runtime condition or no such concealment is present.
         insufficient_context: The invariant or intended failure behavior cannot be established from the supplied evidence.
     report:
-      severity: warning
-      choices: [concealed_bug]
-      min_probability: 0.92
-      min_confidence: 0.70
       message: A fallback or swallowed failure appears to conceal a violation of an established internal invariant.
+      choices: [concealed_bug]
+      levels:
+        warning:
+          min_probability: 0.60
+          min_confidence: 0.50
+        error:
+          min_probability: 0.92
+          min_confidence: 0.70
 
   unhelpful-decomposition:
     applies_to: [class, impl, package, module]
@@ -131,11 +149,15 @@ rules:
         needless_indirection: Visible helpers mainly move lines or forward arguments without hiding meaningful detail, and visibly make the caller harder to follow.
         insufficient_context: The relevant helper implementations or callers are missing, or the evidence is inconclusive.
     report:
-      severity: warning
-      choices: [needless_indirection]
-      min_probability: 0.90
-      min_confidence: 0.70
       message: Helper indirection appears to obscure the caller without providing meaningful decomposition.
+      choices: [needless_indirection]
+      levels:
+        warning:
+          min_probability: 0.60
+          min_confidence: 0.50
+        error:
+          min_probability: 0.90
+          min_confidence: 0.70
 
   fragmented-ownership:
     applies_to: [class, impl, package, module]
@@ -147,9 +169,12 @@ rules:
         Derived caches and deliberately synchronized representations are not problems merely
         because data is repeated; require a concrete ownership conflict in the supplied implementation.
     report:
-      severity: warning
-      min_probability: 0.92
       message: State or lifecycle bookkeeping appears to have competing authoritative owners.
+      levels:
+        warning:
+          min_probability: 0.50
+        error:
+          min_probability: 0.92
 
   incohesive-owner:
     applies_to: [class, impl, package, module]
@@ -160,9 +185,12 @@ rules:
         have little meaningful connection? A domain aggregate, a cohesive facade, or one implementation
         of a required interface is not incohesive merely because it contains many methods.
     report:
-      severity: warning
-      min_probability: 0.90
       message: This owner appears to combine unrelated state and behavior.
+      levels:
+        warning:
+          min_probability: 0.50
+        error:
+          min_probability: 0.90
 
   duplicated-behavior:
     applies_to: [class, impl, package, module]
@@ -173,6 +201,9 @@ rules:
         creating a clear maintenance obligation to keep them in sync? Similar syntax alone,
         distinct trust boundaries, or required trait/interface implementations are insufficient.
     report:
-      severity: warning
-      min_probability: 0.93
       message: The same owned behavior appears implemented more than once and may need to be maintained in sync.
+      levels:
+        warning:
+          min_probability: 0.50
+        error:
+          min_probability: 0.93

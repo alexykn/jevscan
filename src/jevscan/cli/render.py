@@ -134,7 +134,8 @@ class Reporter:
             finding = findings.get(rule)
             if finding:
                 color = SEVERITY_STYLE[finding["severity"]]
-                marker = self._paint("!", BOLD + color)
+                marker_text = "x" if finding["severity"] == "error" else "!"
+                marker = self._paint(marker_text, BOLD + color)
                 value = self._paint(self._answer_text(answer), color)
             else:
                 marker = self._paint("·", GREEN)

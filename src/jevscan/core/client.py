@@ -18,9 +18,9 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from jevscan import __version__
-from jevscan.core.config import ChoiceQuestion, JevConfig, NoulQuestion, Rule, ScoreQuestion
+from jevscan.core.config import ChoiceQuestion, JevConfig, NoulQuestion, ReportPolicy, ReportThreshold, Rule, ScoreQuestion
 from jevscan.core.context import WorkItem, questions_for
-from jevscan.core.models import Finding
+from jevscan.core.models import Finding, Severity
 
 
 class JevError(RuntimeError):
@@ -99,36 +99,48 @@ def validate_response(raw: bytes | str, rules: dict[str, Rule]) -> JevResponse:
     return response
 
 
+def _matches_level(
+    answer: NoulAnswer | ChoiceAnswer | ScoreAnswer,
+    report: ReportPolicy,
+    level: ReportThreshold,
+) -> tuple[bool, str | float, float | None, float | None]:
+    if isinstance(answer, NoulAnswer):
+        probability = answer.noul if report.expected else 1 - answer.noul
+        assert level.min_probability is not None
+        return probability >= level.min_probability, answer.noul, probability, None
+
+    confidence = answer.confidence
+    if isinstance(answer, ChoiceAnswer):
+        probability = answer.probabilities[answer.choice]
+        assert report.choices is not None and level.min_probability is not None
+        selected = answer.choice in report.choices and probability >= level.min_probability
+        value: str | float = answer.choice
+    else:
+        probability = None
+        if level.min_score is not None:
+            selected = answer.score >= level.min_score
+        else:
+            assert level.max_score is not None
+            selected = answer.score <= level.max_score
+        value = answer.score
+
+    if level.min_confidence is not None:
+        selected = selected and confidence >= level.min_confidence
+    return selected, value, probability, confidence
+
+
 def findings_from(work: WorkItem, response: JevResponse) -> list[Finding]:
     findings = []
     for name, rule in work.rules.items():
         answer, report = response.answers[name], rule.report
-        probability = None
-        confidence = None
-        if isinstance(answer, NoulAnswer):
-            probability = answer.noul if report.expected else 1 - answer.noul
-            assert report.min_probability is not None
-            selected = probability >= report.min_probability
-            value: str | float = answer.noul
-        elif isinstance(answer, ChoiceAnswer):
-            probability = answer.probabilities[answer.choice]
-            confidence = answer.confidence
-            assert report.choices is not None and report.min_probability is not None
-            selected = answer.choice in report.choices and probability >= report.min_probability
-            value = answer.choice
-        else:
-            confidence = answer.confidence
-            if report.min_score is not None:
-                selected = answer.score >= report.min_score
-            else:
-                assert report.max_score is not None
-                selected = answer.score <= report.max_score
-            value = answer.score
-        if report.min_confidence is not None:
-            assert confidence is not None
-            selected = selected and confidence >= report.min_confidence
-        if selected:
-            findings.append(Finding(name, report.severity, report.message, work.unit, value, probability, confidence))
+        for severity, level in (
+            (Severity.ERROR, report.levels.error),
+            (Severity.WARNING, report.levels.warning),
+        ):
+            selected, value, probability, confidence = _matches_level(answer, report, level)
+            if selected:
+                findings.append(Finding(name, severity, report.message, work.unit, value, probability, confidence))
+                break
     return findings
 
 

@@ -8,7 +8,7 @@ import pytest
 from jevscan.core.client import JevClient, JevError, RequestLimiter, RequestTooLarge, findings_from, validate_response
 from jevscan.core.config import Config, Rule
 from jevscan.core.context import WorkItem
-from jevscan.core.models import Unit
+from jevscan.core.models import Severity, Unit
 
 
 def response_body(probability: float = 0.93) -> dict:
@@ -73,12 +73,25 @@ def test_choice_and_score_thresholds(unit: Unit) -> None:
         "choice": Rule.model_validate({
             "applies_to": ["function"],
             "question": {"type": "choice", "instructions": "Which?", "criteria": {"bad": "Defect", "unknown": "Unknown"}},
-            "report": {"message": "Choice finding", "choices": ["bad"], "min_probability": 0.9, "min_confidence": 0.7},
+            "report": {
+                "message": "Choice finding",
+                "choices": ["bad"],
+                "levels": {
+                    "warning": {"min_probability": 0.6, "min_confidence": 0.5},
+                    "error": {"min_probability": 0.9, "min_confidence": 0.7},
+                },
+            },
         }),
         "score": Rule.model_validate({
             "applies_to": ["function"],
             "question": {"type": "score", "instructions": "How?", "criteria": ["Good", "Mixed", "Bad"]},
-            "report": {"message": "Score finding", "min_score": 1.5, "min_confidence": 0.7},
+            "report": {
+                "message": "Score finding",
+                "levels": {
+                    "warning": {"min_score": 1.0, "min_confidence": 0.5},
+                    "error": {"min_score": 1.5, "min_confidence": 0.7},
+                },
+            },
         }),
     }
     body = {"model": "test", "answers": {
@@ -86,8 +99,14 @@ def test_choice_and_score_thresholds(unit: Unit) -> None:
         "score": {"type": "score", "score": 1.8, "confidence": 0.6, "probabilities": {"0": 0.05, "1": 0.1, "2": 0.85}},
     }}
     result = validate_response(json.dumps(body), rules)
-    assert [f.rule for f in findings_from(WorkItem(unit, {}, rules), result)] == ["choice"]
-    body["answers"]["choice"]["probabilities"]["bad"] = 0.5
+    findings = findings_from(WorkItem(unit, {}, rules), result)
+    assert [(finding.rule, finding.severity) for finding in findings] == [
+        ("choice", Severity.ERROR),
+        ("score", Severity.WARNING),
+    ]
+
+    body["answers"]["choice"]["probabilities"] = {"bad": 0.5, "unknown": 0.5}
+    body["answers"]["score"]["score"] = 0.8
     result = validate_response(json.dumps(body), rules)
     assert findings_from(WorkItem(unit, {}, rules), result) == []
 
