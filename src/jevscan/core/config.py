@@ -122,6 +122,10 @@ class Rule(StrictModel):
 
     @staticmethod
     def _validate_level_order(warning: ReportThreshold, error: ReportThreshold) -> None:
+        if (warning.min_score is None) != (error.min_score is None):
+            raise ValueError("warning and error score levels must use the same threshold direction")
+        if (warning.max_score is None) != (error.max_score is None):
+            raise ValueError("warning and error score levels must use the same threshold direction")
         if warning.min_probability is not None and error.min_probability is not None:
             if warning.min_probability > error.min_probability:
                 raise ValueError("warning min_probability cannot exceed error min_probability")
