@@ -44,9 +44,11 @@ def _overrides(loaded: LoadedConfig, args: Any) -> LoadedConfig:
 
 def _list_rules(config: Config) -> None:
     for name, rule in config.rules.items():
+        warning = rule.report.levels.warning.model_dump(exclude_none=True)
+        error = rule.report.levels.error.model_dump(exclude_none=True)
         print(
             f"{name}\tenabled={rule.enabled}\ttype={rule.question.type}\t"
-            f"applies_to={','.join(rule.applies_to)}\tseverity={rule.report.severity}"
+            f"applies_to={','.join(rule.applies_to)}\twarning={warning}\terror={error}"
         )
 
 
