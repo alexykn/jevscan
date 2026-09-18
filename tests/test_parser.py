@@ -22,52 +22,100 @@ def parse_fixture(path: Path):
     return parsed
 
 
-@pytest.mark.parametrize(("filename", "expected"), [
-    ("sample.py", {
-        ("standalone", Kind.FUNCTION), ("Service", Kind.CLASS),
-        ("Service.__init__", Kind.METHOD), ("Service.create", Kind.METHOD),
-        ("Service.normalize", Kind.METHOD), ("Service.load", Kind.METHOD),
-        ("Service.load.inner", Kind.FUNCTION), ("Service.Nested", Kind.CLASS),
-        ("Service.Nested.run", Kind.METHOD),
-    }),
-    ("sample.rs", {
-        ("standalone", Kind.FUNCTION), ("Service", Kind.STRUCT), ("State", Kind.ENUM),
-        ("Store", Kind.TRAIT), ("Store::load", Kind.METHOD), ("Store::ready", Kind.METHOD),
-        ("impl Service", Kind.IMPL), ("impl Service::new", Kind.METHOD),
-        ("impl Service::fetch", Kind.METHOD), ("impl Store for Service", Kind.IMPL),
-        ("impl Store for Service::load", Kind.METHOD), ("nested", Kind.MODULE),
-        ("nested::helper", Kind.FUNCTION),
-    }),
-    ("sample.pm", {
-        ("Service", Kind.PACKAGE), ("Service::new", Kind.FUNCTION),
-        ("Service::load", Kind.FUNCTION), ("Other", Kind.PACKAGE),
-        ("Other::helper", Kind.FUNCTION),
-    }),
-    ("native_class.pl", {
-        ("Counter", Kind.CLASS), ("Counter::value", Kind.METHOD), ("Counter::increment", Kind.METHOD),
-    }),
-    ("sample.ts", {
-        ("standalone", Kind.FUNCTION), ("increment", Kind.FUNCTION), ("Service", Kind.CLASS),
-        ("Service.constructor", Kind.METHOD), ("Service.create", Kind.METHOD),
-        ("Service.load", Kind.METHOD), ("Service.transform", Kind.METHOD),
-        ("Store", Kind.INTERFACE), ("Store.load", Kind.METHOD), ("Identifier", Kind.TYPE),
-        ("Base", Kind.CLASS), ("Base.work", Kind.METHOD),
-    }),
-    ("sample.js", {
-        ("standalone", Kind.FUNCTION), ("increment", Kind.FUNCTION), ("normalize", Kind.FUNCTION),
-        ("Service", Kind.CLASS), ("Service.constructor", Kind.METHOD),
-        ("Service.create", Kind.METHOD), ("Service.load", Kind.METHOD), ("Service.transform", Kind.METHOD),
-    }),
-    ("view.tsx", {("View", Kind.FUNCTION), ("Card", Kind.FUNCTION)}),
-    ("view.jsx", {("View", Kind.FUNCTION), ("Card", Kind.FUNCTION)}),
-])
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        (
+            "sample.py",
+            {
+                ("standalone", Kind.FUNCTION),
+                ("Service", Kind.CLASS),
+                ("Service.__init__", Kind.METHOD),
+                ("Service.create", Kind.METHOD),
+                ("Service.normalize", Kind.METHOD),
+                ("Service.load", Kind.METHOD),
+                ("Service.load.inner", Kind.FUNCTION),
+                ("Service.Nested", Kind.CLASS),
+                ("Service.Nested.run", Kind.METHOD),
+            },
+        ),
+        (
+            "sample.rs",
+            {
+                ("standalone", Kind.FUNCTION),
+                ("Service", Kind.STRUCT),
+                ("State", Kind.ENUM),
+                ("Store", Kind.TRAIT),
+                ("Store::load", Kind.METHOD),
+                ("Store::ready", Kind.METHOD),
+                ("impl Service", Kind.IMPL),
+                ("impl Service::new", Kind.METHOD),
+                ("impl Service::fetch", Kind.METHOD),
+                ("impl Store for Service", Kind.IMPL),
+                ("impl Store for Service::load", Kind.METHOD),
+                ("nested", Kind.MODULE),
+                ("nested::helper", Kind.FUNCTION),
+            },
+        ),
+        (
+            "sample.pm",
+            {
+                ("Service", Kind.PACKAGE),
+                ("Service::new", Kind.FUNCTION),
+                ("Service::load", Kind.FUNCTION),
+                ("Other", Kind.PACKAGE),
+                ("Other::helper", Kind.FUNCTION),
+            },
+        ),
+        (
+            "native_class.pl",
+            {
+                ("Counter", Kind.CLASS),
+                ("Counter::value", Kind.METHOD),
+                ("Counter::increment", Kind.METHOD),
+            },
+        ),
+        (
+            "sample.ts",
+            {
+                ("standalone", Kind.FUNCTION),
+                ("increment", Kind.FUNCTION),
+                ("Service", Kind.CLASS),
+                ("Service.constructor", Kind.METHOD),
+                ("Service.create", Kind.METHOD),
+                ("Service.load", Kind.METHOD),
+                ("Service.transform", Kind.METHOD),
+                ("Store", Kind.INTERFACE),
+                ("Store.load", Kind.METHOD),
+                ("Identifier", Kind.TYPE),
+                ("Base", Kind.CLASS),
+                ("Base.work", Kind.METHOD),
+            },
+        ),
+        (
+            "sample.js",
+            {
+                ("standalone", Kind.FUNCTION),
+                ("increment", Kind.FUNCTION),
+                ("normalize", Kind.FUNCTION),
+                ("Service", Kind.CLASS),
+                ("Service.constructor", Kind.METHOD),
+                ("Service.create", Kind.METHOD),
+                ("Service.load", Kind.METHOD),
+                ("Service.transform", Kind.METHOD),
+            },
+        ),
+        ("view.tsx", {("View", Kind.FUNCTION), ("Card", Kind.FUNCTION)}),
+        ("view.jsx", {("View", Kind.FUNCTION), ("Card", Kind.FUNCTION)}),
+    ],
+)
 def test_real_language_units(fixture_dir: Path, filename: str, expected: set[tuple[str, Kind]]) -> None:
     parsed = parse_fixture(fixture_dir / filename)
     found = {(unit.qualified_name, unit.kind) for unit in parsed.units}
     assert expected <= found
     by_id = {unit.id: unit for unit in parsed.units}
     for unit in parsed.units:
-        assert parsed.source[unit.start_byte:unit.end_byte].decode("utf-8")
+        assert parsed.source[unit.start_byte : unit.end_byte].decode("utf-8")
         if unit.parent_id:
             parent = by_id[unit.parent_id]
             assert parent.start_byte <= unit.start_byte < unit.end_byte <= parent.end_byte
@@ -80,7 +128,7 @@ def test_decorators_nested_owners_and_unicode_byte_ranges() -> None:
     method = next(unit for unit in parsed.units if unit.name == "create")
     assert method.start_line == 3
     assert method.end_line == 5
-    assert source[method.start_byte:method.end_byte].decode().startswith("@classmethod")
+    assert source[method.start_byte : method.end_byte].decode().startswith("@classmethod")
     assert method.parent_id == parsed.units[0].id
 
 
@@ -109,7 +157,11 @@ def test_real_spawn_process_pipeline(fixture_dir: Path, capsys: pytest.CaptureFi
     assert output[-1]["units_found"] >= 40
     assert output[-1]["requests"] == 0
     assert {event["language"] for event in output if event["event"] == "file"} == {
-        "python", "rust", "perl", "typescript", "javascript",
+        "python",
+        "rust",
+        "perl",
+        "typescript",
+        "javascript",
     }
 
 

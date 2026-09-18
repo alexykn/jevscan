@@ -26,8 +26,21 @@ async def synthetic_parse(jobs: list[FileJob]) -> list[ParsedFile]:
     files = []
     for job in jobs:
         source = b"def work():\n    return 1\n"
-        unit = Unit(f"{job.display_path}:0:function", job.display_path, job.language, Kind.FUNCTION, "work", "work", None,
-                    0, len(source), 1, 2, "def work():", True)
+        unit = Unit(
+            f"{job.display_path}:0:function",
+            job.display_path,
+            job.language,
+            Kind.FUNCTION,
+            "work",
+            "work",
+            None,
+            0,
+            len(source),
+            1,
+            2,
+            "def work():",
+            True,
+        )
         files.append(ParsedFile(job.display_path, job.language, source, (unit,)))
     return files
 
@@ -45,8 +58,14 @@ async def test_pipeline_concurrency_cache_and_streamed_results(tmp_path: Path, c
         requests += 1
         await asyncio.sleep(0.002)
         active -= 1
-        assert "def work" in json.loads(request.content)["state"]["source"]
-        return httpx.Response(200, json={"model": "test", "answers": {"cohesion": {"type": "noul", "noul": 0.95}}})
+        assert "def work" in json.loads(request.content)["state"]["documents"][0]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "model": "test",
+                "answers": {name: {"type": "noul", "noul": 0.95} for name in json.loads(request.content)["questions"]},
+            },
+        )
 
     loaded = LoadedConfig(config, tmp_path, "test")
     async with AnswerCache(tmp_path / "cache.sqlite3", 3600) as cache:
@@ -96,8 +115,10 @@ async def test_api_failure_cancels_pipeline_instead_of_marking_units_clean(tmp_p
     sink, summary = Sink(), Summary("live")
     async with JevClient(config.jev, "test", transport=httpx.MockTransport(handle)) as client:
         with pytest.raises(ExceptionGroup):
-            await asyncio.wait_for(pipeline([tmp_path], LoadedConfig(config, tmp_path, "test"), synthetic_parse,
-                                            sink, summary, client), timeout=3)
+            await asyncio.wait_for(
+                pipeline([tmp_path], LoadedConfig(config, tmp_path, "test"), synthetic_parse, sink, summary, client),
+                timeout=3,
+            )
         assert client.requests <= config.jev.concurrency
     assert summary.units_evaluated == 0
     assert summary.units_failed > 0
@@ -121,9 +142,16 @@ async def test_cancellation_waits_for_active_discovery_thread(tmp_path, config, 
             closed.set()
 
     monkeypatch.setattr(scanner, "discover", slow_discover)
-    task = asyncio.create_task(scanner._produce(
-        [tmp_path], LoadedConfig(config, tmp_path, "test"), asyncio.Queue(2), 1, Sink(), Summary(mode="offline"),
-    ))
+    task = asyncio.create_task(
+        scanner._produce(
+            [tmp_path],
+            LoadedConfig(config, tmp_path, "test"),
+            asyncio.Queue(2),
+            1,
+            Sink(),
+            Summary(mode="offline"),
+        )
+    )
     assert await asyncio.to_thread(entered.wait, 2)
     task.cancel()
     await asyncio.sleep(0)

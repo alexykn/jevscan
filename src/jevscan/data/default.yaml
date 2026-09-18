@@ -1,5 +1,5 @@
 # Project config replaces this rule set. Use `extends: default` for explicit inheritance.
-version: 2
+version: 3
 
 scan:
   include: ['*.py', '*.pyi', '*.rs', '*.pl', '*.pm', '*.t', '*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs']
@@ -7,12 +7,9 @@ scan:
   respect_gitignore: true
   jobs: 0                 # auto: up to 8 parser processes
   batch_size: 8
-  queue_size: 64          # maximum pending semantic units; not one task per unit
+  queue_size: 8           # parsed files waiting for fixed file evaluators
   max_file_bytes: 2000000
   max_units_per_file: 10000
-  max_unit_bytes: 32000   # oversized units are reported as skipped, never silently truncated
-  context_bytes: 6000
-  context_members: 32
 
 jev:
   model: jev-latest       # pin an account-supported version when calibrating rules
@@ -21,8 +18,17 @@ jev:
   timeout_seconds: 30
   retries: 3
   max_retry_delay: 60
-  max_request_bytes: 60000
+
+# Local estimates over serialized UTF-8, not an exact TypeSafe tokenizer.
+# Both per-question context and aggregate question volume are checked.
+evaluation:
+  max_context_tokens: 28000
+  max_total_tokens: 56000
+  token_reserve: 512
+  bytes_per_token: 3.0
+  max_request_bytes: 1048576
   max_questions: 64
+  oversized_context: reduce  # reduce surrounding evidence only; never truncate a target
 
 cache:
   enabled: true
@@ -31,6 +37,8 @@ cache:
 
 rules:
   mixed-responsibilities:
+    target: unit
+    context: owner
     applies_to: [function, method, closure]
     require_body: true
     question:
@@ -48,6 +56,8 @@ rules:
           min_probability: 0.90
 
   unclear-control-flow:
+    target: unit
+    context: owner
     applies_to: [function, method, closure]
     require_body: true
     question:
@@ -71,6 +81,8 @@ rules:
           min_confidence: 0.70
 
   mixed-abstraction-levels:
+    target: unit
+    context: owner
     applies_to: [function, method, closure]
     require_body: true
     question:
@@ -88,6 +100,8 @@ rules:
           min_probability: 0.90
 
   redundant-validation:
+    target: unit
+    context: file
     applies_to: [function, method, closure]
     require_body: true
     question:
@@ -103,6 +117,7 @@ rules:
     report:
       message: A validation check appears to repeat an invariant explicitly established in the supplied code.
       choices: [demonstrably_redundant]
+      uncertain_choices: [insufficient_context]
       levels:
         warning:
           min_probability: 0.60
@@ -112,6 +127,8 @@ rules:
           min_confidence: 0.70
 
   hidden-invariant-failure:
+    target: unit
+    context: file
     applies_to: [function, method, closure]
     require_body: true
     question:
@@ -128,6 +145,7 @@ rules:
     report:
       message: A fallback or swallowed failure appears to conceal a violation of an established internal invariant.
       choices: [concealed_bug]
+      uncertain_choices: [insufficient_context]
       levels:
         warning:
           min_probability: 0.60
@@ -137,6 +155,8 @@ rules:
           min_confidence: 0.70
 
   unhelpful-decomposition:
+    target: unit
+    context: file
     applies_to: [class, impl, package, module]
     question:
       type: choice
@@ -151,6 +171,7 @@ rules:
     report:
       message: Helper indirection appears to obscure the caller without providing meaningful decomposition.
       choices: [needless_indirection]
+      uncertain_choices: [insufficient_context]
       levels:
         warning:
           min_probability: 0.60
@@ -160,7 +181,8 @@ rules:
           min_confidence: 0.70
 
   fragmented-ownership:
-    applies_to: [class, impl, package, module]
+    target: file
+    context: file
     question:
       type: noul
       instructions: >-
@@ -177,6 +199,8 @@ rules:
           min_probability: 0.92
 
   incohesive-owner:
+    target: unit
+    context: file
     applies_to: [class, impl, package, module]
     question:
       type: noul
@@ -193,7 +217,8 @@ rules:
           min_probability: 0.90
 
   duplicated-behavior:
-    applies_to: [class, impl, package, module]
+    target: file
+    context: file
     question:
       type: noul
       instructions: >-

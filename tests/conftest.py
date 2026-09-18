@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from jevscan.core.config import Config, JevConfig, Rule, ScanConfig
+from jevscan.core.config import Config, JevConfig, ScanConfig
 from jevscan.core.models import Kind, Unit
+from jevscan.core.rules import Rule
 
 
 @pytest.fixture
@@ -23,14 +24,30 @@ def basic_rule() -> Rule:
 
 @pytest.fixture
 def config(basic_rule: Rule) -> Config:
-    return Config(rules={"cohesion": basic_rule}, scan=ScanConfig(jobs=2, batch_size=2, queue_size=3),
-                  jev=JevConfig(concurrency=3, requests_per_minute=0, retries=0))
+    return Config(
+        rules={"cohesion": basic_rule},
+        scan=ScanConfig(jobs=2, batch_size=2, queue_size=3),
+        jev=JevConfig(concurrency=3, requests_per_minute=0, retries=0),
+    )
 
 
 @pytest.fixture
 def unit() -> Unit:
-    return Unit("sample.py:0:function", "sample.py", "python", Kind.FUNCTION, "work", "work", None,
-                0, 30, 1, 2, "def work():", True)
+    return Unit(
+        "sample.py:0:function",
+        "sample.py",
+        "python",
+        Kind.FUNCTION,
+        "work",
+        "work",
+        None,
+        0,
+        len(b"def work():\n    return 1\n"),
+        1,
+        2,
+        "def work():",
+        True,
+    )
 
 
 @pytest.fixture

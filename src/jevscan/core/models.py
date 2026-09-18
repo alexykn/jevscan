@@ -2,7 +2,7 @@
 
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal, Protocol
 
 
 class Kind(StrEnum):
@@ -85,14 +85,65 @@ class FileJob:
 
 
 @dataclass(frozen=True, slots=True)
+class Target:
+    id: str
+    scope: Literal["unit", "file"]
+    path: str
+    language: str
+    qualified_name: str
+    start_byte: int
+    end_byte: int
+    start_line: int
+    end_line: int
+    kind: Kind | None = None
+
+    @classmethod
+    def from_unit(cls, unit: Unit) -> "Target":
+        return cls(
+            unit.id,
+            "unit",
+            unit.path,
+            unit.language,
+            unit.qualified_name,
+            unit.start_byte,
+            unit.end_byte,
+            unit.start_line,
+            unit.end_line,
+            unit.kind,
+        )
+
+    @classmethod
+    def from_file(cls, parsed: ParsedFile) -> "Target":
+        lines = parsed.source.count(b"\n") + (not parsed.source.endswith(b"\n"))
+        return cls(
+            f"{parsed.path}:file",
+            "file",
+            parsed.path,
+            parsed.language,
+            parsed.path,
+            0,
+            len(parsed.source),
+            1,
+            max(1, lines),
+        )
+
+    def metadata(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
 class Finding:
     rule: str
     severity: Severity
     message: str
-    unit: Unit
+    target: Target
     value: float | str
     probability: float | None = None
     confidence: float | None = None
+
+
+class EventSink(Protocol):
+    def emit(self, event: dict[str, Any]) -> None: ...
 
 
 @dataclass(slots=True)
@@ -106,6 +157,13 @@ class Summary:
     units_cached: int = 0
     units_skipped: int = 0
     units_failed: int = 0
+    file_targets_evaluated: int = 0
+    file_targets_skipped: int = 0
+    checks_evaluated: int = 0
+    checks_skipped: int = 0
+    uncertain: int = 0
+    context_reduced: int = 0
+    cache_hits: int = 0
     requests: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -121,3 +179,9 @@ class Summary:
             return 0
         threshold = SEVERITY_RANK[Severity(fail_on)]
         return int(any(count and SEVERITY_RANK[Severity(level)] >= threshold for level, count in self.findings.items()))
+
+
+def emit_diagnostic(sink: EventSink, summary: Summary, diagnostic: Diagnostic) -> None:
+    summary.diagnostics += 1
+    summary.incomplete |= diagnostic.incomplete
+    sink.emit({"event": "diagnostic", **asdict(diagnostic)})

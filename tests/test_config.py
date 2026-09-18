@@ -13,7 +13,7 @@ def test_packaged_default_is_complete(tmp_path: Path) -> None:
 
 
 def test_project_config_replaces_rules_and_is_found_upward(tmp_path: Path) -> None:
-    (tmp_path / "jevscan.yaml").write_text("version: 2\nrules: {}\n")
+    (tmp_path / "jevscan.yaml").write_text("version: 3\nrules: {}\n")
     child = tmp_path / "src" / "nested"
     child.mkdir(parents=True)
     loaded = load_config([child], cwd=child)
@@ -32,18 +32,23 @@ def test_extending_default_is_explicit(tmp_path: Path) -> None:
     assert not loaded.config.rules["fragmented-ownership"].enabled
 
 
-@pytest.mark.parametrize("text", [
-    "version: 2\nrules: {}\nrules: {}\n",
-    "version: 2\nrules: {}\nunknown: true\n",
-    "version: 1\nrules: {}\n",
-    "extends: {bad: value}\nrules: {}\n",
-    "!!python/object/apply:os.system ['echo invalid']",
-    "extends: default\nrules:\n  unclear-control-flow:\n    report:\n      levels:\n        error:\n          min_score: 999\n",
-    "extends: default\nrules:\n  redundant-validation:\n    report:\n      choices: [invented]\n",
-    "extends: default\nrules:\n  mixed-responsibilities:\n    report:\n      levels:\n        warning:\n"
-    "          min_probability: 0.95\n        error:\n          min_probability: 0.90\n",
-    "extends: default\njev:\n  base_url: https://untrusted.example\n",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "version: 3\nrules: {}\nrules: {}\n",
+        "version: 3\nrules: {}\nunknown: true\n",
+        "version: 1\nrules: {}\n",
+        "extends: {bad: value}\nrules: {}\n",
+        "!!python/object/apply:os.system ['echo invalid']",
+        "extends: default\nrules:\n  unclear-control-flow:\n    report:\n      levels:\n        error:\n          min_score: 999\n",
+        "extends: default\nrules:\n  redundant-validation:\n    report:\n      choices: [invented]\n",
+        (
+            "extends: default\nrules:\n  mixed-responsibilities:\n    report:\n      levels:\n        warning:\n"
+            "          min_probability: 0.95\n        error:\n          min_probability: 0.90\n"
+        ),
+        "extends: default\njev:\n  base_url: https://untrusted.example\n",
+    ],
+)
 def test_invalid_config_fails_at_boundary(tmp_path: Path, text: str) -> None:
     (tmp_path / "jevscan.yaml").write_text(text)
     with pytest.raises(ConfigError):
@@ -78,3 +83,32 @@ def test_cache_paths_cannot_escape_the_project(value: str) -> None:
 
     with pytest.raises(ValidationError):
         CacheConfig(path=value)
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"target": "module"},
+        {"target": "tree"},
+        {"target": "file", "context": "file"},  # unit applies_to is not meaningful for a file
+        {"target": "file", "context": "owner", "applies_to": []},
+    ],
+)
+def test_target_contracts_reject_unsupported_or_ambiguous_scopes(basic_rule, patch: dict) -> None:
+    from pydantic import ValidationError
+
+    from jevscan.core.rules import Rule
+
+    with pytest.raises(ValidationError):
+        Rule.model_validate({**basic_rule.model_dump(), **patch})
+
+
+def test_packaged_file_rules_and_old_schema_migration_error(tmp_path: Path) -> None:
+    loaded = load_config([tmp_path], cwd=tmp_path)
+    assert {name for name, rule in loaded.config.rules.items() if rule.target == "file"} == {
+        "duplicated-behavior",
+        "fragmented-ownership",
+    }
+    (tmp_path / "jevscan.yaml").write_text("version: 2\nrules: {}\n")
+    with pytest.raises(ConfigError, match="version 3.*migration"):
+        load_config([tmp_path], cwd=tmp_path)

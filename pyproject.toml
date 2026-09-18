@@ -11,10 +11,12 @@ authors = [{ name = "Alexander Knott", email = "alexander.knott@r-kom.de" }]
 keywords = ["code-quality", "tree-sitter", "jev", "lint", "static-analysis"]
 classifiers = [
   "Intended Audience :: Developers",
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
 dynamic = ["version", "dependencies"]
 

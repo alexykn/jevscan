@@ -1,11 +1,13 @@
 # This file REPLACES the packaged rules; only these two checks run.
-version: 2
+version: 3
 jev:
   concurrency: 16
   requests_per_minute: 600
 
 rules:
   cohesive-callable:
+    target: unit
+    context: file
     applies_to: [function, method, closure]
     require_body: true
     question:
@@ -23,6 +25,8 @@ rules:
           min_probability: 0.90
 
   owner-cohesion:
+    target: unit
+    context: file
     applies_to: [class, impl, trait, interface, package, module]
     question:
       type: choice
@@ -36,6 +40,7 @@ rules:
     report:
       message: This owner appears to combine unrelated responsibilities.
       choices: [mixed]
+      uncertain_choices: [unknown]
       levels:
         warning:
           min_probability: 0.60

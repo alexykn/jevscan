@@ -4,42 +4,118 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  checks:
+  quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      UV_PYTHON: '3.12'
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          python-version: "3.12"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.12.16'
           enable-cache: true
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups
+      - name: Check formatting (whole project)
+        run: uv run --no-sync ruff format --check src tests
+      - name: Lint (whole project)
+        run: uv run --no-sync ruff check src tests
+      - name: Type-check (whole project)
+        run: uv run --no-sync ty check
+      - name: Complexity report
+        run: uv run --no-sync radon cc -s -n C src
 
-      - name: Install dependencies
-        run: uv sync --all-groups
-
-      - name: Check formatting
-        run: uv run ruff format --check src/jevscan/cli/render.py tests/test_cli_and_reports.py
-
-      - name: Lint
-        run: uv run ruff check src/jevscan/cli/render.py tests/test_cli_and_reports.py
-
-      - name: Type-check
-        run: uv run ty check
-
+  test-and-package:
+    name: Test/package (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: ubuntu-latest
+            python: '3.13'
+          - os: ubuntu-latest
+            python: '3.14'
+          - os: macos-14
+            python: '3.12'
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.12.16'
+          enable-cache: true
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups
+      - name: Require native parser dependencies (do not silently skip integration tests)
+        run: uv run --no-sync python -c "from jevscan.core.parser import require_parser_runtime; require_parser_runtime()"
       - name: Test
-        run: uv run pytest -q -rs
-
-      - name: Build distributions
+        run: uv run --no-sync pytest -q -rs
+      - name: Build sdist and wheel
         run: uv build
+      - name: Install wheel instead of editable checkout
+        run: uv pip install --python .venv/bin/python --no-deps --reinstall dist/*.whl
+      - name: Smoke-test installed wheel outside checkout
+        shell: bash
+        run: |
+          root="$PWD"
+          work="$(mktemp -d)"
+          cp -R tests/fixtures "$work/fixtures"
+          cd "$work"
+          "$root/.venv/bin/jevscan" --version
+          "$root/.venv/bin/jevscan" --show-config > resolved.yaml
+          "$root/.venv/bin/jevscan" --list-rules > rules.txt
+          "$root/.venv/bin/jevscan" fixtures --offline --format json > inventory.json
+          "$root/.venv/bin/jevscan" fixtures --offline -v > inventory.txt
+          "$root/.venv/bin/python" -I - <<'PY'
+          import json
+          from pathlib import Path
+          import jevscan
+          import yaml
+          assert 'site-packages' in str(Path(jevscan.__file__)), jevscan.__file__
+          assert jevscan.__version__ == '0.2.0rc1'
+          config = yaml.safe_load(Path('resolved.yaml').read_text())
+          assert config['version'] == 3 and len(config['rules']) == 9
+          report = json.loads(Path('inventory.json').read_text())
+          assert report['schema_version'] == 2
+          assert not report['summary']['incomplete'], report['summary']
+          assert report['summary']['units_found'] > 0
+          languages = {event['language'] for event in report['events'] if event['event'] == 'file'}
+          assert languages == {'python', 'rust', 'perl', 'typescript', 'javascript'}, languages
+          assert 'fragmented-ownership' in Path('rules.txt').read_text()
+          assert 'site-packages' in str(Path(jevscan.__file__).parent)
+          print('Installed wheel: config, entry point, and real five-language parsing passed.')
+          PY
+      - name: Retain release-candidate distributions
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

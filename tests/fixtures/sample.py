@@ -23,6 +23,7 @@ class Service:
     async def load(self) -> int:
         def inner() -> int:
             return self.value
+
         return inner()
 
     class Nested:

@@ -6,10 +6,10 @@ import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 from jevscan import __version__
-from jevscan.core.context import PROMPT_VERSION
+from jevscan.core.protocol import PROMPT_VERSION
 
 
 class CacheError(RuntimeError):
@@ -42,7 +42,9 @@ class AnswerCache:
         version = self.connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in {0, 1}:
             raise CacheError(f"unsupported cache schema {version}; use a new cache path")
-        self.connection.execute("CREATE TABLE IF NOT EXISTS answers (key TEXT PRIMARY KEY, created REAL NOT NULL, body BLOB NOT NULL)")
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS answers (key TEXT PRIMARY KEY, created REAL NOT NULL, body BLOB NOT NULL)"
+        )
         self.connection.execute("PRAGMA user_version=1")
         if self.ttl:
             self.connection.execute("DELETE FROM answers WHERE created < ?", (time.time() - self.ttl,))
@@ -56,7 +58,9 @@ class AnswerCache:
 
     def _put(self, key: str, body: bytes) -> None:
         assert self.connection is not None
-        self.connection.execute("INSERT OR REPLACE INTO answers (key, created, body) VALUES (?, ?, ?)", (key, time.time(), body))
+        self.connection.execute(
+            "INSERT OR REPLACE INTO answers (key, created, body) VALUES (?, ?, ?)", (key, time.time(), body)
+        )
 
     def _close(self) -> None:
         if self.connection is not None:
@@ -69,7 +73,7 @@ class AnswerCache:
     async def put(self, key: str, body: bytes) -> None:
         await self._call(self._put, key, body)
 
-    async def __aenter__(self) -> "AnswerCache":
+    async def __aenter__(self) -> Self:
         try:
             await self._call(self._open)
         except BaseException:
@@ -78,7 +82,7 @@ class AnswerCache:
             raise
         return self
 
-    async def __aexit__(self, *_exc: Any) -> None:
+    async def __aexit__(self, *_exc: object) -> None:
         try:
             await self._call(self._close)
         finally:
