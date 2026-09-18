@@ -130,16 +130,20 @@ rules:
     require_body: true
     question:
       type: choice
-      instructions: Which statement about repeated validation in `source` is supported by the supplied code? Type
-        annotations, names, and absent callers do not prove that an invariant was established. Revalidation across
-        a new trust boundary or after relevant mutation/concurrency may be necessary.
+      instructions: Which statement about repeated validation in `source` is supported by the supplied code? First
+        determine whether the target visibly performs a validation or recheck that could plausibly duplicate an earlier
+        guarantee. If no such repeated check is visible, choose justified_or_absent; do not use insufficient_context
+        merely because callers or contracts are absent. Only choose insufficient_context when a concrete repeated check
+        is visible and deciding whether it is redundant requires a missing upstream guarantee or intervening
+        boundary, mutation, or concurrency. Type annotations, names, and absent callers do not prove an invariant.
       criteria:
         demonstrably_redundant: The supplied implementation explicitly establishes an invariant and later rechecks
           it without a new boundary or invalidating operation.
         justified_or_absent: There is no repeated check, or the repeated check protects a real boundary or invalidation
           risk.
-        insufficient_context: An upstream guarantee or intervening behavior needed for the judgment is not established
-          by the supplied evidence.
+        insufficient_context: A concrete repeated validation is visible, but whether it duplicates an earlier guarantee
+          cannot be decided because the necessary upstream guarantee or intervening behavior is missing from the
+          supplied evidence.
     report:
       message: A validation check appears to repeat an invariant explicitly established in the supplied code.
       choices: [demonstrably_redundant]
@@ -161,15 +165,18 @@ rules:
     require_body: true
     question:
       type: choice
-      instructions: Does a default value, swallowed exception, or best-effort continuation in `source` conceal a
-        violation of an internal invariant that is explicitly established in the supplied code? Legitimate I/O failures,
-        cancellation, user input errors, and documented optional behavior are not invariant violations.
+      instructions: Does a default value, swallowed exception, best-effort continuation, or similar fallback in
+        `source` conceal a violation of an internal invariant? First identify such behavior in the target. If none is
+        visible, choose legitimate_behavior; do not use insufficient_context merely because callers, contracts, or
+        invariants outside the file are absent. Only choose insufficient_context when the fallback behavior is visible
+        but deciding whether it conceals a bug requires a missing invariant or intended failure contract. Legitimate
+        I/O failures, cancellation, user input errors, and documented optional behavior are not invariant violations.
       criteria:
         concealed_bug: A clearly established internal invariant is violated and the implementation silently conceals
           it.
         legitimate_behavior: The behavior handles a legitimate runtime condition or no such concealment is present.
-        insufficient_context: The invariant or intended failure behavior cannot be established from the supplied
-          evidence.
+        insufficient_context: A concrete fallback, swallowed failure, or best-effort continuation is visible, but the
+          invariant or intended failure behavior needed to classify it cannot be established from the supplied evidence.
     report:
       message: A fallback or swallowed failure appears to conceal a violation of an established internal invariant.
       choices: [concealed_bug]
@@ -192,15 +199,20 @@ rules:
     question:
       type: choice
       instructions: Do the helpers visible in `source` make their callers easier to understand by naming coherent
-        operations, or mainly add forwarding/line-splitting indirection? Small helpers, interface adapters, decorators,
-        and required protocol methods are not inherently bad.
+        operations, or mainly add forwarding or line-splitting indirection? First determine whether the target actually
+        contains helper decomposition relevant to this question. If no such decomposition is present, choose
+        not_applicable. If the visible caller/helper relationship is sufficient, choose meaningful or
+        needless_indirection. Only choose insufficient_context when helper decomposition is visibly present but missing
+        helper implementations or callers are required to distinguish those outcomes. Small helpers, interface adapters,
+        decorators, and required protocol methods are not inherently bad.
       criteria:
         meaningful: Decomposition gives coherent operations meaningful names or serves an evident interface requirement.
         needless_indirection: Visible helpers mainly move lines or forward arguments without hiding meaningful detail,
           and visibly make the caller harder to follow.
         not_applicable: No helper decomposition is present in the target; a data-only type, exception, enum or interface
           declaration is not a decomposition defect.
-        insufficient_context: The relevant helper implementations or callers are missing, or the evidence is inconclusive.
+        insufficient_context: Helper decomposition is visibly present, but a relevant helper implementation or caller
+          needed to distinguish meaningful decomposition from needless indirection is missing from the supplied evidence.
     report:
       message: Helper indirection appears to obscure the caller without providing meaningful decomposition.
       choices: [needless_indirection]
