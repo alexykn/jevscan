@@ -13,7 +13,7 @@ def test_packaged_default_is_complete(tmp_path: Path) -> None:
 
 
 def test_project_config_replaces_rules_and_is_found_upward(tmp_path: Path) -> None:
-    (tmp_path / "jevscan.yaml").write_text("version: 1\nrules: {}\n")
+    (tmp_path / "jevscan.yaml").write_text("version: 2\nrules: {}\n")
     child = tmp_path / "src" / "nested"
     child.mkdir(parents=True)
     loaded = load_config([child], cwd=child)
@@ -23,22 +23,25 @@ def test_project_config_replaces_rules_and_is_found_upward(tmp_path: Path) -> No
 
 def test_extending_default_is_explicit(tmp_path: Path) -> None:
     (tmp_path / "jevscan.yaml").write_text(
-        "extends: default\nrules:\n  mixed-responsibilities:\n    report:\n      min_probability: 0.99\n"
-        "  fragmented-ownership:\n    enabled: false\n"
+        "extends: default\nrules:\n  mixed-responsibilities:\n    report:\n      levels:\n        error:\n"
+        "          min_probability: 0.99\n  fragmented-ownership:\n    enabled: false\n"
     )
     loaded = load_config([tmp_path], cwd=tmp_path)
     assert len(loaded.config.rules) == 9
-    assert loaded.config.rules["mixed-responsibilities"].report.min_probability == 0.99
+    assert loaded.config.rules["mixed-responsibilities"].report.levels.error.min_probability == 0.99
     assert not loaded.config.rules["fragmented-ownership"].enabled
 
 
 @pytest.mark.parametrize("text", [
-    "version: 1\nrules: {}\nrules: {}\n",
-    "version: 1\nrules: {}\nunknown: true\n",
+    "version: 2\nrules: {}\nrules: {}\n",
+    "version: 2\nrules: {}\nunknown: true\n",
+    "version: 1\nrules: {}\n",
     "extends: {bad: value}\nrules: {}\n",
     "!!python/object/apply:os.system ['echo invalid']",
-    "extends: default\nrules:\n  unclear-control-flow:\n    report:\n      min_score: 999\n",
+    "extends: default\nrules:\n  unclear-control-flow:\n    report:\n      levels:\n        error:\n          min_score: 999\n",
     "extends: default\nrules:\n  redundant-validation:\n    report:\n      choices: [invented]\n",
+    "extends: default\nrules:\n  mixed-responsibilities:\n    report:\n      levels:\n        warning:\n"
+    "          min_probability: 0.95\n        error:\n          min_probability: 0.90\n",
     "extends: default\njev:\n  base_url: https://untrusted.example\n",
 ])
 def test_invalid_config_fails_at_boundary(tmp_path: Path, text: str) -> None:
