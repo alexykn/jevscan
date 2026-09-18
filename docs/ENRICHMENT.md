@@ -26,6 +26,8 @@ Module/tree scoring, persistent model sessions, compiler-resolved call graphs, a
 
 The packaged default is missing/reduced evidence, plus applicability for JEV06. Ordinary low confidence/ambiguous Nouls do not invoke the router unless explicitly enabled. A possible not-applicable result is not a clean judgment. Above-threshold uncertain warnings/errors remain visible without verbose mode regardless of routing admission.
 
+For the packaged context-sensitive Choice rules, `insufficient_context` is deliberately narrow. JEV04 may use it only after a concrete repeated validation is visible; JEV05 only after a concrete fallback, swallowed failure, or best-effort continuation is visible; and JEV06 only after helper decomposition is visibly present. If the phenomenon itself is absent, the rule must choose its clean/not-applicable outcome instead of requesting hypothetical external context. This keeps enrichment focused on an identified construct whose classification genuinely depends on a missing fact.
+
 ## Disposition and independent evidence families
 
 The disposition Choice answers a single control-flow decision:
