@@ -112,3 +112,21 @@ def test_packaged_file_rules_and_old_schema_migration_error(tmp_path: Path) -> N
     (tmp_path / "jevscan.yaml").write_text("version: 2\nrules: {}\n")
     with pytest.raises(ConfigError, match="version 3.*migration"):
         load_config([tmp_path], cwd=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"enrichment": {"max_calls_per_file": 0}},
+        {"enrichment": {"max_candidates": 1, "max_evidence": 2}},
+        {"enrichment": {"min_relevance": 0.5}},
+        {"rules": {"mixed-responsibilities": {"report": {"uncertain_range": [0.7, 0.4]}}}},
+        {"rules": {"redundant-validation": {"report": {"not_applicable_choices": ["demonstrably_redundant"]}}}},
+    ],
+)
+def test_enrichment_policy_is_validated_at_configuration_boundary(tmp_path, patch):
+    import yaml
+
+    (tmp_path / "jevscan.yaml").write_text(yaml.safe_dump({"extends": "default", **patch}))
+    with pytest.raises(ConfigError):
+        load_config([tmp_path], cwd=tmp_path)

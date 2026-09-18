@@ -21,6 +21,8 @@ from jevscan.core.scanner import run_scan, worker_count
 
 def _overrides(loaded: LoadedConfig, args: Any) -> LoadedConfig:
     document = loaded.config.model_dump(mode="json")
+    if args.no_enrichment:
+        document["enrichment"]["enabled"] = False
     if args.jobs is not None:
         document["scan"]["jobs"] = args.jobs
     for key, value in (

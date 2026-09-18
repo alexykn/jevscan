@@ -9,8 +9,8 @@ from wcwidth import wrap
 
 RESET, BOLD, DIM = "\x1b[0m", "\x1b[1m", "\x1b[2m"
 RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = (f"\x1b[{i}m" for i in range(31, 38))
-LEVEL_STYLE = {"ok": GREEN, "unknown": CYAN, "info": CYAN, "warning": YELLOW, "error": RED}
-LEVEL_MARKER = {"ok": "·", "unknown": "?", "info": "i", "warning": "!", "error": "x"}
+LEVEL_STYLE = {"ok": GREEN, "unknown": CYAN, "not_applicable": DIM, "info": CYAN, "warning": YELLOW, "error": RED}
+LEVEL_MARKER = {"ok": "·", "unknown": "?", "not_applicable": "-", "info": "i", "warning": "!", "error": "x"}
 KIND_STYLE = {
     "function": ("F", MAGENTA),
     "method": ("M", WHITE),

@@ -62,17 +62,32 @@ class ContextBuilder:
             "end_line": bisect_left(self.newlines, max(start, end - 1)) + 1,
         }
 
+    def coverage(self, documents: list[dict[str, Any]]) -> dict[str, Any]:
+        spans = sorted(
+            (document["start_byte"], document["end_byte"])
+            for document in documents
+            if document["path"] == self.parsed.path
+        )
+        omitted = []
+        cursor = 0
+        for start, end in spans:
+            if start > cursor:
+                omitted.append(self._range(cursor, start))
+            cursor = max(cursor, end)
+        if cursor < len(self.parsed.source):
+            omitted.append(self._range(cursor, len(self.parsed.source)))
+        return {
+            "file_complete": not omitted,
+            "omitted_ranges": omitted,
+            "external_references": "unresolved; no cross-file contracts or caller bodies supplied",
+        }
+
     def envelope(self, start: int, end: int) -> Evidence:
         key = start, end
         if key in self._envelopes:
             self._envelopes.move_to_end(key)
             return self._envelopes[key]
         parsed = self.parsed
-        omitted = []
-        if start:
-            omitted.append(self._range(0, start))
-        if end < len(parsed.source):
-            omitted.append(self._range(end, len(parsed.source)))
         document = {
             "path": parsed.path,
             "language": parsed.language,
@@ -81,13 +96,9 @@ class ContextBuilder:
         }
         state = {
             "documents": [document],
-            "coverage": {
-                "file_complete": not omitted,
-                "omitted_ranges": omitted,
-                "external_references": "unresolved; no cross-file contracts or caller bodies supplied",
-            },
+            "coverage": self.coverage([document]),
         }
-        if omitted:
+        if not state["coverage"]["file_complete"]:
             state["declarations"] = {
                 "items": parsed.declarations,
                 "scope": "bounded same-file import snippets, not resolved definitions",
@@ -103,7 +114,12 @@ class ContextBuilder:
         requested = next(self.variants(check))
         return {
             "requested": check.rule.context,
-            "context_complete": requested.key == evidence.key,
+            "context_complete": any(
+                document["path"] == check.target.path
+                and document["start_byte"] <= requested.start
+                and document["end_byte"] >= requested.end
+                for document in evidence.state["documents"]
+            ),
             "target_complete": True,
             "included_ranges": [
                 {key: value for key, value in doc.items() if key != "content"} for doc in evidence.state["documents"]

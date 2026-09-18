@@ -111,7 +111,7 @@ Criteria correspond to `0, 1, ...`; returned scores may be fractional. Both leve
 
 ## Levels, messages, and output
 
-Both `report.levels.warning` and `report.levels.error` are required. Thresholds are inclusive. The error gate is checked first and must be at least as strict as the warning gate; `min_confidence` participates in this ordering. Otherwise the result is OK or uncertain as described above. YAML stores semantic levels, not ANSI color escape codes.
+Both `report.levels.warning` and `report.levels.error` are required. Thresholds are inclusive. After any configured Noul uncertainty band is applied, the error gate is checked first and must be at least as strict as the warning gate; `min_confidence` participates in this ordering. Otherwise the result is OK or uncertain as described above. YAML stores semantic levels, not ANSI color escape codes.
 
 `report.message` is the configurable explanation printed below a warning/error. The same message is used for both levels; it is not generated repair advice and does not localize an issue more narrowly than the target.
 
@@ -178,6 +178,59 @@ Include/exclude use Git-style patterns, not `Path.glob`: `*.py` matches that bas
 3. Move `jev.max_request_bytes` and `jev.max_questions` to `evaluation` when previously configured. Reconsider their values: the old 60,000-byte request cap defeats richer context.
 4. Keep existing `report.levels.warning/error`; add `target/context` as needed. A standalone unit rule defaults to owner context. File rules must remove `applies_to` and `require_body` and use file context.
 5. Review inherited file-level defaults: `duplicated-behavior` and `fragmented-ownership` now apply once per file, not once per owner. Add `uncertain_choices` to custom Choice rules with an unknown category.
-6. Consumers of machine reports must accept **report schema 2**: evaluations and findings contain `target`, not `unit`; evaluations add `statuses`, `evidence`, `models`, `scales`, `cached_rules`, and `skipped_rules`. Offline `unit` inventory events remain lexical metadata.
+6. Consumers of machine reports must accept **report schema 3** (schema 2 introduced the target fields; RC2 adds the audit/status changes below): evaluations and findings contain `target`, not `unit`; evaluations add `statuses`, `evidence`, `models`, `scales`, `cached_rules`, and `skipped_rules`. Offline `unit` inventory events remain lexical metadata.
 
 Version-1 configurations first need their single severity/threshold moved into explicit warning/error levels. Old-version configurations are rejected before scanning. Cache entries are versioned and the new request shape invalidates prior unit-only answers; subsequent reporting-only changes can reuse the new raw-answer cache.
+
+
+## RC2: bounded evidence enrichment (configuration version remains 3)
+
+These fields are additive; existing v3 configurations load without migration. Enrichment is enabled by the operational default, including standalone configurations. `--no-enrichment` overrides YAML for that invocation. `--show-config` prints the effective settings.
+
+```yaml
+version: 3
+extends: default
+
+enrichment:
+  enabled: true
+  max_checks_per_file: 12
+  max_calls_per_file: 36
+  max_candidates: 12
+  max_evidence: 3
+  min_route_probability: 0.70
+  min_route_confidence: 0.50
+  min_relevance: 0.65
+  max_source_files: 1000
+  max_source_bytes: 16777216
+
+rules:
+  redundant-validation:
+    enrich: true
+  unclear-control-flow:
+    enrich: false
+  mixed-responsibilities:
+    report:
+      uncertain_range: [0.40, 0.60]
+```
+
+There is one enrichment pass, not a configurable recursive state machine. `max_calls_per_file` counts routing, candidate-selection and reassessment predictions, including cache hits. HTTP retry attempts are separately controlled by `jev.retries` and the global rate limiter. Reaching a review/call limit retains uncertainty; it is not a successful reassessment. `max_evidence` cannot exceed `max_candidates`. Route probability and candidate relevance thresholds must be greater than 0.5. These defaults are heuristics awaiting domain calibration.
+
+`max_source_files` and `max_source_bytes` bound one lazy source index for the invocation, not each target. Reads over a configured file/total byte budget are rejected, not partially analyzed. One overflow byte may be read. Unreadable or unsupported source, budget exhaustion, and candidate truncation are recorded as partial retrieval coverage. The scan include/exclude and Git-ignore filters apply to this discovery too. A lexical name match is only a candidate; no complete call graph is implied even when discovery finishes.
+
+**Review data-sharing scope before live use.** The evidence search spans the resolved project root, not only command-line target paths. Tests outside `src/` may be supplied to Jev. To restrict sharing to primary requested evidence, disable enrichment. API authentication/endpoint cannot be redirected by repository YAML. No model-provided path is opened.
+
+### Applicability and uncertainty
+
+`require_body: true` now requires a body containing an implementation, not merely syntax such as `pass` or `...`. Declaration-only methods remain present in offline inventory. An empty block is not an implementation for these checks; a real expression-bodied closure is. `require_members: true` requires at least one directly owned implemented callable. The packaged decomposition rule uses this filter; it is optional for custom unit rules and invalid for file rules.
+
+Choice rules may set `report.not_applicable_choices` to labels in their criteria. These labels must be disjoint from defect `choices` and `uncertain_choices`. A sufficiently supported not-applicable answer has status `not_applicable`, not `ok`. A confident routing judgment may also reach this status; the raw primary answer and routing prediction are retained so this inference is auditable.
+
+Noul rules may set `report.uncertain_range: [lower, upper]`, which must enclose 0.5. The interval is **lower-inclusive, upper-exclusive**, applies to raw `noul` (also for `expected: false`), and takes precedence over reporting levels. `null` disables the uncertainty band. Thus the packaged `[0.40, 0.60)` leaves 0.599 uncertain and lets 0.600 reach the ordinary warning gate. Confidence-based Choice/Score rules retain their existing thresholds; uncertainty is now given a separate reason rather than being conflated with severity.
+
+Standalone/copied v3 rules do not inherit the new Noul band or decomposition filter. With `extends: default` they do. The numerical warning/error gates are unchanged, but the band deliberately changes handling around the Noul warning boundary.
+
+### Machine report schema 3
+
+RC2 adds `not_applicable` to statuses, plus per-rule `uncertainty_reasons` and `reviews`. A review records its trigger, original answer/model/evidence, each prediction's request hash/model/cache/raw answer, candidate identities/relevance, retrieval limits, selected source hashes/ranges, and stop outcome. Final `answers`, `findings`, `evidence`, and summary counts describe the final assessment only; earlier judgments do not count twice. `cached_rules` and the target `cached` marker require every contributing prediction to be cached.
+
+`summary.enrichment_calls` includes cached predictions; `summary.requests` counts actual HTTP attempts across primary and auxiliary work. `enrichment_resolved` includes transitions from unknown to OK, warning, error, or not-applicable; it is a workflow count, not measured model accuracy. Provider context rejection in enrichment preserves the earlier uncertain answer with a specific stop reason. Other API, cache, and validation errors remain operational failures and make the scan incomplete.

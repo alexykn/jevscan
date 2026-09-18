@@ -65,6 +65,9 @@ class ReportPolicy(StrictModel):
     choices: list[str] | None = None
     expected: bool = True
     uncertain_choices: list[str] = Field(default_factory=list)
+    not_applicable_choices: list[str] = Field(default_factory=list)
+    # Inclusive lower, exclusive upper boundary, applied before severity gates.
+    uncertain_range: tuple[float, float] | None = None
 
 
 class Rule(StrictModel):
@@ -74,6 +77,8 @@ class Rule(StrictModel):
     applies_to: list[Kind] = Field(default_factory=list)
     languages: list[str] = Field(default_factory=lambda: sorted(LANGUAGES))
     require_body: bool = False
+    require_members: bool = False
+    enrich: bool = True
     question: Question
     report: ReportPolicy
 
@@ -100,6 +105,8 @@ class Rule(StrictModel):
             self._validate_choice()
         else:
             self._validate_noul()
+        if not isinstance(self.question, NoulQuestion) and self.report.uncertain_range is not None:
+            raise ValueError("uncertain_range is only valid for noul questions")
         _validate_level_order(self.report.levels)
         return self
 
@@ -108,13 +115,18 @@ class Rule(StrictModel):
             if not self.applies_to:
                 raise ValueError("unit rules require nonempty applies_to")
             return
-        if self.applies_to or self.require_body or self.context != "file":
+        if self.applies_to or self.require_body or self.require_members or self.context != "file":
             raise ValueError("file rules require context=file, no applies_to, and require_body=false")
 
     def _validate_score(self) -> None:
         question, report = self.question, self.report
         assert isinstance(question, ScoreQuestion)
-        if report.choices is not None or report.uncertain_choices or not report.expected:
+        if (
+            report.choices is not None
+            or report.uncertain_choices
+            or report.not_applicable_choices
+            or not report.expected
+        ):
             raise ValueError("score reports cannot use choices, uncertain_choices, or expected=false")
         for level in (report.levels.warning, report.levels.error):
             if (level.min_score is None) == (level.max_score is None):
@@ -131,10 +143,11 @@ class Rule(StrictModel):
         assert isinstance(question, ChoiceQuestion)
         if not report.choices or set(report.choices) - question.criteria.keys():
             raise ValueError("choice reports require choices present in question.criteria")
-        if set(report.uncertain_choices) - question.criteria.keys():
-            raise ValueError("uncertain_choices must be present in question.criteria")
-        if set(report.choices) & set(report.uncertain_choices):
-            raise ValueError("defect choices and uncertain_choices must be disjoint")
+        categories = (set(report.choices), set(report.uncertain_choices), set(report.not_applicable_choices))
+        if any(category - question.criteria.keys() for category in categories):
+            raise ValueError("report choice labels must be present in question.criteria")
+        if any(categories[i] & categories[j] for i in range(3) for j in range(i + 1, 3)):
+            raise ValueError("defect, uncertain, and not-applicable choices must be disjoint")
         if not report.expected:
             raise ValueError("choice reports cannot use expected=false")
         for level in (report.levels.warning, report.levels.error):
@@ -143,8 +156,12 @@ class Rule(StrictModel):
 
     def _validate_noul(self) -> None:
         report = self.report
-        if report.choices is not None or report.uncertain_choices:
+        if report.choices is not None or report.uncertain_choices or report.not_applicable_choices:
             raise ValueError("noul reports cannot use choices or uncertain_choices")
+        if report.uncertain_range is not None:
+            lower, upper = report.uncertain_range
+            if not 0 <= lower <= 0.5 < upper <= 1:
+                raise ValueError("uncertain_range must enclose 0.5 with ordered boundaries in [0, 1]")
         for level in (report.levels.warning, report.levels.error):
             if level.min_probability is None:
                 raise ValueError("noul levels require min_probability")

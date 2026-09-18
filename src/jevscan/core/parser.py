@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from jevscan.core.languages import SPECS
-from jevscan.core.models import Diagnostic, FileJob, Kind, ParsedFile, Severity, Unit
+from jevscan.core.models import CALLABLE_KINDS, Diagnostic, FileJob, Kind, ParsedFile, Reference, Severity, Unit
 
 
 class ParserUnavailableError(RuntimeError):
@@ -156,6 +156,76 @@ def _first_error_line(root: Any) -> int:
     return 1
 
 
+_NAME_NODES = frozenset({
+    "identifier",
+    "property_identifier",
+    "field_identifier",
+    "type_identifier",
+    "bareword",
+    "function",
+    "method",
+})
+_CALL_NODES = frozenset({"call", "call_expression", "function_call_expression", "method_call_expression"})
+
+
+def _callee_name(node: Any, source: bytes) -> str | None:
+    callee = node.child_by_field_name("function") or node.child_by_field_name("method")
+    if callee is None:
+        return None
+    # Calls through returned functions or indexed expressions cannot be named here.
+    while callee.type not in _NAME_NODES:
+        if callee.type not in {
+            "attribute",
+            "member_expression",
+            "field_expression",
+            "scoped_identifier",
+            "generic_function",
+        }:
+            return None
+        callee = (
+            callee.child_by_field_name("attribute")
+            or callee.child_by_field_name("property")
+            or callee.child_by_field_name("field")
+            or callee.child_by_field_name("name")
+            or callee.child_by_field_name("function")
+        )
+        if callee is None:
+            return None
+    return _text(callee, source).rsplit("::", 1)[-1]
+
+
+def _references(root: Any, source: bytes) -> tuple[Reference, ...]:
+    references = []
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if node.type in _CALL_NODES:
+            name = _callee_name(node, source)
+            if name:
+                references.append(Reference(name, node.start_byte, node.end_byte, "call"))
+        elif node.type in _NAME_NODES and not node.named_children:
+            references.append(
+                Reference(_text(node, source).rsplit("::", 1)[-1], node.start_byte, node.end_byte, "name")
+            )
+        pending.extend(reversed(node.named_children))
+    return tuple(references)
+
+
+def _has_implementation(symbol: _Symbol) -> bool:
+    if symbol.body is None:
+        return False
+    if symbol.kind not in CALLABLE_KINDS:
+        return True
+    if symbol.body.type not in {"block", "statement_block"}:
+        return True  # Expression-bodied arrows/closures are implementations too.
+    for statement in symbol.body.named_children:
+        if statement.type == "expression_statement" and len(statement.named_children) == 1:
+            statement = statement.named_children[0]
+        if statement.type not in {"comment", "pass_statement", "ellipsis", "string", "concatenated_string"}:
+            return True
+    return False
+
+
 def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: list[int]) -> tuple[Unit, ...]:
     # Sorting and this interval stack avoid an O(symbols**2) enclosing-parent search.
     symbols.sort(key=lambda item: (item.start, -item.end))
@@ -198,6 +268,7 @@ def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: li
             end_line=bisect_left(newlines, max(symbol.start, symbol.end - 1)) + 1,
             signature=signature,
             has_body=symbol.body is not None,
+            has_implementation=_has_implementation(symbol),
             branch_nodes=bisect_left(branches, symbol.end) - bisect_left(branches, symbol.start),
         )
         if parent:
@@ -235,7 +306,9 @@ def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> Parsed
     declarations = tuple(
         _text(node, source)[:1024] for node in sorted(captures.get("import", []), key=lambda n: n.start_byte)[:32]
     )
-    return ParsedFile(job.display_path, job.language, source, units, declarations)
+    return ParsedFile(
+        job.display_path, job.language, source, units, declarations, references=_references(tree.root_node, source)
+    )
 
 
 def parse_batch(jobs: list[FileJob], max_file_bytes: int, max_units: int) -> list[ParsedFile]:

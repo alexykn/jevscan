@@ -98,6 +98,8 @@ def test_text_report_groups_all_answers_under_one_unit() -> None:
             "unclear-control-flow": "warning",
             "redundant-validation": "ok",
         },
+        "uncertainty_reasons": {},
+        "reviews": {},
         "scales": {"unclear-control-flow": 3},
         "answers": {
             "mixed-responsibilities": {"type": "noul", "noul": 0.21},
@@ -180,6 +182,8 @@ def _evaluation_event(name: str = "work", status: str = "warning") -> dict:
         "answers": {"cohesion": {"type": "noul", "noul": 0.95}},
         "statuses": {"cohesion": status},
         "findings": [finding] if status in {"warning", "error"} else [],
+        "uncertainty_reasons": {},
+        "reviews": {},
         "scales": {},
         "cached": False,
     }
@@ -227,10 +231,10 @@ def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monke
     assert "\x1b" not in text
     if format_name == "json":
         decoded = json.loads(text)
-        assert decoded["schema_version"] == 2 and decoded["events"] == events
+        assert decoded["schema_version"] == 3 and decoded["events"] == events
     else:
         decoded = [json.loads(line) for line in text.splitlines()]
-        assert decoded[0]["schema_version"] == 2 and decoded[1:-1] == events
+        assert decoded[0]["schema_version"] == 3 and decoded[1:-1] == events
 
 
 @pytest.mark.parametrize("width", [32, 80])
@@ -284,3 +288,42 @@ def test_untrusted_terminal_text_cannot_inject_ansi(monkeypatch) -> None:
     assert "[red] literal λ" in output
     assert "\x1b" not in output and "\r" not in output and "\u202e" not in output
     assert "\\u001b[2J" in output
+
+
+def test_no_enrichment_is_a_resolved_config_override(tmp_path, monkeypatch, capsys):
+    import yaml
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["--show-config", "--no-enrichment"]) == 0
+    document = yaml.safe_load(capsys.readouterr().out)
+    assert document["enrichment"]["enabled"] is False
+    assert document["rules"]["unhelpful-decomposition"]["require_members"] is True
+
+
+@pytest.mark.parametrize("format_name", ["json", "jsonl", "text"])
+def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
+    stream = io.StringIO()
+    reporter = Reporter(stream, format_name, _report_metadata(), verbose=True, width=90)
+    event = {
+        "event": "evaluation",
+        "target": {"path": "x.py", "scope": "file", "end_line": 3},
+        "cached": False,
+        "scales": {},
+        "findings": [],
+        "answers": {"test": {"type": "noul", "noul": 0.5}},
+        "statuses": {"test": "unknown"},
+        "uncertainty_reasons": {"test": "probability_ambiguous"},
+        "reviews": {
+            "test": {"outcome": "no_relevant_evidence", "selected": [], "candidates": [{"id": "c1", "relevance": 0.1}]}
+        },
+    }
+    reporter.emit(event)
+    reporter.emit({"event": "summary", **asdict(Summary("live"))})
+    text = stream.getvalue()
+    if format_name == "text":
+        assert "? test" in text and "probability ambiguous" in text and "no relevant evidence" in text
+    else:
+        payload = json.loads(text) if format_name == "json" else json.loads(text.splitlines()[0])
+        assert payload["schema_version"] == 3
+        actual = payload["events"][0] if format_name == "json" else json.loads(text.splitlines()[1])
+        assert actual == event

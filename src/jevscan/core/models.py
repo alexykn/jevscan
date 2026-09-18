@@ -50,6 +50,7 @@ class Unit:
     has_body: bool
     member_count: int = 0
     branch_nodes: int = 0
+    has_implementation: bool = True
 
     def metadata(self) -> dict[str, Any]:
         return asdict(self)
@@ -66,6 +67,16 @@ class Diagnostic:
 
 
 @dataclass(frozen=True, slots=True)
+class Reference:
+    """A syntax occurrence, not a resolved symbol or data-flow edge."""
+
+    name: str
+    start_byte: int
+    end_byte: int
+    kind: Literal["call", "name"]
+
+
+@dataclass(frozen=True, slots=True)
 class ParsedFile:
     path: str
     language: str
@@ -74,6 +85,7 @@ class ParsedFile:
     declarations: tuple[str, ...] = ()
     diagnostics: tuple[Diagnostic, ...] = ()
     failed: bool = False
+    references: tuple[Reference, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +174,12 @@ class Summary:
     checks_evaluated: int = 0
     checks_skipped: int = 0
     uncertain: int = 0
+    not_applicable: int = 0
+    enrichment_reviewed: int = 0
+    enrichment_reruns: int = 0
+    enrichment_resolved: int = 0
+    enrichment_calls: int = 0
+    enrichment_cache_hits: int = 0
     context_reduced: int = 0
     cache_hits: int = 0
     requests: int = 0

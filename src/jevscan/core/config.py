@@ -90,6 +90,27 @@ class EvaluationConfig(StrictModel):
         return self
 
 
+class EnrichmentConfig(StrictModel):
+    """One bounded evidence-enrichment pass; limits apply even to cache hits."""
+
+    enabled: bool = True
+    max_checks_per_file: int = Field(default=12, ge=1, le=128)
+    max_calls_per_file: int = Field(default=36, ge=1, le=512)
+    max_candidates: int = Field(default=12, ge=1, le=64)
+    max_evidence: int = Field(default=3, ge=1, le=16)
+    min_route_probability: float = Field(default=0.70, gt=0.5, le=1)
+    min_route_confidence: float = Field(default=0.50, ge=0, le=1)
+    min_relevance: float = Field(default=0.65, gt=0.5, le=1)
+    max_source_files: int = Field(default=1000, ge=1)
+    max_source_bytes: int = Field(default=16_777_216, ge=1024)
+
+    @model_validator(mode="after")
+    def coherent_limits(self) -> Self:
+        if self.max_evidence > self.max_candidates:
+            raise ValueError("max_evidence cannot exceed max_candidates")
+        return self
+
+
 class CacheConfig(StrictModel):
     enabled: bool = True
     path: str = ".jevscan-cache/results.sqlite3"
@@ -110,6 +131,7 @@ class Config(StrictModel):
     jev: JevConfig = Field(default_factory=JevConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
+    enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
     rules: dict[str, Rule]
 
     @field_validator("rules")
