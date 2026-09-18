@@ -182,8 +182,6 @@ class Reporter:
                 f"requests={summary['requests']} elapsed={summary['elapsed_seconds']:.2f}s\n"
             )
             if self.hidden:
-                self.stream.write(
-                    f"omitted={self.hidden} units (use --format jsonl for the full report)\n"
-                )
+                self.stream.write(f"omitted={self.hidden} units (use --format jsonl for the full report)\n")
         self.stream.flush()
         self.closed = True
