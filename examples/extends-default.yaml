@@ -1,4 +1,4 @@
-version: 1
+version: 2
 extends: default
 
 scan:
@@ -12,6 +12,8 @@ jev:
 rules:
   redundant-validation:
     report:
-      min_probability: 0.95
+      levels:
+        error:
+          min_probability: 0.95
   unclear-control-flow:
     enabled: false
