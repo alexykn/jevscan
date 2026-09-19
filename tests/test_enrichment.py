@@ -546,3 +546,21 @@ async def test_split_routing_respects_call_budget_without_incomplete_decisions(t
     assert len(review["predictions"]) == 2
     assert summary.enrichment_calls == 2 and summary.enrichment_reruns == 0
     assert index._catalogue is None
+
+
+async def test_targeted_enrichment_only_asks_rule_declared_families(tmp_path, evidence_rule):
+    rule = evidence_rule.model_copy(update={"enrichment_families": ["callees"]})
+    source = "def helper(v): return v\ndef work(value): return helper(value)\n"
+    responses = Responses("definitions")
+    events, _, _ = await run_review(tmp_path, rule, responses, source=source)
+    route = next(body["questions"] for body in responses.requests if "disposition" in body["questions"])
+    assert set(route) == {"disposition", "definitions"}
+    assert any(event["reviews"].get("contract", {}).get("evidence_families") == ["definitions"] for event in events)
+
+
+async def test_full_enrichment_mode_restores_all_evidence_families(tmp_path, evidence_rule):
+    rule = evidence_rule.model_copy(update={"enrichment_families": ["callees"]})
+    responses = Responses("sufficient")
+    await run_review(tmp_path, rule, responses, enrichment=EnrichmentConfig(mode="full"))
+    route = next(body["questions"] for body in responses.requests if "disposition" in body["questions"])
+    assert set(route) == {"disposition", *EVIDENCE_FAMILIES}

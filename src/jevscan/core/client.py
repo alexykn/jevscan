@@ -17,8 +17,9 @@ from urllib.parse import urlsplit
 import httpx
 
 from jevscan import __version__
-from jevscan.core.config import JevConfig
+from jevscan.core.config import BudgetConfig, JevConfig
 from jevscan.core.protocol import (
+    BudgetExhaustedError,
     ContextLimitError,
     JevError,
     JevResponse,
@@ -157,13 +158,24 @@ class JevClient:
         *,
         base_url: str = "https://api.typesafe.ai",
         transport: httpx.AsyncBaseTransport | None = None,
+        budget: BudgetConfig | None = None,
+        bytes_per_token: float = 3.0,
+        token_reserve: int = 0,
     ) -> None:
         if not api_key.strip():
             raise JevError("set TYPESAFE_API_KEY for live analysis, or use --offline")
         self.config = config
         self.base_url = endpoint_from(base_url)
         self.limiter = RequestLimiter(config.requests_per_minute)
+        self.semaphore = asyncio.Semaphore(config.concurrency)
+        self.budget = budget or BudgetConfig()
+        self.bytes_per_token = bytes_per_token
+        self.token_reserve = token_reserve
         self.requests = 0
+        self.completed_requests = 0
+        self.retry_attempts = 0
+        self.estimated_input_tokens = 0
+        self.estimated_cost = 0.0
         self.request_rejection_counts: dict[tuple[object, ...], int] = {}
         self.http = httpx.AsyncClient(
             base_url=self.base_url,
@@ -179,12 +191,38 @@ class JevClient:
             },
         )
 
+    def _reserve_budget(self, body: bytes) -> None:
+        estimated = math.ceil(len(body) / self.bytes_per_token) + self.token_reserve
+        next_requests = self.requests + 1
+        next_tokens = self.estimated_input_tokens + estimated
+        next_cost = next_tokens * self.budget.input_cost_per_million / 1_000_000
+        if self.budget.max_requests is not None and next_requests > self.budget.max_requests:
+            raise BudgetExhaustedError(f"request budget exhausted at {self.requests} requests")
+        if self.budget.max_input_tokens is not None and next_tokens > self.budget.max_input_tokens:
+            raise BudgetExhaustedError(
+                f"input-token budget would be exceeded ({next_tokens} > {self.budget.max_input_tokens})"
+            )
+        if self.budget.max_cost is not None and next_cost > self.budget.max_cost:
+            raise BudgetExhaustedError(
+                f"estimated cost budget would be exceeded ({next_cost:.4f} > {self.budget.max_cost:.4f})"
+            )
+        self.estimated_input_tokens = next_tokens
+        self.estimated_cost = next_cost
+
     async def evaluate(self, body: bytes, questions: dict[str, Question]) -> JevResponse:
         for attempt in range(self.config.retries + 1):
-            await self.limiter.acquire()
-            self.requests += 1
+            if attempt:
+                self.retry_attempts += 1
             try:
-                response = await self.http.post("/v1/systemone", content=body)
+                async with self.semaphore:
+                    # Pace actual transport starts, not tasks waiting for a connection slot.
+                    await self.limiter.acquire()
+                    self._reserve_budget(body)
+                    self.requests += 1
+                    try:
+                        response = await self.http.post("/v1/systemone", content=body)
+                    finally:
+                        self.completed_requests += 1
             except httpx.RequestError as exc:
                 if attempt == self.config.retries:
                     raise JevError(

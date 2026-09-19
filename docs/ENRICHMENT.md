@@ -37,9 +37,9 @@ The disposition Choice answers a single control-flow decision:
 - `local_evidence`: additional local source could establish a concrete missing fact;
 - `unavailable`: the required fact is external/runtime-only and unlikely to be established locally.
 
-Four independent Nouls ask whether callers, definitions, tests, and enclosing owner/file context could help. Each uses an explicit speculative premise: **assuming the rule applies and local source could help**. The questions cannot see each other's answers. A family score is not a normalized share of one distribution; several families or none may qualify.
+In `targeted` mode, each rule chooses from four independent evidence families: callers, callees (syntax-linked referenced definitions), tests, and enclosing owner/file context. Internally the callee family uses the existing `definitions` retrieval route. `full` exposes all families; `off` performs no enrichment. Each family Noul uses an explicit speculative premise: **assuming the rule applies and local source could help**. The questions cannot see each other's answers. A family score is not a normalized share of one distribution; several families or none may qualify.
 
-The five questions normally share one request. If configured token/byte/question budgets require it, they split into bounded batches using the same state. Every batch consumes the existing auxiliary-call budget, including cache hits. Partial routing answers remain auditable but never become an incomplete routing decision. The full routing result is required before retrieval.
+The disposition Choice and the admitted family questions normally share one request. If configured token/byte/question budgets require it, they split into bounded batches using the same state. Every batch consumes the existing auxiliary-call budget, including cache hits. Partial routing answers remain auditable but never become an incomplete routing decision. The full routing result is required before retrieval.
 
 The disposition must pass its configured probability/confidence gates. Only `local_evidence` admits families above `min_evidence_probability`. A terminal or uncertain disposition stops even when speculative family scores are high. A confident local disposition with no qualifying families stops as `no_evidence_family`. These explicit stops are not proof that retrieval would never help; they are the bounded policy decisions made from these predictions.
 
@@ -63,11 +63,11 @@ Every phase uses the shared inference/cache/transport validator and rate limiter
 
 ## Audit and accounting
 
-Report schema 7 records initial answer/cache/evidence provenance, scheduling trigger, uncertainty reason, each prediction's model/cache flag/request hash/raw answers, disposition, all family probabilities, admitted families, per-family retrieval coverage, candidate family membership/relevance, selected spans, omissions, and stop outcome.
+Report schema 8 records initial answer/cache/evidence provenance, scheduling trigger, uncertainty reason, each prediction's model/cache flag/request hash/raw answers, disposition, all family probabilities, admitted families, per-family retrieval coverage, candidate family membership/relevance, selected spans, omissions, and stop outcome.
 
 The `enrichment_calls` counter counts prediction requests, not individual questions: five routing questions can be one call; a constrained request budget can split them. `enrichment_reviewed` counts admitted checks. `enrichment_reruns` counts actual final reassessments. `enrichment_resolved` counts previously unknown checks whose final status becomes conclusive, including applicability-only decisions. Findings count once, not once per inference phase.
 
-Cache keys include request bytes and package/prompt identity. Changing candidate source invalidates affected relevance/reassessment requests; unchanged initial/routing state may remain cached. Project selection/title/threshold changes do not themselves become model instructions. Selecting a different batch of questions can nevertheless change request identity.
+Request-cache keys include the canonical request bytes. rc7 also stores each validated judgment independently under endpoint, model, exact evidence, exact bound question, and prompt compatibility. Changing candidate source invalidates affected judgments; changing only the HTTP batch around an otherwise identical judgment does not. Project selection/title/threshold changes do not themselves become model instructions.
 
 ## Research basis and acceptance
 
@@ -91,3 +91,9 @@ RC5 adds a distinct, bounded operation before or during the initial assessment: 
 Both recovery and enrichment now use `selection.py` for candidate relevance questions, packing and response interpretation. Every question embeds the active YAML rule's complete instructions/criteria and exact target through `Check.auxiliary`; built-in IDs, custom IDs and renamed rulesets take the same path. The generic operation asks about usefulness as evidence, not about an expected defect. Neither workflow treats low relevance as proof of irrelevance.
 
 Recovery is audited in `context_selection` and its auxiliary requests in `compaction_calls`; post-answer refinement stays in `reviews` / `enrichment_calls`. Source-rejection hints are per-file/invocation, not persistent estimates of a model's context limit. A recovered initial assessment may still legitimately need independent cross-file evidence. See [context recovery](CONTEXT_RECOVERY.md).
+
+## RC7 targeted defaults
+
+The built-in catalogue deliberately narrows evidence direction before model routing. JEV04 (redundant validation) may inspect callers and callees; JEV05 may additionally inspect tests; JEV06 (unhelpful decomposition) uses callees/enclosing context and does not search arbitrary callers. JEV01–JEV03 and JEV08 use callees/enclosing context. The complete-file JEV07 and JEV09 checks disable cross-source enrichment by default because their questions concern the supplied file itself.
+
+This policy can be overridden per project. Broader retrieval may improve a custom rule, but it also increases candidate-selection and reassessment cost.

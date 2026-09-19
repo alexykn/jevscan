@@ -38,6 +38,19 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--model", help="Jev model ID (overrides environment and YAML)")
     result.add_argument("--no-cache", action="store_true", help="neither read nor write the response cache")
     result.add_argument(
+        "--plan", action="store_true", help="parse and estimate live request packing/cost without making API calls"
+    )
+    result.add_argument("--max-requests", type=int, help="hard live request-attempt budget")
+    result.add_argument("--max-input-tokens", type=int, help="conservative estimated input-token budget")
+    result.add_argument("--max-cost", type=float, help="conservative estimated input-cost budget")
+    result.add_argument(
+        "--enrichment-mode", choices=("off", "targeted", "full"), help="cross-source enrichment breadth"
+    )
+    result.add_argument("--max-full-file-lines", type=int, help="omit checks that require a larger complete file")
+    vcs = result.add_mutually_exclusive_group()
+    vcs.add_argument("--changed", action="store_true", help="scan only tracked/untracked files changed from HEAD")
+    vcs.add_argument("--staged", action="store_true", help="scan only files staged in Git")
+    result.add_argument(
         "--format", choices=("text", "json", "jsonl"), default="text", help="report format (default: text)"
     )
     result.add_argument(

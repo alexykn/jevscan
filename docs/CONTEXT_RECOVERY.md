@@ -1,4 +1,4 @@
-# Rule-aware context recovery — 0.2.0rc6
+# Rule-aware context recovery — 0.2.0rc7
 
 ## Findings from the research
 
@@ -72,3 +72,11 @@ Normal and verbose text display one file coverage line instead of hundreds of ro
 MockTransport tests establish model-aware preflight, batch splitting versus context compaction, finite recovery, request-local rejection isolation/circuit breaking, precise attribution, error discrimination and evidence invariants. They do not measure Jev's real long-context reliability or whether a relevance ordering improves precision/recall. The TypeScript test patterns are adapted from the reported project; this is not a fresh live evaluation of that entire repository. The existing native-parser syntax failure policy remains strict, and generated source is not automatically excluded.
 
 For live acceptance, save JSONL from a fixed source revision and pinned model. Inspect whether intact requests succeed, whether observed size failures match supported shapes, which source was selected/omitted, and whether the resulting judgments are correct. Lower diagnostic volume or more enrichment calls alone is not success.
+
+## RC7 batching and concurrency changes
+
+rc7 keeps sibling questions sharing an oversized owner together until recovery rather than letting the initial packing pass fragment them into singletons. Recovery still selects evidence per rule/target, but any checks that converge on the same exact encoded evidence are repacked before transport. This preserves target attribution and complete-target guarantees while avoiding repeated source tokens where the prepared state is actually identical.
+
+Independent prepared batches from the same file may now be in flight concurrently. The HTTP client owns one scan-wide semaphore and one rate limiter, so increasing file-local readiness does not multiply configured transport concurrency or requests-per-minute. Parser subprocesses ignore SIGINT so the parent can produce one controlled incomplete report on Ctrl-C instead of child traceback noise.
+
+The 3,000-line default `scan.max_full_file_lines` is separate from token recovery. It prevents complete-file semantic requests above the configured policy size and reports those checks as omitted. It does not truncate a file-level target into a fragment score.

@@ -67,9 +67,9 @@ class Terminal:
         text = self.paint(marker, BOLD + style) + " " + safe_text(name) + "  " + self.paint(safe_text(value), style)
         self._write_styled(text, 8, 10)
 
-    def header(self, marker: str, location: str, name: str, cached: bool, style: str) -> None:
+    def header(self, marker: str, location: str, name: str, cached: bool, style: str, *, indent: int = 4) -> None:
         text = self.paint(marker, BOLD + style) + " " + self.paint(safe_text(location), DIM)
         text += " " + self.paint(safe_text(name), BOLD)
         if cached:
             text += self.paint("  cached", DIM)
-        self._write_styled(text, 4, 6)
+        self._write_styled(text, indent, indent + 2)

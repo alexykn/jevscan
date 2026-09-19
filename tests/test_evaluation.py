@@ -1,5 +1,6 @@
 """Real extraction and the production planner/executor with a mocked HTTP boundary."""
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import pytest
 
 from jevscan.core.cache import AnswerCache
 from jevscan.core.client import JevClient
-from jevscan.core.config import Config, EvaluationConfig, JevConfig
+from jevscan.core.config import Config, EvaluationConfig, JevConfig, load_config
 from jevscan.core.context import ContextBuilder
 from jevscan.core.evaluation import evaluate_file
 from jevscan.core.models import FileJob, Summary
@@ -615,3 +616,225 @@ async def test_unknown_request_rejection_isolated_to_one_request_and_scan_contin
     assert "invalid_request" in diagnostics[0]["message"]
     assert "bad-1" in diagnostics[0]["message"]
     assert any(event["event"] == "evaluation" and event["answers"] for event in sink.events)
+
+
+def test_oversized_shared_owner_stays_grouped_until_compaction(basic_rule: Rule) -> None:
+    method_rule = Rule.model_validate({**basic_rule.model_dump(), "applies_to": ["method"]})
+    config = configured(method_rule, max_context_tokens=1500, max_total_tokens=3000, token_reserve=100)
+    config = config.model_copy(update={"rules": {f"rule{i}": method_rule for i in range(6)}})
+    source = 'class Huge:\n    """' + "background " * 5000 + '"""\n    def work(self):\n        return 1\n'
+    planner = planned(source, config)
+    requests = list(planner.plan())
+    assert len(requests) == 1
+    assert len(requests[0].checks) == 6
+    assert "context" in planner.violations(requests[0].evidence, requests[0].checks)
+
+
+async def test_oversized_shared_owner_compacts_then_batches_rules(basic_rule: Rule) -> None:
+    method_rule = Rule.model_validate({**basic_rule.model_dump(), "applies_to": ["method"]})
+    config = configured(method_rule, max_context_tokens=1500, max_total_tokens=3000, token_reserve=100)
+    config = config.model_copy(update={"rules": {f"rule{i}": method_rule for i in range(6)}})
+    source = 'class Huge:\n    """' + "background " * 5000 + '"""\n    def work(self):\n        return 1\n'
+    planner = planned(source, config)
+    seen = []
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        assert len(body["questions"]) == 6
+        assert "background background" not in body["state"]["documents"][-1]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "model": "test",
+                "answers": {key: {"type": "noul", "noul": 0.1} for key in body["questions"]},
+            },
+        )
+
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+    assert client.requests == 1
+    assert len(seen) == 1
+    assert summary.checks_evaluated == 6
+
+
+async def test_judgment_cache_survives_batch_composition_change(tmp_path: Path, basic_rule: Rule) -> None:
+    method_rule = Rule.model_validate({**basic_rule.model_dump(), "applies_to": ["method"]})
+    source = "class S:\n    def work(self): return 1\n"
+    first = configured(method_rule).model_copy(update={"rules": {"a": method_rule, "b": method_rule}})
+    second = configured(method_rule).model_copy(update={"rules": {"b": method_rule}})
+    calls = 0
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        body = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": "test-pinned",
+                "answers": {key: {"type": "noul", "noul": 0.1} for key in body["questions"]},
+            },
+        )
+
+    async with AnswerCache(tmp_path / "cache.sqlite3", 3600) as cache:
+        sink, summary = Sink(), Summary("live")
+        async with JevClient(first.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+            await evaluate_file(planned(source, first), client, cache, sink, summary)
+            assert client.requests == 1
+        sink, summary = Sink(), Summary("live")
+        async with JevClient(second.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+            await evaluate_file(planned(source, second), client, cache, sink, summary)
+            assert client.requests == 0
+        assert summary.checks_evaluated == 1 and summary.units_cached == 1
+    assert calls == 1
+
+
+def test_full_file_line_limit_omits_only_checks_that_require_the_file(basic_rule: Rule) -> None:
+    file_rule = Rule.model_validate({**basic_rule.model_dump(), "target": "file", "context": "file", "applies_to": []})
+    config = configured(basic_rule).model_copy(
+        update={
+            "rules": {"unit": basic_rule, "file": file_rule},
+            "scan": configured(basic_rule).scan.model_copy(update={"max_full_file_lines": 100}),
+        }
+    )
+    source = "def work():\n    return 1\n" + "# filler\n" * 105
+    planner = planned(source, config)
+    assert {check.rule_id for check in planner.checks} == {"unit"}
+    assert {item.check.rule_id for item in planner.omissions} == {"file"}
+    assert "configured limit is 100" in planner.omissions[0].reason
+
+
+async def test_full_file_line_limit_is_counted_as_incomplete_coverage(basic_rule: Rule) -> None:
+    file_rule = Rule.model_validate({**basic_rule.model_dump(), "target": "file", "context": "file", "applies_to": []})
+    config = configured(basic_rule).model_copy(
+        update={
+            "rules": {"unit": basic_rule, "file": file_rule},
+            "scan": configured(basic_rule).scan.model_copy(update={"max_full_file_lines": 100}),
+        }
+    )
+    planner = planned("def work():\n    return 1\n" + "# filler\n" * 105, config)
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(answer)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+    assert summary.checks_evaluated == 1
+    assert summary.checks_skipped == 1
+    assert summary.incomplete
+    coverage = next(event for event in sink.events if event["event"] == "coverage")
+    assert coverage["skipped_checks"] == 1 and coverage["skipped_file_checks"] == 1
+
+
+async def test_one_large_file_can_use_global_request_concurrency(basic_rule: Rule) -> None:
+    method_rule = Rule.model_validate({**basic_rule.model_dump(), "applies_to": ["method"]})
+    config = configured(method_rule, max_questions=1).model_copy(
+        update={"jev": JevConfig(concurrency=4, requests_per_minute=0, retries=0)}
+    )
+    source = "class S:\n" + "".join(f"    def m{i}(self): return {i}\n" for i in range(20))
+    planner = planned(source, config)
+    active = peak = 0
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        body = json.loads(request.content)
+        active -= 1
+        return httpx.Response(
+            200,
+            json={"model": "test", "answers": {key: {"type": "noul", "noul": 0.1} for key in body["questions"]}},
+        )
+
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+    assert peak == 4
+    assert client.requests == 20
+
+
+async def test_mixed_rule_primitives_share_one_owner_request(tmp_path: Path) -> None:
+    config = load_config([tmp_path], cwd=tmp_path).config
+    config = config.model_copy(
+        update={
+            "lint": config.lint.model_copy(update={"select": ["JEV01", "JEV02", "JEV04"]}),
+            "jev": config.jev.model_copy(update={"requests_per_minute": 0, "retries": 0}),
+        }
+    )
+    planner = planned("class S:\n    def work(self, value):\n        return value\n", config)
+    requests = list(planner.plan())
+    method_request = next(
+        request for request in requests if any(check.target.qualified_name == "S.work" for check in request.checks)
+    )
+    body = json.loads(method_request.body)
+    assert {question["type"] for question in body["questions"].values()} == {"noul", "score", "choice"}
+    assert len(method_request.checks) == 3
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        submitted = json.loads(request.content)
+        answers = {}
+        for key, question in submitted["questions"].items():
+            if question["type"] == "noul":
+                answers[key] = {"type": "noul", "noul": 0.1}
+            elif question["type"] == "score":
+                answers[key] = {
+                    "type": "score",
+                    "score": 0.2,
+                    "confidence": 0.9,
+                    "probabilities": {"0": 0.8, "1": 0.2, "2": 0.0, "3": 0.0},
+                }
+            else:
+                criteria = question["criteria"]
+                clean = "justified_or_absent"
+                answers[key] = {
+                    "type": "choice",
+                    "choice": clean,
+                    "confidence": 0.9,
+                    "probabilities": {name: (1.0 if name == clean else 0.0) for name in criteria},
+                }
+        return httpx.Response(200, json={"model": "test", "answers": answers})
+
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+    # One owner state carries three different answer schemas in one paid call.
+    assert client.requests == 1
+    assert summary.checks_evaluated == 3
+
+
+def test_shared_evidence_batch_can_mix_noul_score_and_choice_questions(basic_rule: Rule) -> None:
+    score = Rule.model_validate({
+        "applies_to": ["function"],
+        "context": "file",
+        "question": {"type": "score", "instructions": "Rate the path.", "criteria": ["clear", "mixed", "tangled"]},
+        "report": {
+            "message": "Path is unclear.",
+            "levels": {
+                "warning": {"min_score": 1.0, "min_confidence": 0.5},
+                "error": {"min_score": 2.0, "min_confidence": 0.7},
+            },
+        },
+    })
+    choice = Rule.model_validate({
+        "applies_to": ["function"],
+        "context": "file",
+        "question": {
+            "type": "choice",
+            "instructions": "Classify the behavior.",
+            "criteria": {"ok": "No defect.", "defect": "A defect is present."},
+        },
+        "report": {
+            "message": "Behavior is defective.",
+            "choices": ["defect"],
+            "levels": {
+                "warning": {"min_probability": 0.6, "min_confidence": 0.5},
+                "error": {"min_probability": 0.9, "min_confidence": 0.7},
+            },
+        },
+    })
+    noul = basic_rule.model_copy(update={"context": "file", "applies_to": ["function"]})
+    config = configured(noul).model_copy(update={"rules": {"noul": noul, "score": score, "choice": choice}})
+    planner = planned("VALUE = 1\ndef work(): return VALUE\n", config)
+    requests = list(planner.plan())
+    assert len(requests) == 1
+    assert {check.rule.question.type for check in requests[0].checks} == {"noul", "score", "choice"}

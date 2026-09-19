@@ -7,8 +7,8 @@ attempts ignore the hint; exact rejected bodies are never sent twice.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
-from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -36,6 +36,52 @@ class FileExecutor:
         self.rejected: dict[str, tuple[int, dict[str, Any]]] = {}
         self.rejected_requests: set[str] = set()
 
+    async def _without_cached_judgments(self, request: Request) -> Request | None:
+        cached = await self.inference.cached_judgments(
+            request.evidence.encoded,
+            {check.id: self.planner.questions[check.id] for check in request.checks},
+            request.questions,
+        )
+        missing: list[Check] = []
+        for check in request.checks:
+            item = cached.get(check.id)
+            if item is None:
+                missing.append(check)
+                continue
+            answer, model = item
+            self.results.accept_answer(check, request.evidence, answer, model, True)
+            trace = self.results.records[check.target.id].context_selection.get(check.rule_id)
+            if trace:
+                trace["outcome"] = "judgment_cache"
+        if not missing:
+            return None
+        return (
+            request if len(missing) == len(request.checks) else self.planner.request(request.evidence, tuple(missing))
+        )
+
+    def _record_size_rejection(self, request: Request, error: ContextLimitError) -> None:
+        for check in request.checks:
+            self.results.recovery(check)["rejections"].append({
+                **error.metadata(),
+                "request_bytes": len(request.body),
+                "state_sha256": request.evidence.key,
+                "questions": len(request.checks),
+            })
+        if len(request.checks) != 1:
+            return
+        length = len(self.planner.questions[request.checks[0].id])
+        old = self.rejected.get(request.evidence.key)
+        if old is None or length < old[0]:
+            self.rejected[request.evidence.key] = length, error.metadata()
+
+    def _mark_accepted(self, attempt: Attempt, request: Request) -> None:
+        for check in request.checks:
+            trace = self.results.records[check.target.id].context_selection.get(check.rule_id)
+            if trace:
+                trace["outcome"] = (
+                    "complete_target_fallback" if attempt.final else "compacted" if attempt.round else "questions_split"
+                )
+
     async def _send(self, attempt: Attempt) -> Literal["accepted", "size_rejected", "request_rejected"]:
         request = attempt.request
         digest = hashlib.sha256(request.body).hexdigest()
@@ -45,30 +91,21 @@ class FileExecutor:
             prediction = await self.inference.predict(request.body, request.questions)
         except ContextLimitError as exc:
             self.rejected_requests.add(digest)
-            for check in request.checks:
-                self.results.recovery(check)["rejections"].append({
-                    **exc.metadata(),
-                    "request_bytes": len(request.body),
-                    "state_sha256": request.evidence.key,
-                    "questions": len(request.checks),
-                })
-            if len(request.checks) == 1:
-                length = len(self.planner.questions[request.checks[0].id])
-                old = self.rejected.get(request.evidence.key)
-                if old is None or length < old[0]:
-                    self.rejected[request.evidence.key] = length, exc.metadata()
+            self._record_size_rejection(request, exc)
             return "size_rejected"
         except RequestRejectedError as exc:
             self.results.reject(request, exc)
             self.inference.summary.request_rejections += 1
             return "request_rejected"
-        for check in request.checks:
-            trace = self.results.records[check.target.id].context_selection.get(check.rule_id)
-            if trace:
-                trace["outcome"] = (
-                    "complete_target_fallback" if attempt.final else "compacted" if attempt.round else "questions_split"
-                )
+
+        self._mark_accepted(attempt, request)
         response = prediction.response
+        await self.inference.store_judgments(
+            request.evidence.encoded,
+            {check.id: self.planner.questions[check.id] for check in request.checks},
+            request.questions,
+            response,
+        )
         self.results.accept(request, response.answers, response.model, prediction.cached)
         return "accepted"
 
@@ -161,21 +198,61 @@ class FileExecutor:
         reason = "model_context_preflight" if "context" in violations else "request_limit_preflight"
         return await self._recover(attempt, reason)
 
+    async def _process(self, queue: asyncio.Queue[Attempt], attempt: Attempt) -> None:
+        request = await self._without_cached_judgments(attempt.request)
+        if request is None:
+            return
+        attempt = Attempt(request, attempt.round, attempt.final)
+        recovery = await self._preflight(attempt)
+        if recovery is not None:
+            for item in recovery:
+                queue.put_nowait(item)
+            return
+        if await self._send(attempt) != "size_rejected":
+            return
+        request = attempt.request
+        recovered = (
+            self._split(attempt) if len(request.checks) > 1 else await self._recover(attempt, "provider_context_limit")
+        )
+        for item in recovered:
+            queue.put_nowait(item)
+
+    async def _worker(self, queue: asyncio.Queue[Attempt]) -> None:
+        while True:
+            attempt = await queue.get()
+            try:
+                await self._process(queue, attempt)
+            finally:
+                queue.task_done()
+
     async def run(self) -> None:
-        for planned in self.planner.plan():
-            pending = deque([Attempt(planned)])
-            while pending:
-                attempt = pending.popleft()
-                request = attempt.request
-                recovery = await self._preflight(attempt)
-                if recovery is not None:
-                    pending.extendleft(reversed(recovery))
-                    continue
-                outcome = await self._send(attempt)
-                if outcome == "size_rejected":
-                    recovery = (
-                        self._split(attempt)
-                        if len(request.checks) > 1
-                        else await self._recover(attempt, "provider_context_limit")
-                    )
-                    pending.extendleft(reversed(recovery))
+        initial = [Attempt(request) for request in self.planner.plan()]
+        if not initial:
+            return
+        queue: asyncio.Queue[Attempt] = asyncio.Queue()
+        for attempt in initial:
+            queue.put_nowait(attempt)
+
+        # Recovery can fan one oversized request back into many independent requests,
+        # so worker capacity must not be capped by the number of initial batches.
+        count = self.inference.client.config.concurrency
+        tasks = [asyncio.create_task(self._worker(queue)) for _ in range(count)]
+        joined = asyncio.create_task(queue.join())
+        try:
+            done, _ = await asyncio.wait([joined, *tasks], return_when=asyncio.FIRST_COMPLETED)
+            if joined in done:
+                await joined
+                for task in tasks:
+                    if task.done() and not task.cancelled() and (error := task.exception()) is not None:
+                        raise error
+                return
+            failed = next(task for task in done if task is not joined)
+            error = failed.exception()
+            if error is None:
+                raise RuntimeError("request worker stopped before its queue was drained")
+            raise error
+        finally:
+            joined.cancel()
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(joined, *tasks, return_exceptions=True)

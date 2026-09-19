@@ -424,3 +424,47 @@ def test_token_calibration_only_tightens_byte_estimates() -> None:
     calibration.observe(40_000, 10_000)
     assert calibration.observations == 2
     assert calibration.effective(3.0) == pytest.approx(1.8)
+
+
+async def test_request_budget_stops_before_an_extra_paid_attempt(config: Config, unit: Unit) -> None:
+    from jevscan.core.config import BudgetConfig
+    from jevscan.core.protocol import BudgetExhaustedError
+
+    plan = request_for(config, unit)
+    calls = 0
+
+    async def handle(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json=response_body())
+
+    async with JevClient(
+        config.jev,
+        "test-key",
+        transport=httpx.MockTransport(handle),
+        budget=BudgetConfig(max_requests=1),
+    ) as client:
+        await client.evaluate(plan.body, plan.questions)
+        with pytest.raises(BudgetExhaustedError, match="request budget exhausted"):
+            await client.evaluate(plan.body, plan.questions)
+    assert calls == 1 and client.requests == 1
+
+
+async def test_cost_budget_uses_conservative_request_estimate(config: Config, unit: Unit) -> None:
+    from jevscan.core.config import BudgetConfig
+    from jevscan.core.protocol import BudgetExhaustedError
+
+    plan = request_for(config, unit)
+
+    async def never(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("budget guard should reject before transport")
+
+    async with JevClient(
+        config.jev,
+        "test-key",
+        transport=httpx.MockTransport(never),
+        budget=BudgetConfig(max_cost=0.000000001, input_cost_per_million=0.042),
+    ) as client:
+        with pytest.raises(BudgetExhaustedError, match="estimated cost budget"):
+            await client.evaluate(plan.body, plan.questions)
+    assert client.requests == 0

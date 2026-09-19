@@ -27,6 +27,10 @@ class JevError(RuntimeError):
     """Transport or response-contract failure; never includes submitted source text."""
 
 
+class BudgetExhaustedError(JevError):
+    """Configured live-inference spending guard refused another request."""
+
+
 class ContextLimitError(JevError):
     """A recognized size rejection; safe structured metadata, never the response body."""
 
@@ -143,7 +147,7 @@ def encode(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
-def _validate_answer(answer: Answer, question: Question, name: str) -> None:
+def validate_answer(answer: Answer, question: Question, name: str) -> None:
     if isinstance(question, NoulQuestion):
         if not isinstance(answer, NoulAnswer):
             raise JevError(f"{name}: expected a noul answer")
@@ -172,5 +176,5 @@ def validate_response(raw: bytes | str, questions: dict[str, Question]) -> JevRe
     if set(response.answers) != set(questions):
         raise JevError("Jev response question IDs do not match the submitted question IDs")
     for name, question in questions.items():
-        _validate_answer(response.answers[name], question, name)
+        validate_answer(response.answers[name], question, name)
     return response

@@ -103,7 +103,8 @@ class TargetResults:
             )
         if self.skipped:
             summary.incomplete = True
-            if not aborted:
+            file_limit = all(reason.startswith("full-file context is ") for reason in self.skipped.values())
+            if not aborted and not file_limit:
                 detail = "; ".join(dict.fromkeys(self.skipped.values()))
                 emit_diagnostic(
                     sink,
@@ -146,9 +147,12 @@ class FileResults:
         self.records: dict[str, TargetResults] = {}
         self.request_failures: dict[tuple[object, ...], dict[str, Any]] = {}
         self.request_rejected_checks = 0
-        for check in planner.checks:
+        all_checks = [*planner.checks, *(omission.check for omission in planner.omissions)]
+        for check in all_checks:
             if check.target.id not in self.records:
                 self.records[check.target.id] = TargetResults(check.target)
+        for omission in planner.omissions:
+            self.omit(omission)
 
     def recovery(self, check: Check) -> dict[str, Any]:
         return self.records[check.target.id].context_selection.setdefault(
@@ -184,20 +188,21 @@ class FileResults:
             trace["outcome"] = "provider_request_rejected"
             self.omit(Omission(check, f"provider request rejected (HTTP {error.status})"))
 
+    def accept_answer(self, check: Check, evidence_state: Evidence, answer: Answer, model: str, cached: bool) -> None:
+        record = self.records[check.target.id]
+        assert check.rule_id not in record.judgments
+        evidence = self.planner.context.describe(check, evidence_state)
+        trace = record.context_selection.get(check.rule_id, {})
+        fully_cached = cached and all(
+            prediction.get("cached", False)
+            for step in trace.get("compactions", [])
+            for prediction in step["predictions"]
+        )
+        record.judgments[check.rule_id] = Judgment(check, answer, evidence, model, fully_cached, evidence_state)
+
     def accept(self, request: Request, answers: dict[str, Answer], model: str, cached: bool) -> None:
         for check in request.checks:
-            record = self.records[check.target.id]
-            assert check.rule_id not in record.judgments
-            evidence = self.planner.context.describe(check, request.evidence)
-            trace = record.context_selection.get(check.rule_id, {})
-            fully_cached = cached and all(
-                prediction.get("cached", False)
-                for step in trace.get("compactions", [])
-                for prediction in step["predictions"]
-            )
-            record.judgments[check.rule_id] = Judgment(
-                check, answers[check.id], evidence, model, fully_cached, request.evidence
-            )
+            self.accept_answer(check, request.evidence, answers[check.id], model, cached)
 
     def _review_queue(self) -> list[tuple[int, str, Judgment]]:
         pending = []
@@ -237,7 +242,7 @@ class FileResults:
             enricher.inference.summary.enrichment_resolved += final.status != "unknown"
 
     def _finalize_missing(self, aborted: bool) -> None:
-        for check in self.planner.checks:
+        for check in [*self.planner.checks, *(item.check for item in self.planner.omissions)]:
             record = self.records[check.target.id]
             if check.rule_id in record.judgments or check.rule_id in record.skipped:
                 continue

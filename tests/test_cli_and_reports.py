@@ -176,6 +176,43 @@ def test_text_report_colors_tty_output(monkeypatch) -> None:
     assert "\x1b[" in stream.getvalue()
 
 
+def test_live_progress_is_ephemeral_tty_output_and_clears_before_results(monkeypatch) -> None:
+    class TtyStream(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setenv("COLOR", "no")
+    stream = TtyStream()
+    reporter = Reporter(stream, "text", _report_metadata(), width=120)
+    reporter.emit({
+        "event": "progress",
+        "requests": 12,
+        "completed_requests": 9,
+        "cache_hits": 3,
+        "input_tokens": 4200,
+        "estimated_cost": 0.0123,
+        "elapsed_seconds": 2.5,
+    })
+    reporter.emit(_evaluation_event("finished", "warning"))
+    text = stream.getvalue()
+    assert "working — requests=9/12" in text
+    assert "\r" in text
+    assert "finished" in text
+
+    machine = io.StringIO()
+    jsonl = Reporter(machine, "jsonl", _report_metadata())
+    jsonl.emit({
+        "event": "progress",
+        "requests": 1,
+        "completed_requests": 1,
+        "cache_hits": 0,
+        "input_tokens": 100,
+        "elapsed_seconds": 1.0,
+    })
+    jsonl.emit({"event": "summary", **asdict(Summary("live"))})
+    assert [json.loads(line)["event"] for line in machine.getvalue().splitlines()] == ["start", "summary"]
+
+
 def _evaluation_event(name: str = "work", status: str = "warning") -> dict:
     finding = {"rule": "cohesion", "severity": status, "message": "A configurable explanation."}
     return {
@@ -242,10 +279,10 @@ def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monke
     assert "\x1b" not in text
     if format_name == "json":
         decoded = json.loads(text)
-        assert decoded["schema_version"] == 7 and decoded["events"] == events
+        assert decoded["schema_version"] == 8 and decoded["events"] == events
     else:
         decoded = [json.loads(line) for line in text.splitlines()]
-        assert decoded[0]["schema_version"] == 7 and decoded[1:-1] == events
+        assert decoded[0]["schema_version"] == 8 and decoded[1:-1] == events
 
 
 @pytest.mark.parametrize("width", [32, 80])
@@ -337,7 +374,7 @@ def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
         assert "? test" in text and "probability ambiguous" in text and "no relevant evidence" in text
     else:
         payload = json.loads(text) if format_name == "json" else json.loads(text.splitlines()[0])
-        assert payload["schema_version"] == 7
+        assert payload["schema_version"] == 8
         actual = payload["events"][0] if format_name == "json" else json.loads(text.splitlines()[1])
         assert actual == event
 
@@ -487,3 +524,57 @@ def test_hundreds_of_coverage_details_are_aggregated_without_hiding_real_errors(
         "message": "reduced surrounding context",
     })
     assert "context-reduced" in machine.getvalue()
+
+
+@pytest.mark.usefixtures("grammar_runtime")
+def test_plan_mode_estimates_without_api_key(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    source = tmp_path / "demo.py"
+    source.write_text("class S:\n    def work(self):\n        return 1\n")
+    assert main([str(source), "--plan", "--format", "json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    summary = report["summary"]
+    assert summary["mode"] == "plan"
+    assert summary["planned_checks"] > 0
+    assert summary["planned_requests"] > 0
+    assert summary["requests"] == 0
+    assert summary["estimated_input_tokens"] == summary["planned_input_tokens"]
+
+
+def test_changed_and_staged_modes_filter_explicit_scan_targets(tmp_path: Path, monkeypatch, capsys) -> None:
+    import importlib
+    import shutil
+    import subprocess
+
+    cli = importlib.import_module("jevscan.cli.main")
+    git = shutil.which("git")
+    assert git is not None
+    subprocess.run([git, "init", "-q", str(tmp_path)], check=True)  # noqa: S603
+    subprocess.run([git, "-C", str(tmp_path), "config", "user.email", "test@example.com"], check=True)  # noqa: S603
+    subprocess.run([git, "-C", str(tmp_path), "config", "user.name", "Test"], check=True)  # noqa: S603
+    for name in ("a.py", "b.py"):
+        (tmp_path / name).write_text("def f(): return 1\n")
+    subprocess.run([git, "-C", str(tmp_path), "add", "a.py", "b.py"], check=True)  # noqa: S603
+    subprocess.run([git, "-C", str(tmp_path), "commit", "-qm", "base"], check=True)  # noqa: S603
+    (tmp_path / "a.py").write_text("def f(): return 2\n")
+    subprocess.run([git, "-C", str(tmp_path), "add", "a.py"], check=True)  # noqa: S603
+    (tmp_path / "b.py").write_text("def f(): return 3\n")
+    (tmp_path / "new.py").write_text("def f(): return 4\n")
+
+    seen: list[list[str]] = []
+
+    async def scan(paths, _loaded, sink, **_options):
+        seen.append(sorted(path.name for path in paths))
+        summary = Summary("plan")
+        sink.emit({"event": "summary", **asdict(summary)})
+        return summary
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "run_scan", scan)
+    assert main([".", "--changed", "--plan", "--format", "json"]) == 0
+    capsys.readouterr()
+    assert seen[-1] == ["a.py", "b.py", "new.py"]
+    assert main([".", "--staged", "--plan", "--format", "json"]) == 0
+    capsys.readouterr()
+    assert seen[-1] == ["a.py"]
