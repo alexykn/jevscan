@@ -86,13 +86,15 @@ No absolute home directory is added to an ordinary project-relative path merely 
 
 ## Planning and budgets
 
-`ContextBuilder` supplies exact file/owner/unit envelopes. The planner groups matching envelopes, binds independent questions, and packs them under four limits: estimated state-plus-longest-question tokens, estimated state-plus-all-question tokens, serialized request bytes, and question count. Eight recently used source envelopes are retained per active file to avoid accumulating copies for every deeply nested owner.
+`ContextBuilder` supplies exact source documents, including disjoint AST spans after recovery. `Evidence` identity hashes the actual encoded state rather than a bounding interval, so different omissions cannot alias. The planner binds independent questions and packs them under configured local budgets. Token caps are optional (default `null`); byte and question limits remain hard.
 
-The defaults (28k/56k estimated tokens, 512 reserve, 3 UTF-8 bytes per estimated token) are **application policy**, not an exact tokenizer or a promise about current account/model limits. The SDK schema inspected here does not expose a numeric model context window or a token-count endpoint. Provider rejection remains authoritative. Estimates include source JSON escaping, criteria, metadata, and instructions; byte ceilings are checked against the actual request representation.
+`FileExecutor` owns size recovery. HTTP 413 is a payload-size signal. At HTTP 400/422, the client accepts the exact machine code `max_tokens_exceeded` at top-level `code`, `error.code`, `detail.code`, or as the complete `error`/`detail` string. These are explicit compatibility forms, not a claim that every form has been observed from the live service. Free-text messages mentioning tokens and generic validation failures are **not** size signals. Status, machine code and a sanitized request ID reach the audit; source/error-body text and credentials do not.
 
-When questions do not fit together, they are split while keeping identical evidence. A successful response yields one answer for each local binding. On HTTP 413, or structured `error.code == max_tokens_exceeded` / top-level `code == max_tokens_exceeded` at HTTP 400/422, the executor asks the planner for a strictly smaller request. It first bisects questions; singleton requests can fall back to narrower surrounding evidence when allowed. Recovery cannot loop indefinitely because each step reduces questions or source extent.
+The current official SDK supplies generic status/body error handling, not a published specialized context exception schema. The Pydantic integration documentation identifies `max_tokens_exceeded` and describes Jev-1.13 as 32k state-plus-longest-question / 64k aggregate. No authenticated oversized request was used to capture a production rejection envelope. See [research and recovery](CONTEXT_RECOVERY.md) for evidence, limits and compatibility rationale.
 
-An entire target that still cannot fit is reported as omitted. There is no hidden chunk aggregation or generated summary used as a substitute for the source. A reduced context records exact original-file omitted ranges and makes coverage incomplete. File-level judgments always require the full file.
+A batch rejection first isolates a short standalone question. Successful probes allow smaller question batches without changing source. Failed singleton state is a conservative per-file compaction hint, not proof about another question's exact token count. Whole-file questions receive their own attempt before provider-based omission. Compacted unit attempts have bounded rounds and decreasing serialized size; exact rejected bodies are never resubmitted within this executor. A final bare complete target can be tried once under local hard limits before omission. Strict context mode disables compaction.
+
+An entire target that cannot be evaluated is reported as omitted. There is no hidden chunk-score aggregation or generated summary substituted for target source. Disjoint documents retain original UTF-8 byte/line positions and exact omission coverage. File-level judgments always require the full file. Numeric provider windows are not hard-coded or learned permanently across accounts/model versions.
 
 ## Validation and lifecycle
 
@@ -102,11 +104,11 @@ An entire target that still cannot fit is reported as omitted. There is no hidde
 
 `core/evaluation.py` owns answers for one active file. It reclassifies cached raw responses using the active reporting policy, assigns answers to exact targets, and emits each target once after its file finishes. Abort/cancellation still emits completed answers and records unanswered checks. File evaluators run concurrently; request batches within a file are sequential. Questions in a shared request remain logically independent; a question cannot consume another answer from that same request.
 
-Raw-answer cache keys include endpoint, canonical request body, package version, and prompt version (currently 3). Threshold, severity-message, and uncertainty-policy changes do not alter the request. Model, question, target, source, or evidence changes do. A moving model alias can keep serving cache entries until expiry; pin a model for reproducibility.
+Raw-answer cache keys include endpoint, canonical request body, package version, and prompt version (currently 4). Threshold, severity-message, and uncertainty-policy changes do not alter the request. Model, question, target, source, or evidence changes do. A moving model alias can keep serving cache entries until expiry; pin a model for reproducibility.
 
 ## Machine reports
 
-Report schema **5** is separate from configuration schema **4**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/diagnostic/evaluation events, and a final `summary`, flushing each event.
+Report schema **6** is separate from configuration schema **4**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/coverage/diagnostic/evaluation events, and a final `summary`, flushing each event.
 
 An `evaluation` event contains:
 
@@ -119,6 +121,7 @@ An `evaluation` event contains:
 | `uncertainty_reasons`, `reviews` | Decision reasons and an auditable, bounded enrichment history |
 | `findings` | Confidence-qualified warning/error findings, each with `target`; these alone determine `--fail-on` |
 | `tentative_findings` | Indicated warning/error signals that remain `unknown`; same item structure, never duplicated in `findings` |
+| `context_selection` | Local recovery/relevance audit, separate from post-answer enrichment reviews |
 | `evidence` | Per-rule included ranges, original-file omissions, requested context, `context_complete`, `target_complete` |
 | `models` | Model returned for each rule, including separate batches |
 | `cached_rules`, `cached` | Per-rule cache provenance; whole-target cache flag is true only when all checks completed from cache |

@@ -63,7 +63,7 @@ Every phase uses the shared inference/cache/transport validator and rate limiter
 
 ## Audit and accounting
 
-Report schema 5 records initial answer/cache/evidence provenance, scheduling trigger, uncertainty reason, each prediction's model/cache flag/request hash/raw answers, disposition, all family probabilities, admitted families, per-family retrieval coverage, candidate family membership/relevance, selected spans, omissions, and stop outcome.
+Report schema 6 records initial answer/cache/evidence provenance, scheduling trigger, uncertainty reason, each prediction's model/cache flag/request hash/raw answers, disposition, all family probabilities, admitted families, per-family retrieval coverage, candidate family membership/relevance, selected spans, omissions, and stop outcome.
 
 The `enrichment_calls` counter counts prediction requests, not individual questions: five routing questions can be one call; a constrained request budget can split them. `enrichment_reviewed` counts admitted checks. `enrichment_reruns` counts actual final reassessments. `enrichment_resolved` counts previously unknown checks whose final status becomes conclusive, including applicability-only decisions. Findings count once, not once per inference phase.
 
@@ -82,3 +82,12 @@ RC3's displayed routing failures did not include full distributions. The explana
 HTTP-boundary tests exercise multiple families, no families, conflicting speculative answers and terminal dispositions, deduplication, global budgets, request splitting, source restrictions, changed-caller cache identity, and unchanged final questions. These tests establish orchestration behavior, not model quality. No authenticated live call is part of this release's verification.
 
 For acceptance, pin a model, use representative positive/negative examples requiring cross-file evidence, save JSONL with and without enrichment, and inspect the raw disposition/family/candidate results. Measure whether retrieved facts improve the final decisions, not just whether question marks disappear. Keep stop outcomes and added source available for review.
+
+
+## Relationship to pre-answer context recovery
+
+RC5 adds a distinct, bounded operation before or during the initial assessment: recover from configured or provider size limits using AST-local evidence. This is not triggered merely by a low-confidence answer. The full target is always preserved, including when a whole-file target must instead be omitted.
+
+Both recovery and enrichment now use `selection.py` for candidate relevance questions, packing and response interpretation. Every question embeds the active YAML rule's complete instructions/criteria and exact target through `Check.auxiliary`; built-in IDs, custom IDs and renamed rulesets take the same path. The generic operation asks about usefulness as evidence, not about an expected defect. Neither workflow treats low relevance as proof of irrelevance.
+
+Recovery is audited in `context_selection` and its auxiliary requests in `compaction_calls`; post-answer refinement stays in `reviews` / `enrichment_calls`. Source-rejection hints are per-file/invocation, not persistent estimates of a model's context limit. A recovered initial assessment may still legitimately need independent cross-file evidence. See [context recovery](CONTEXT_RECOVERY.md).

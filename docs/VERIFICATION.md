@@ -1,12 +1,12 @@
-# Verification record — 0.2.0rc4
+# Verification record — 0.2.0rc5
 
-## Local checks
+## Baseline and local environment
 
-Executed on Linux x86-64, CPython 3.13.5, with real bundled Tree-sitter grammars, HTTPX 0.28.1, Pydantic 2.13.5, Ruff 0.16.8 and ty 0.0.82. The YAML correction starts from PR #6 commit `326bf72d0c48f661161a580421a030488927cc64`; the extracted reference tree was verified as `700995f0df5754f61d802a9650e35799e8f290f6`. Routing, retrieval, rule selection and assessment code are unchanged by this correction.
+The baseline is merged main commit `6afbfe670df2bb79792bc076cf98a2c721d3a439`, tree `8ec8297c7c8a36465ad92d069ec0189c20e1d71e`. The local archive's Git tree was verified before editing. Dependencies came from a read-only GitHub workspace workflow because this container cannot resolve external package hosts; no runtime dependency or lockfile change was needed.
 
-The prior registry-resolved PyYAML dependency set and lockfile are restored unchanged from RC3. Existing verified wheels were reused for local testing. There is no Tomli-W dependency or configuration-format migration; project input/output and packaged rules remain YAML.
+Local checks used Linux x86-64 CPython 3.13.5, real pinned Tree-sitter grammars, HTTPX 0.28.1, Pydantic 2.13.5, PyYAML 6.0.3, Ruff 0.16.8 and ty 0.0.82. Production transport tests use HTTPX MockTransport, not simulated parser trees or a separate request implementation.
 
-The coordinated checks were:
+## Coordinated checks
 
 ```text
 uv run --no-sync ruff format --check src tests
@@ -17,26 +17,24 @@ uv run --no-sync radon cc -s -n C src
 uv build --offline --no-build-isolation
 ```
 
-Formatting, lint, and type checking passed. **200 tests passed, no skips.** Radon was reviewed as an informational report; no claim is made that every existing function has low complexity. The new disposition/family helpers are separate from candidate ranking and file-local result ownership.
+Formatting, lint and type checks passed. **223 tests passed, no skips.** Both sdist and wheel built. Radon is an informational report: existing normalization/assessment paths still have nontrivial complexity. New source selection, query construction, request execution and presentation responsibilities have separate owners rather than being added to a generic agent state machine.
 
-Both sdist and wheel built. A clean, separate virtual environment installed the wheel and was exercised outside the source checkout: package identity, PyYAML SafeLoader input, minimal YAML initialization, resolved YAML, enrichment opt-out, rule/set selection, schema-5 reporting, and all five real native grammar frontends passed. Both checked-in example YAML files resolve successfully. A direct comparison confirmed that all nine original primary questions, criteria, numerical reporting thresholds, and uncertainty/enrichment admission policies were preserved exactly under their new IDs.
+A clean installed-wheel smoke test outside the checkout verifies version, YAML round-trip/default null token caps, compaction defaults, entry points, schema-6 reports, and real parsing for all five languages. Final PR CI is authoritative for locked Linux Python 3.12/3.13/3.14 and macOS Python 3.12 verification. Permanent CI remains read-only and does not publish or merge releases.
 
-## Behavioral coverage
+## Regressions and source examples
 
-Configuration tests exercise empty/additive project configs, stable named rule overrides, new rules and sets, rule/set disablement, ignore/select precedence, effective planner selection, unknown selectors, duplicate names, invalid report/budget contracts, old schema rejection, both YAML filenames, duplicate keys, non-string keys, unsafe tags, malformed/recursive YAML, optional-field clearing, Git discovery boundaries, and resolved YAML round trips that preserve explicit nulls. The CLI exposes stable IDs/titles/membership without turning display metadata into model instructions.
+The tests exercise an intact file above the old 28k and 46k estimated-token levels being sent to the mock provider without pruning; individual/context and aggregate-question rejection; exact supported error envelopes versus unrelated validation/auth failures; finite decreasing compaction attempts; no replay of identical failed bodies; and complete-target fallback. A rejected file rule cannot silently omit a second file rule whose own request could succeed. File targets are never assessed as fragments.
 
-Routing tests use the actual HTTPX client with MockTransport. They cover multiple simultaneously useful evidence families in one routing request, no qualifying families, high speculative family scores that cannot override a terminal disposition, low disposition confidence, family deduplication, a shared global candidate cap with fair pooling, preserved per-family omission provenance, small question/call budgets, partial routing audits, and exactly one unchanged-question reassessment. Changed callers invalidate affected relevance/final requests while eligible initial/routing answers remain reusable.
+A large owner with many methods demonstrates per-file rejection hints rather than a full-state retry for each sibling. Identical compacted evidence still batches independent rules. AST checks retain a complete target and referenced local helper/constant, state fields, constructor, and imports while omitting a large unrelated body. Custom YAML instructions are embedded in real auxiliary requests; source-selection call limits and honest coverage are asserted. Original question meaning/target attribution and existing cross-file enrichment/cache/error tests remain covered.
 
-Retained tests exercise intrinsic-uncertainty admission, priority for late missing evidence, unknown/applicability handling, tentative warning/error visibility, confirmed-only exit behavior, Unicode/ANSI-safe wrapping, complete machine reports, exact source spans, real five-language parsing, spawned-process execution, source restrictions, context reduction, provider failures, and cancellation. Test counts and mocked confidence values are not semantic accuracy metrics.
+The terminal regression supplies 580 detailed reduction diagnostics and verifies one concise coverage summary in both normal and verbose text, while real syntax errors stay visible and machine diagnostics remain intact. Callback tests cover nested Bun test labels, Promise constructors, nested microtasks and generic argument roles without changing canonical names/IDs or filtering callbacks.
 
-## Continuous integration
+In addition to committed representative fixtures, the exact public `packages/iyon-tui/src/runtime/output-waiter.ts` Git blob `fbf736fd3adeb8e002af850b3bd6586d97e36e2d` was fetched, copied into the local verification workspace, and its Git blob hash checked. Real TypeScript parsing produced 14 units and 13 declaration spans; its three pump callbacks display as `OutputWaitOwner.pump.then[arg1]`, `then[arg1]`, and `then[arg2]`, distinguished by source lines. This source file is not duplicated into the repository or executed. The larger test patterns in the suite are adapted minimal cases, not an entire live iyon-tui scan.
 
-Permanent CI retains read-only repository permissions and locked dependency installation. It checks the whole project and tests/builds/smoke-tests installed wheels on Linux Python 3.12, 3.13, 3.14 and macOS 14 Python 3.12. The revised YAML source must pass the final PR checks again; the earlier TOML-head run is not evidence for this correction. Final PR checks, rather than the local environment, are authoritative for that matrix. Distribution artifacts are retained; nothing is automatically merged or published.
+## Research and remaining acceptance
 
-## Acceptance boundary
+See [CONTEXT_RECOVERY.md](CONTEXT_RECOVERY.md) for primary-source references and the distinction between integration documentation and a captured provider error. No authenticated Jev call was made. The accepted `max_tokens_exceeded` compatibility forms are tested, but not represented as individually observed production responses. The documented Jev-1.13 32k/64k limits mean an approximately 46k-token local estimate is not guaranteed to fit; the change permits provider-authoritative decisions instead of inventing a larger window.
 
-No authenticated Jev request was made for RC4. The real user's prior scan motivated this change, but its display did not include the router's underlying probability distribution. Competition between several useful families was a design hypothesis, not a measured cause. Independent family questions remove that false exclusivity without proving that Jev will choose better evidence or become more certain.
+No source-selection accuracy, false-positive/negative rate, live latency, or massive-repository peak-memory benchmark is claimed. Lexical dependency selection is not semantics-preserving program slicing or compiler-backed call resolution. Dynamic dispatch, aliases, hidden side effects and external contracts can be missed; omissions and source provenance remain explicit. One optional model relevance judgment can be wrong. Strict full-target coverage is retained rather than inferred from a smaller selected state.
 
-Remaining limits include lexical rather than compiler-resolved references, aliases/dynamic dispatch/macros/external contracts, per-file rather than atomic repository snapshots, heuristic token sizing, and bounded discovery. Windows and massive-repository peak-memory/performance were not tested.
-
-For live acceptance, pin a model and preserve source/configuration; save JSONL from representative known-positive/negative examples with and without enrichment. Inspect disposition and family probabilities, candidate provenance, selected source and stop outcomes. Improved final correctness matters more than more retrieval calls or fewer question marks. Threshold tuning remains a separate project policy decision; no numeric finding defaults were retuned here.
+Syntax errors still stop evaluation of the affected file. Windows and the complete TypeScript repository were not tested. A pinned-model, fixed-source JSONL comparison remains necessary to evaluate semantic usefulness and any production response shape not covered by the compatibility contract. More compact source, fewer diagnostics, or additional auxiliary calls alone do not establish improved judgments.

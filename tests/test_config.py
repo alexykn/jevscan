@@ -210,6 +210,9 @@ def test_packaged_file_rules(tmp_path):
 @pytest.mark.parametrize(
     "patch",
     [
+        {"compaction": {"max_rounds": 0}},
+        {"compaction": {"max_calls_per_file": -1}},
+        {"compaction": {"context_tokens": 100}},
         {"enrichment": {"max_calls_per_file": 0}},
         {"enrichment": {"max_candidates": 1, "max_evidence": 2}},
         {"enrichment": {"min_relevance": 0.5}},

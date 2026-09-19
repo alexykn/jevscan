@@ -173,3 +173,27 @@ def test_perl_block_namespace_restores_enclosing_package() -> None:
     assert {"Outer", "Outer::before", "Inner", "Inner::work", "Outer::after"} <= units.keys()
     assert units["Outer::after"].parent_id == units["Outer"].id
     assert units["Inner::work"].parent_id == units["Inner"].id
+
+
+def test_callback_display_roles_do_not_replace_lexical_identity():
+    from jevscan.core.models import FileJob, Kind, Target
+    from jevscan.core.parser import parse_source
+
+    # Bun/React/Promise patterns from the reported TypeScript project, without its runtime dependencies.
+    source = """describe("mutation renderer", () => {
+  test("mounts through the boundary", async () => {
+    await new Promise(resolve => queueMicrotask(() => resolve(1)));
+  });
+});
+class Owner { pump() { Promise.resolve().then(() => 1).then(value => value, error => error); } }
+"""
+    parsed = parse_source(source.encode(), FileJob("callbacks.ts", "callbacks.ts", "typescript", "typescript"))
+    assert not parsed.failed
+    closures = [unit for unit in parsed.units if unit.kind == Kind.CLOSURE]
+    labels = [unit.display_name for unit in closures]
+    assert any('describe["mutation renderer"].test["mounts through the boundary"]' in name for name in labels)
+    assert any("Promise[arg1].queueMicrotask[arg1]" in name for name in labels)
+    assert any("Owner.pump.then[arg2]" in name for name in labels)
+    assert all(unit.name.startswith("<anonymous@") for unit in closures)
+    assert all(Target.from_unit(unit).display_name == unit.display_name for unit in closures)
+    assert all(unit.id == f"callbacks.ts:{unit.start_byte}:{unit.kind}" for unit in closures)

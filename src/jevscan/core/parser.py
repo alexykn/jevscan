@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from jevscan.core.languages import SPECS
 from jevscan.core.models import CALLABLE_KINDS, Diagnostic, FileJob, Kind, ParsedFile, Reference, Severity, Unit
+from jevscan.core.syntax import callback_label, source_blocks
 
 
 class ParserUnavailableError(RuntimeError):
@@ -254,6 +255,10 @@ def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: li
         # Metadata is bounded; the full source unit sent for analysis remains untruncated.
         if len(signature) > 1024:
             signature = signature[:1024] + " [signature abbreviated]"
+        label = callback_label(symbol.node, source) if symbol.name.startswith("<anonymous@") else symbol.name
+        display = parent.display_name + separator + label if parent else label
+        if job.language == "perl" and (kind in {Kind.PACKAGE, Kind.CLASS} or "::" in symbol.name):
+            display = symbol.name
         unit = Unit(
             id=f"{job.display_path}:{symbol.start}:{kind}",
             path=job.display_path,
@@ -268,6 +273,9 @@ def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: li
             end_line=bisect_left(newlines, max(symbol.start, symbol.end - 1)) + 1,
             signature=signature,
             has_body=symbol.body is not None,
+            display_name=display,
+            body_start_byte=symbol.body.start_byte if symbol.body is not None else None,
+            body_end_byte=symbol.body.end_byte if symbol.body is not None else None,
             has_implementation=_has_implementation(symbol),
             branch_nodes=bisect_left(branches, symbol.end) - bisect_left(branches, symbol.start),
         )
@@ -307,7 +315,13 @@ def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> Parsed
         _text(node, source)[:1024] for node in sorted(captures.get("import", []), key=lambda n: n.start_byte)[:32]
     )
     return ParsedFile(
-        job.display_path, job.language, source, units, declarations, references=_references(tree.root_node, source)
+        job.display_path,
+        job.language,
+        source,
+        units,
+        declarations,
+        references=_references(tree.root_node, source),
+        blocks=source_blocks(tree.root_node, source),
     )
 
 

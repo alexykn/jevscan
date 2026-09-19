@@ -1,6 +1,5 @@
 """Execute file-local plans, reclassify cached answers, and retain target attribution."""
 
-from collections import deque
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -9,10 +8,11 @@ from jevscan.core.cache import AnswerCache
 from jevscan.core.client import JevClient
 from jevscan.core.context import Evidence
 from jevscan.core.enrichment import REVIEW_PRIORITY, Enricher, review_trigger
+from jevscan.core.execution import FileExecutor
 from jevscan.core.inference import Inference
 from jevscan.core.models import Diagnostic, EventSink, Summary, Target, emit_diagnostic
 from jevscan.core.planning import Omission, Planner, Request
-from jevscan.core.protocol import Answer, Check, ContextLimitError
+from jevscan.core.protocol import Answer, Check
 from jevscan.core.retrieval import SourceIndex
 from jevscan.core.rules import ScoreQuestion
 
@@ -48,6 +48,7 @@ class TargetResults:
     target: Target
     judgments: dict[str, Judgment] = field(default_factory=dict)
     skipped: dict[str, str] = field(default_factory=dict)
+    context_selection: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def event(self) -> dict[str, Any]:
         statuses, reasons, findings, tentative = {}, {}, [], []
@@ -78,6 +79,7 @@ class TargetResults:
             and not self.skipped
             and all(item.fully_cached for item in self.judgments.values()),
             "skipped_rules": self.skipped,
+            "context_selection": self.context_selection,
             "scales": {
                 name: len(item.check.rule.question.criteria) - 1
                 for name, item in self.judgments.items()
@@ -146,6 +148,16 @@ class FileResults:
             if check.target.id not in self.records:
                 self.records[check.target.id] = TargetResults(check.target)
 
+    def recovery(self, check: Check) -> dict[str, Any]:
+        return self.records[check.target.id].context_selection.setdefault(
+            check.rule_id,
+            {
+                "rejections": [],
+                "compactions": [],
+                "outcome": "pending",
+            },
+        )
+
     def omit(self, omission: Omission) -> None:
         check = omission.check
         self.records[check.target.id].skipped[check.rule_id] = omission.reason
@@ -155,8 +167,14 @@ class FileResults:
             record = self.records[check.target.id]
             assert check.rule_id not in record.judgments
             evidence = self.planner.context.describe(check, request.evidence)
+            trace = record.context_selection.get(check.rule_id, {})
+            fully_cached = cached and all(
+                prediction.get("cached", False)
+                for step in trace.get("compactions", [])
+                for prediction in step["predictions"]
+            )
             record.judgments[check.rule_id] = Judgment(
-                check, answers[check.id], evidence, model, cached, request.evidence
+                check, answers[check.id], evidence, model, fully_cached, request.evidence
             )
 
     def _review_queue(self) -> list[tuple[int, str, Judgment]]:
@@ -202,14 +220,27 @@ class FileResults:
             if check.rule_id not in record.judgments and check.rule_id not in record.skipped:
                 assert aborted, "every planned check must have an answer or explicit omission"
                 record.skipped[check.rule_id] = "scan aborted before an answer was received"
+        reduced_targets = sum(
+            any(not item.evidence["context_complete"] for item in record.judgments.values())
+            for record in self.records.values()
+        )
+        skipped = sum(len(record.skipped) for record in self.records.values())
+        file_skipped = sum(len(record.skipped) for record in self.records.values() if record.target.scope == "file")
+        if reduced_targets or skipped:
+            sink.emit({
+                "event": "coverage",
+                "path": self.planner.context.parsed.path,
+                "context_reduced_targets": reduced_targets,
+                "skipped_checks": skipped,
+                "skipped_file_checks": file_skipped,
+                "aborted": aborted,
+            })
         for record in self.records.values():
+            if aborted:
+                for trace in record.context_selection.values():
+                    if trace["outcome"] == "pending":
+                        trace["outcome"] = "aborted"
             record.emit(sink, summary, aborted)
-
-
-async def _execute(request: Request, inference: Inference, results: FileResults) -> None:
-    prediction = await inference.predict(request.body, request.questions)
-    response = prediction.response
-    results.accept(request, response.answers, response.model, prediction.cached)
 
 
 async def evaluate_file(
@@ -224,17 +255,7 @@ async def evaluate_file(
     inference = Inference(client, cache, summary)
     finished = False
     try:
-        for planned in planner.plan():
-            pending = deque([planned])
-            while pending:
-                item = pending.popleft()
-                if isinstance(item, Omission):
-                    results.omit(item)
-                    continue
-                try:
-                    await _execute(item, inference, results)
-                except ContextLimitError:
-                    pending.extendleft(reversed(planner.recover(item)))
+        await FileExecutor(planner, inference, results).run()
         if index is not None:
             await results.enrich(Enricher(planner.context, planner.budget, index.limits, index, inference))
         finished = True

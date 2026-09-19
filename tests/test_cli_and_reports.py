@@ -242,10 +242,10 @@ def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monke
     assert "\x1b" not in text
     if format_name == "json":
         decoded = json.loads(text)
-        assert decoded["schema_version"] == 5 and decoded["events"] == events
+        assert decoded["schema_version"] == 6 and decoded["events"] == events
     else:
         decoded = [json.loads(line) for line in text.splitlines()]
-        assert decoded[0]["schema_version"] == 5 and decoded[1:-1] == events
+        assert decoded[0]["schema_version"] == 6 and decoded[1:-1] == events
 
 
 @pytest.mark.parametrize("width", [32, 80])
@@ -337,7 +337,7 @@ def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
         assert "? test" in text and "probability ambiguous" in text and "no relevant evidence" in text
     else:
         payload = json.loads(text) if format_name == "json" else json.loads(text.splitlines()[0])
-        assert payload["schema_version"] == 5
+        assert payload["schema_version"] == 6
         actual = payload["events"][0] if format_name == "json" else json.loads(text.splitlines()[1])
         assert actual == event
 
@@ -418,7 +418,7 @@ def test_rule_metadata_is_presented_but_not_used_as_a_model_instruction(tmp_path
     parsed = parse_source(b"def f(): return 1\n", FileJob("x.py", "x.py", "python", "python"))
     planner = Planner(ContextBuilder(parsed), config)
     check = next(check for check in planner.checks if check.rule_id == "JEV01")
-    evidence = next(planner.context.variants(check))
+    evidence = planner.context.requested(check)
     results = FileResults(planner)
     results.accept(planner.request(evidence, (check,)), {check.id: NoulAnswer(type="noul", noul=0.95)}, "test", False)
     event = results.records[check.target.id].event()
@@ -427,3 +427,49 @@ def test_rule_metadata_is_presented_but_not_used_as_a_model_instruction(tmp_path
     Reporter(stream, "text", _report_metadata(), width=120).emit(event)
     assert "JEV01 mixed-responsibilities" in stream.getvalue()
     assert "title" not in check.question()["instructions"]
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+def test_hundreds_of_coverage_details_are_aggregated_without_hiding_real_errors(verbose):
+    stream = io.StringIO()
+    reporter = Reporter(stream, "text", _report_metadata(), verbose=verbose, width=100)
+    reporter.emit({
+        "event": "coverage",
+        "path": "large.ts",
+        "context_reduced_targets": 580,
+        "skipped_checks": 4,
+        "skipped_file_checks": 2,
+        "aborted": False,
+    })
+    for i in range(580):
+        reporter.emit({
+            "event": "diagnostic",
+            "path": "large.ts",
+            "line": i + 1,
+            "severity": "warning",
+            "code": "context-reduced",
+            "message": "reduced surrounding context",
+        })
+    reporter.emit({
+        "event": "diagnostic",
+        "path": "broken.ts",
+        "line": 46,
+        "severity": "error",
+        "code": "syntax-error",
+        "message": "invalid syntax",
+    })
+    assert "context compacted for 580 targets" in stream.getvalue()
+    assert "context-reduced" not in stream.getvalue()
+    assert "broken.ts:46" in stream.getvalue()
+    assert len(stream.getvalue().splitlines()) <= 8
+    machine = io.StringIO()
+    reporter = Reporter(machine, "jsonl", _report_metadata())
+    reporter.emit({
+        "event": "diagnostic",
+        "path": "large.ts",
+        "line": 1,
+        "severity": "warning",
+        "code": "context-reduced",
+        "message": "reduced surrounding context",
+    })
+    assert "context-reduced" in machine.getvalue()

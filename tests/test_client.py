@@ -323,3 +323,35 @@ def test_ambiguous_noul_requires_a_directional_signal_for_tentative_severity(uni
             assert decision.finding is None
             probability = value if expected else 1 - value
             assert bool(decision.tentative_finding) is (probability >= 0.5)
+
+
+@pytest.mark.parametrize(
+    "status,body,rejected",
+    [
+        (413, None, True),
+        (400, {"code": "max_tokens_exceeded"}, True),
+        (422, {"error": "max_tokens_exceeded"}, True),
+        (400, {"error": {"code": "max_tokens_exceeded"}}, True),
+        (422, {"detail": {"code": "max_tokens_exceeded"}}, True),
+        (422, {"detail": [{"type": "missing", "msg": "max_tokens_exceeded"}]}, False),
+        (400, {"message": "max_tokens_exceeded"}, False),
+        (401, {"code": "max_tokens_exceeded"}, False),
+    ],
+)
+async def test_size_error_envelopes_are_strict_and_safe(status, body, rejected, basic_rule):
+    from jevscan.core.config import JevConfig
+    from jevscan.core.protocol import ContextLimitError, JevError
+
+    config = JevConfig(requests_per_minute=0, retries=0)
+
+    def handle(_request):
+        return httpx.Response(status, json=body, headers={"x-typesafe-request-id": "safe-id"})
+
+    async with JevClient(config, "secret-key", transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(ContextLimitError if rejected else JevError) as captured:
+            await client.evaluate(b"{}", {"q": basic_rule.question})
+    if rejected:
+        assert isinstance(captured.value, ContextLimitError)
+        assert captured.value.metadata()["status"] == status
+        assert captured.value.metadata()["request_id"] == "safe-id"
+    assert "secret-key" not in str(captured.value)

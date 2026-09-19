@@ -75,8 +75,8 @@ class JevConfig(StrictModel):
 
 class EvaluationConfig(StrictModel):
     # Estimates, not a claim that TypeSafe publishes this tokenizer or these quotas.
-    max_context_tokens: int = Field(default=28_000, ge=1024)
-    max_total_tokens: int = Field(default=56_000, ge=1024)
+    max_context_tokens: int | None = Field(default=None, ge=1024)
+    max_total_tokens: int | None = Field(default=None, ge=1024)
     token_reserve: int = Field(default=512, ge=0)
     bytes_per_token: float = Field(default=3.0, ge=1, le=8)
     max_request_bytes: int = Field(default=1_048_576, ge=1024)
@@ -85,11 +85,25 @@ class EvaluationConfig(StrictModel):
 
     @model_validator(mode="after")
     def coherent_budgets(self) -> Self:
-        if self.max_total_tokens < self.max_context_tokens:
+        if (
+            self.max_context_tokens is not None
+            and self.max_total_tokens is not None
+            and self.max_total_tokens < self.max_context_tokens
+        ):
             raise ValueError("max_total_tokens must be at least max_context_tokens")
-        if self.token_reserve >= self.max_context_tokens:
+        if self.max_context_tokens is not None and self.token_reserve >= self.max_context_tokens:
             raise ValueError("token_reserve must be smaller than max_context_tokens")
         return self
+
+
+class CompactionConfig(StrictModel):
+    """Recovery policy, not an advertised provider context window."""
+
+    context_tokens: int = Field(default=24_000, ge=1024)
+    max_rounds: int = Field(default=3, ge=1, le=8)
+    max_candidates: int = Field(default=32, ge=1, le=128)
+    max_calls_per_file: int = Field(default=12, ge=0, le=256)
+    semantic: bool = True
 
 
 class EnrichmentConfig(StrictModel):
@@ -147,6 +161,7 @@ class Config(StrictModel):
     cache: CacheConfig = Field(default_factory=CacheConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
+    compaction: CompactionConfig = Field(default_factory=CompactionConfig)
     lint: LintConfig = Field(default_factory=LintConfig)
     rulesets: dict[str, Ruleset] = Field(default_factory=lambda: {"project": Ruleset()})
     rules: dict[str, Rule]
