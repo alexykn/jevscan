@@ -22,6 +22,12 @@ class Kind(StrEnum):
 
 CALLABLE_KINDS = frozenset({Kind.FUNCTION, Kind.METHOD, Kind.CLOSURE})
 TYPE_KINDS = frozenset({Kind.CLASS, Kind.STRUCT, Kind.ENUM, Kind.TRAIT, Kind.INTERFACE, Kind.TYPE})
+SyntaxFact = Literal[
+    "validation_candidate",
+    "fallback_candidate",
+    "helper_relationship",
+    "executable_behavior",
+]
 
 
 class Severity(StrEnum):
@@ -54,6 +60,7 @@ class Unit:
     display_name: str = ""
     body_start_byte: int | None = None
     body_end_byte: int | None = None
+    syntax_facts: tuple[SyntaxFact, ...] = ()
 
     def metadata(self) -> dict[str, Any]:
         return asdict(self)
@@ -158,6 +165,20 @@ class Target:
     def metadata(self) -> dict[str, Any]:
         return asdict(self)
 
+    def model_metadata(self) -> dict[str, Any]:
+        """Small target locator for Jev; exact attribution remains local."""
+        result = {
+            "scope": self.scope,
+            "path": self.path,
+            "language": self.language,
+            "qualified_name": self.qualified_name,
+            "start_line": self.start_line,
+            "end_line": self.end_line,
+        }
+        if self.kind is not None:
+            result["kind"] = self.kind
+        return result
+
 
 @dataclass(frozen=True, slots=True)
 class Finding:
@@ -196,6 +217,7 @@ class Summary:
     enrichment_resolved: int = 0
     enrichment_calls: int = 0
     enrichment_cache_hits: int = 0
+    applicability_skips: int = 0
     context_reduced: int = 0
     size_rejections: int = 0
     request_rejections: int = 0

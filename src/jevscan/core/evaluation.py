@@ -25,6 +25,7 @@ class Judgment:
     model: str
     cached: bool
     context: Evidence
+    inference: dict[str, Any] = field(default_factory=dict)
     review: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -48,6 +49,7 @@ class TargetResults:
     target: Target
     judgments: dict[str, Judgment] = field(default_factory=dict)
     skipped: dict[str, str] = field(default_factory=dict)
+    applicability: dict[str, str] = field(default_factory=dict)
     context_selection: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def event(self) -> dict[str, Any]:
@@ -74,11 +76,13 @@ class TargetResults:
             "tentative_findings": tentative,
             "evidence": {name: item.evidence for name, item in self.judgments.items()},
             "models": {name: item.model for name, item in self.judgments.items()},
+            "inference": {name: item.inference for name, item in self.judgments.items()},
             "cached_rules": [name for name, item in self.judgments.items() if item.fully_cached],
             "cached": bool(self.judgments)
             and not self.skipped
             and all(item.fully_cached for item in self.judgments.values()),
             "skipped_rules": self.skipped,
+            "applicability_skips": self.applicability,
             "context_selection": self.context_selection,
             "scales": {
                 name: len(item.check.rule.question.criteria) - 1
@@ -121,16 +125,19 @@ class TargetResults:
         event = self.event()
         summary.checks_evaluated += len(self.judgments)
         summary.checks_skipped += len(self.skipped)
+        summary.applicability_skips += len(self.applicability)
         summary.uncertain += sum(status == "unknown" for status in event["statuses"].values())
-        summary.not_applicable += sum(status == "not_applicable" for status in event["statuses"].values())
+        summary.not_applicable += len(self.applicability) + sum(
+            status == "not_applicable" for status in event["statuses"].values()
+        )
         if self.target.scope == "unit":
             summary.units_evaluated += bool(self.judgments)
             summary.units_cached += event["cached"]
-            summary.units_skipped += not self.judgments and not aborted
+            summary.units_skipped += bool(self.skipped) and not self.judgments and not aborted
             summary.units_failed += bool(self.skipped) and aborted
         else:
             summary.file_targets_evaluated += bool(self.judgments)
-            summary.file_targets_skipped += not self.judgments
+            summary.file_targets_skipped += bool(self.skipped) and not self.judgments
         for finding in event["findings"]:
             summary.findings[finding["severity"]] += 1
         for finding in event["tentative_findings"]:
@@ -148,11 +155,15 @@ class FileResults:
         self.request_failures: dict[tuple[object, ...], dict[str, Any]] = {}
         self.request_rejected_checks = 0
         all_checks = [*planner.checks, *(omission.check for omission in planner.omissions)]
-        for check in all_checks:
-            if check.target.id not in self.records:
-                self.records[check.target.id] = TargetResults(check.target)
+        active_ids = {check.target.id for check in all_checks} | set(planner.applicability_skips)
+        for target in planner.targets:
+            if target.id in active_ids:
+                self.records[target.id] = TargetResults(target)
         for omission in planner.omissions:
             self.omit(omission)
+        for target_id, skipped in planner.applicability_skips.items():
+            for rule_id, reason in skipped.items():
+                self.records[target_id].applicability[rule_id] = reason
 
     def recovery(self, check: Check) -> dict[str, Any]:
         return self.records[check.target.id].context_selection.setdefault(
@@ -188,7 +199,17 @@ class FileResults:
             trace["outcome"] = "provider_request_rejected"
             self.omit(Omission(check, f"provider request rejected (HTTP {error.status})"))
 
-    def accept_answer(self, check: Check, evidence_state: Evidence, answer: Answer, model: str, cached: bool) -> None:
+    def accept_answer(
+        self,
+        check: Check,
+        evidence_state: Evidence,
+        answer: Answer,
+        model: str,
+        cached: bool,
+        inference: dict[str, Any] | None = None,
+        *,
+        shared_request: bool = False,
+    ) -> None:
         record = self.records[check.target.id]
         assert check.rule_id not in record.judgments
         evidence = self.planner.context.describe(check, evidence_state)
@@ -198,11 +219,45 @@ class FileResults:
             for step in trace.get("compactions", [])
             for prediction in step["predictions"]
         )
-        record.judgments[check.rule_id] = Judgment(check, answer, evidence, model, fully_cached, evidence_state)
+        request_metrics = dict(inference or {})
+        phase = request_metrics.pop("phase", "initial")
+        metrics: dict[str, Any] = {
+            "phase": phase,
+            "question_id": check.id,
+            "question_bytes": len(self.planner.questions[check.id]),
+            "shared_request": shared_request,
+            "cached": cached,
+        }
+        if request_metrics:
+            metrics["request"] = request_metrics
+        record.judgments[check.rule_id] = Judgment(
+            check,
+            answer,
+            evidence,
+            model,
+            fully_cached,
+            evidence_state,
+            metrics,
+        )
 
-    def accept(self, request: Request, answers: dict[str, Answer], model: str, cached: bool) -> None:
+    def accept(
+        self,
+        request: Request,
+        answers: dict[str, Answer],
+        model: str,
+        cached: bool,
+        inference: dict[str, Any] | None = None,
+    ) -> None:
         for check in request.checks:
-            self.accept_answer(check, request.evidence, answers[check.id], model, cached)
+            self.accept_answer(
+                check,
+                request.evidence,
+                answers[check.id],
+                model,
+                cached,
+                inference,
+                shared_request=len(request.checks) > 1,
+            )
 
     def _review_queue(self) -> list[tuple[int, str, Judgment]]:
         pending = []
@@ -235,6 +290,14 @@ class FileResults:
                     response.model,
                     result.prediction.cached,
                     result.evidence,
+                    {
+                        "phase": "reassess",
+                        "question_id": initial.check.id,
+                        "question_bytes": len(self.planner.questions[initial.check.id]),
+                        "shared_request": False,
+                        "cached": result.prediction.cached,
+                        "request": result.prediction.metrics,
+                    },
                     initial.review,
                 )
             final = record.judgments[name].assessment()

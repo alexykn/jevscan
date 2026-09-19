@@ -26,7 +26,11 @@ Module/tree scoring, persistent model sessions, compiler-resolved call graphs, a
 
 The packaged default is missing/reduced evidence, plus applicability for JEV06. Ordinary low confidence/ambiguous Nouls do not invoke the router unless explicitly enabled. A possible not-applicable result is not a clean judgment. Above-threshold uncertain warnings/errors remain visible without verbose mode regardless of routing admission.
 
-For the packaged context-sensitive Choice rules, `insufficient_context` is deliberately narrow. JEV04 may use it only after a concrete repeated validation is visible; JEV05 only after a concrete fallback, swallowed failure, or best-effort continuation is visible; and JEV06 only after helper decomposition is visibly present. If the phenomenon itself is absent, the rule must choose its clean/not-applicable outcome instead of requesting hypothetical external context. This keeps enrichment focused on an identified construct whose classification genuinely depends on a missing fact.
+For a rule with `targeted_enrichment`, a configured Choice label or admitted `enrich_on` trigger can select direct retrieval using
+the rule's declared `enrichment_families`. The packaged context-sensitive rules use this for their
+`insufficient_context` outcomes. If a declared applicability fact is absent, the planner records a deterministic
+not-applicable outcome instead of requesting hypothetical external context. Rules without targeted policy retain the
+generic routing path.
 
 ## Disposition and independent evidence families
 
@@ -57,13 +61,16 @@ Each candidate gets an independent Noul about whether its complete source could 
 
 Relevant candidates are ranked, then admitted within `max_evidence` and the shared request budgets. Source is complete at the candidate target level; the original target/evidence is preserved. Overlapping UTF-8 spans are merged. Candidate previews may be bounded and say so; actual target source is never truncated.
 
-The final request uses the **unchanged original question** and target, with enriched documents, relationships, source hashes, and coverage. It excludes the initial verdict, disposition prediction, family probabilities, relevance scores, and an expected conclusion. Selection changes evidence, not the rule. The answer can become clean, tentative, confirmed, not applicable, or remain uncertain. There is only one reassessment.
+The final request uses the **unchanged original question** and compact model-facing target, with enriched documents,
+relationships, source hashes, and coverage. It excludes the initial verdict, disposition prediction, family
+probabilities, relevance scores, and an expected conclusion. Selection changes evidence, not the rule. The answer can
+become clean, tentative, confirmed, not applicable, or remain uncertain. There is only one reassessment.
 
 Every phase uses the shared inference/cache/transport validator and rate limiter. Provider size rejection or a local limit stops enrichment explicitly. Malformed answers, genuine service failures, and cancellation retain audits and follow normal incomplete-scan handling; they are not disguised as clean results.
 
 ## Audit and accounting
 
-Report schema 8 records initial answer/cache/evidence provenance, scheduling trigger, uncertainty reason, each prediction's model/cache flag/request hash/raw answers, disposition, all family probabilities, admitted families, per-family retrieval coverage, candidate family membership/relevance, selected spans, omissions, and stop outcome.
+Report schema 8 records initial answer/cache/evidence provenance, scheduling trigger, uncertainty reason, each prediction's model/cache flag/request hash/raw answers and serialized request metrics, disposition, all family probabilities, admitted families, per-family retrieval coverage, candidate family membership/relevance, selected spans, omissions, and stop outcome.
 
 The `enrichment_calls` counter counts prediction requests, not individual questions: five routing questions can be one call; a constrained request budget can split them. `enrichment_reviewed` counts admitted checks. `enrichment_reruns` counts actual final reassessments. `enrichment_resolved` counts previously unknown checks whose final status becomes conclusive, including applicability-only decisions. Findings count once, not once per inference phase.
 

@@ -9,7 +9,8 @@ from jevscan.core.assessment import assess
 from jevscan.core.client import JevClient, RequestLimiter
 from jevscan.core.config import Config
 from jevscan.core.context import ContextBuilder
-from jevscan.core.models import ParsedFile, Severity, Target, Unit
+from jevscan.core.inference import Inference
+from jevscan.core.models import ParsedFile, Severity, Summary, Target, Unit
 from jevscan.core.planning import Planner, Request
 from jevscan.core.protocol import Check, ContextLimitError, JevError, RequestRejectedError, validate_response
 from jevscan.core.rules import Rule
@@ -30,6 +31,31 @@ def response_body(probability: float = 0.93) -> dict:
     }
 
 
+async def test_concurrent_phase_reservations_use_request_local_totals(config: Config, basic_rule: Rule) -> None:
+    both_started = asyncio.Event()
+    starts = 0
+
+    async def handle(_request: httpx.Request) -> httpx.Response:
+        nonlocal starts
+        starts += 1
+        if starts == 2:
+            both_started.set()
+        await both_started.wait()
+        return httpx.Response(200, json=response_body())
+
+    summary = Summary("live")
+    questions = {"q00000": basic_rule.question}
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        inference = Inference(client, None, summary)
+        await asyncio.gather(
+            inference.predict(b"x" * 300, questions),
+            inference.predict(b"y" * 600, questions, enrichment=True),
+        )
+    assert summary.evaluation_reserved_input_tokens == 100
+    assert summary.enrichment_reserved_input_tokens == 200
+    assert client.estimated_input_tokens == 300
+
+
 async def test_actual_http_contract_and_retry_attempts(config: Config, unit: Unit) -> None:
     requests = []
     plan = request_for(config, unit)
@@ -41,7 +67,9 @@ async def test_actual_http_contract_and_retry_attempts(config: Config, unit: Uni
         body = json.loads(request.content)
         assert body["model"] == config.jev.model
         assert body["questions"]["q00000"]["type"] == "noul"
-        assert body["questions"]["q00000"]["instructions"]["target"]["id"] == unit.id
+        target = body["questions"]["q00000"]["instructions"]["target"]
+        assert target["qualified_name"] == unit.qualified_name
+        assert "id" not in target and "start_byte" not in target
         if len(requests) < 3:
             return httpx.Response(429 if len(requests) == 1 else 503, headers={"Retry-After": "0"})
         return httpx.Response(200, json=response_body())

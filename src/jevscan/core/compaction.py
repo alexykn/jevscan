@@ -5,6 +5,7 @@ residual evidence, never authorize truncating a target or claiming full coverage
 """
 
 import hashlib
+import json
 from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass
@@ -204,10 +205,18 @@ class Compactor:
         body = self.planner.budget.body(state, wire)
         entry: dict[str, Any] = {"phase": phase, "request_sha256": hashlib.sha256(body).hexdigest()}
         trace["predictions"].append(entry)
-        result = await self.inference.predict(body, questions, compaction=True)
+        result = await self.inference.predict(
+            body,
+            questions,
+            compaction=True,
+            state_bytes=len(state),
+            question_bytes=sum(map(len, wire.values())),
+            state=json.loads(state),
+        )
         entry.update({
             "model": result.response.model,
             "cached": result.cached,
+            "metrics": result.metrics,
             "answers": {key: value.model_dump(mode="json") for key, value in result.response.answers.items()},
         })
         return result

@@ -84,7 +84,20 @@ Effective selection is: enabled rule, enabled ruleset, matched by `select`, and 
 
 `context` is `unit`, `owner`, or `file`. Defaults are owner for units and file for files. Owner context uses the lexical owner, or the file for top-level functions; Rust owner context starts with the file. `languages` defaults to the five supported languages. `require_body: true` excludes declarations and obvious stub implementations. `require_members: true` requires implemented callable members for owner-level checks. No heuristic claims compiler-level call resolution.
 
-`enrich` defaults to true. `enrich_on` is a replaceable list of triggers. Packaged defaults admit missing/reduced evidence; JEV06 also admits applicability. Available values are `missing_evidence`, `reduced_context`, `applicability`, `low_confidence`, `low_choice_probability`, `weak_defect_signal`, and `probability_ambiguous`. The first two have priority across a file. Additional triggers should be enabled only when evidence may help that rule; ordinary ambiguity is not evidence of missing code.
+`applicability` is optional. It can declare `requires_any` and/or `requires_all` from the exact syntax-fact vocabulary
+`validation_candidate`, `fallback_candidate`, `helper_relationship`, and `executable_behavior`. An absent policy never
+adds a deterministic gate. A target missing a declared prerequisite is counted as not applicable and recorded separately
+from transport omissions with the declared fact in its machine-readable reason. Validation and fallback facts are broad
+admission signals over call, predicate, and control-flow syntax; they do not classify that syntax semantically.
+`helper_relationship` requires a visible lexical call between implemented siblings. The schema rejects empty, duplicate,
+or overlapping fact lists. Built-ins and custom rules use the same evaluator.
+
+`enrich` defaults to true. `enrich_on` is a replaceable list of triggers. Packaged defaults admit missing/reduced evidence; JEV06 also admits applicability. Available values are `missing_evidence`, `reduced_context`, `applicability`, `low_confidence`, `low_choice_probability`, `weak_defect_signal`, and `probability_ambiguous`. The first two have priority across a file. Additional triggers should be enabled only when evidence may help that rule; ordinary ambiguity is not evidence of missing code. `enrichment_families` accepts `callers`, `callees`, `tests`, and `enclosing_context`.
+
+`targeted_enrichment` is optional and contains `when_choices` and/or `when_reasons`. When it matches the raw Choice
+label or admitted `enrich_on` trigger, code retrieves only the declared evidence families, batches candidate relevance questions
+over shared candidate state where budgets allow, and reassesses once only after useful evidence is admitted. Rules
+without this policy retain generic disposition-and-family routing, including custom rules.
 
 ## Questions and reporting
 
@@ -92,7 +105,11 @@ All rules need `question.type`, focused `question.instructions`, `report.message
 
 ### Noul
 
-Noul is a scalar probability of a proposition, not intensity. Levels use `min_probability` and no separate confidence. `report.expected: false` tests `1 - noul`. Optional `uncertain_range: [0.4, 0.6]` applies to raw Noul with an inclusive lower/exclusive upper boundary. It must enclose 0.5. A signal inside that band can still be displayed as an uncertain warning/error when it crosses the directional reporting threshold.
+Noul is a scalar probability of a proposition, not intensity. Native TypeSafe criteria are an optional object with
+explicit `"true"` and `"false"` descriptions; built-in Nouls provide both. Levels use `min_probability` and no
+separate confidence. `report.expected: false` tests `1 - noul`. Optional `uncertain_range: [0.4, 0.6]` applies to raw
+Noul with an inclusive lower/exclusive upper boundary. It must enclose 0.5. A signal inside that band can still be
+displayed as an uncertain warning/error when it crosses the directional reporting threshold.
 
 ### Choice
 

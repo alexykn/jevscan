@@ -41,14 +41,11 @@ A schematic request with two independent method judgments:
       "instructions": {
         "policy": "<fixed source-as-evidence and target-attribution policy>",
         "target": {
-          "id": "src/service.py:50:method",
           "scope": "unit",
           "path": "src/service.py",
           "language": "python",
           "qualified_name": "Coordinator.commit",
           "kind": "method",
-          "start_byte": 50,
-          "end_byte": 800,
           "start_line": 3,
           "end_line": 28
         },
@@ -60,14 +57,11 @@ A schematic request with two independent method judgments:
       "instructions": {
         "policy": "<same fixed policy>",
         "target": {
-          "id": "src/service.py:810:method",
           "scope": "unit",
           "path": "src/service.py",
           "language": "python",
           "qualified_name": "Coordinator.flush",
           "kind": "method",
-          "start_byte": 810,
-          "end_byte": 1600,
           "start_line": 30,
           "end_line": 61
         },
@@ -80,7 +74,11 @@ A schematic request with two independent method judgments:
 
 The placeholder source/ranges above illustrate the shape; actual spans come from Tree-sitter, and actual source is sent without clipping. Byte ranges are UTF-8 offsets into the original file, zero-based and end-exclusive. Lines are one-based and inclusive. A method's span remains its own even when the evidence document is the entire file or class.
 
-`Check` owns the binding between request key, target, and YAML rule ID. Each question says that `source` in its instructions/criteria means only that target. It can use the rest of the supplied document as evidence, but must not assign a class-wide concern indiscriminately to every method. The fixed policy also says source strings/comments are evidence, not instructions; this is a guardrail, not a proven prompt-injection defense.
+`Check` owns the binding between request key, exact target, and YAML rule ID. The model-facing target descriptor is
+deliberately compact; exact IDs and byte ranges remain local attribution metadata. Each question says that `source` in
+its instructions/criteria means only that target. It can use the rest of the supplied document as evidence, but must
+not assign a class-wide concern indiscriminately to every method. The fixed policy also says source strings/comments are
+evidence, not instructions; this is a guardrail, not a proven prompt-injection defense.
 
 No absolute home directory is added to an ordinary project-relative path merely to describe file identity. Source outside the selected project root may retain the discovery layer's absolute display path. Primary envelopes do not read cross-file source. Enrichment can conditionally discover and supply allowed source from the resolved project root; see the data-sharing contract below.
 
@@ -110,7 +108,11 @@ An entire target that cannot be evaluated is reported as omitted. There is no hi
 
 `core/evaluation.py` owns answers for one active file. It reclassifies cached answers using the active reporting policy, assigns answers to exact targets, and emits each target once after its file finishes. Abort/cancellation still emits completed answers and records unanswered checks. File evaluators run concurrently, and independent ready request batches inside one file may also run concurrently; the client semaphore and limiter remain global. Questions in a shared request remain logically independent; a question cannot consume another answer from that same request.
 
-The SQLite cache has two layers. Whole-request entries retain the existing endpoint/body/package/prompt identity. Per-judgment entries are keyed by endpoint, requested model, exact encoded evidence, exact bound question, and prompt compatibility. They are validated against the active question before use. Batch composition can therefore change without repurchasing an unchanged judgment; model/question/evidence changes still invalidate it. Pin a model for reproducibility.
+The SQLite cache has two layers. Whole-request entries retain the existing endpoint/body/package/prompt identity; the
+current prompt compatibility version is 5. Per-judgment entries are keyed by endpoint, requested model, exact encoded
+evidence, exact bound question, and prompt compatibility. They are validated against the active question before use.
+Batch composition can therefore change without repurchasing an unchanged judgment; model/question/evidence changes
+still invalidate it. Pin a model for reproducibility.
 
 The optional `budget` block limits request attempts, conservative estimated input tokens, and/or configured input cost before transport. Reservations include retries. Exceeding a guard raises an explicit `budget-exhausted` incomplete-scan diagnostic; unevaluated checks are never converted into clean answers. The final summary also reports actual successful-response input tokens and their configured input-cost calculation.
 
@@ -135,9 +137,11 @@ An `evaluation` event contains:
 | `cached_rules`, `cached` | Per-rule cache provenance; whole-target cache flag is true only when all checks completed from cache |
 | `scales` | Score rubric maximum, where applicable |
 | `skipped_rules` | Rules with no result and the explicit reason |
+| `applicability_skips` | Deterministic not-applicable rules and declared missing syntax prerequisites, separate from `skipped_rules` |
+| `inference` | Per-rule phase/cache/question bytes plus nested shared-request metrics: request hash, serialized request/state/all-question bytes, evidence-group density (documents per source file), and provider-reported request usage when present |
 
 `summary.tentative_findings` counts tentative warnings/errors separately; they are already included in `summary.uncertain`. Reviews distinguish the admitted `trigger` from the `initial_reason`. Ordinary intrinsic ambiguity does not request enrichment by default; no review entry means no review was requested, not that a model approved the evidence.
-Schema 7 coverage events add `request_rejected_checks` beside compacted/omitted counts and preserve `aborted`. `summary.request_rejections` counts request-local HTTP 400/422 rejections that were isolated rather than treated as size errors or immediate scan-fatal failures. Request-local rejection details live under the affected rule's `context_selection.request_rejections`; only sanitized machine metadata is retained.
+Schema 8 coverage events add `request_rejected_checks` beside compacted/omitted counts and preserve `aborted`. `summary.request_rejections` counts request-local HTTP 400/422 rejections that were isolated rather than treated as size errors or immediate scan-fatal failures. `summary.applicability_skips` counts deterministic policy exclusions. Request-local rejection details live under the affected rule's `context_selection.request_rejections`; only sanitized machine metadata is retained.
 
 Schema 8 adds planning/cost counters to the summary and `plan` events for `--plan`. Interactive progress remains text-only and is never inserted into JSON/JSONL.
 

@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from jevscan.core.models import Kind
+from jevscan.core.models import Kind, SyntaxFact
 
 LANGUAGES = frozenset({"python", "rust", "perl", "typescript", "javascript"})
 EnrichmentTrigger = Literal[
@@ -25,9 +25,47 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
 
+class NoulCriteria(StrictModel):
+    true: str = Field(min_length=1)
+    false: str = Field(min_length=1)
+
+
+class ApplicabilityPolicy(StrictModel):
+    requires_any: list[SyntaxFact] = Field(default_factory=list)
+    requires_all: list[SyntaxFact] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def has_requirement(self) -> Self:
+        if not self.requires_any and not self.requires_all:
+            raise ValueError("applicability requires at least one syntax fact")
+        if len(self.requires_any) != len(set(self.requires_any)) or len(self.requires_all) != len(
+            set(self.requires_all)
+        ):
+            raise ValueError("applicability fact lists must not contain duplicates")
+        if set(self.requires_any) & set(self.requires_all):
+            raise ValueError("a syntax fact cannot be both requires_any and requires_all")
+        return self
+
+
+class TargetedEnrichmentPolicy(StrictModel):
+    when_choices: list[str] = Field(default_factory=list)
+    when_reasons: list[EnrichmentTrigger] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def has_trigger(self) -> Self:
+        if not self.when_choices and not self.when_reasons:
+            raise ValueError("targeted enrichment requires a choice or assessment reason trigger")
+        if len(self.when_choices) != len(set(self.when_choices)) or len(self.when_reasons) != len(
+            set(self.when_reasons)
+        ):
+            raise ValueError("targeted enrichment trigger lists must not contain duplicates")
+        return self
+
+
 class NoulQuestion(StrictModel):
     type: Literal["noul"]
     instructions: str = Field(min_length=1)
+    criteria: NoulCriteria | None = None
 
 
 class ChoiceQuestion(StrictModel):
@@ -92,6 +130,8 @@ class Rule(StrictModel):
     languages: list[str] = Field(default_factory=lambda: sorted(LANGUAGES))
     require_body: bool = False
     require_members: bool = False
+    applicability: ApplicabilityPolicy | None = None
+    targeted_enrichment: TargetedEnrichmentPolicy | None = None
     enrich: bool = True
     enrich_on: list[EnrichmentTrigger] = Field(default_factory=lambda: list(DEFAULT_ENRICHMENT_TRIGGERS))
     enrichment_families: list[EnrichmentFamily] = Field(default_factory=lambda: list(DEFAULT_ENRICHMENT_FAMILIES))
@@ -121,6 +161,7 @@ class Rule(StrictModel):
             self._validate_choice()
         else:
             self._validate_noul()
+        self._validate_targeted_enrichment()
         if not isinstance(self.question, NoulQuestion) and self.report.uncertain_range is not None:
             raise ValueError("uncertain_range is only valid for noul questions")
         _validate_level_order(self.report.levels)
@@ -183,6 +224,21 @@ class Rule(StrictModel):
                 raise ValueError("noul levels require min_probability")
             if any(value is not None for value in (level.min_confidence, level.min_score, level.max_score)):
                 raise ValueError("noul levels cannot use confidence or score thresholds")
+
+    def _validate_targeted_enrichment(self) -> None:
+        if self.targeted_enrichment is None:
+            return
+        if not self.enrichment_families:
+            raise ValueError("targeted enrichment requires at least one evidence family")
+        if self.targeted_enrichment.when_choices and not isinstance(self.question, ChoiceQuestion):
+            raise ValueError("targeted enrichment choice triggers require a choice question")
+        if isinstance(self.question, ChoiceQuestion):
+            unknown = set(self.targeted_enrichment.when_choices) - set(self.question.criteria)
+            if unknown:
+                raise ValueError("targeted enrichment choices must be present in question.criteria")
+        unavailable = set(self.targeted_enrichment.when_reasons) - set(self.enrich_on)
+        if unavailable:
+            raise ValueError("targeted enrichment reasons must also be present in enrich_on")
 
 
 def _validate_level_order(levels: ReportLevels) -> None:

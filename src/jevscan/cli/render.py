@@ -288,6 +288,11 @@ class Reporter:
                 f"cached={summary['enrichment_cache_hits']}",
                 style=DIM,
             )
+        if summary.get("applicability_skips", 0):
+            self.terminal.write(
+                f"applicability: skipped={summary['applicability_skips']} declared prerequisites absent",
+                style=DIM,
+            )
         if self.hidden:
             self.terminal.write(
                 f"omitted={self.hidden} targets (--max-display); machine reports remain complete", style=DIM

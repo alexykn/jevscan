@@ -112,17 +112,22 @@ async def _parse_worker(
                     planned_tokens += total_tokens
                     planned_state_bytes += len(request.evidence.encoded)
                 checks = len(planner.checks) + len(planner.omissions)
+                applicability_skips = sum(len(skipped) for skipped in planner.applicability_skips.values())
                 summary.planned_checks += checks
                 summary.planned_requests += len(requests)
                 summary.planned_input_tokens += planned_tokens
                 summary.planned_state_bytes += planned_state_bytes
                 summary.checks_skipped += len(planner.omissions)
+                summary.applicability_skips += applicability_skips
+                summary.not_applicable += applicability_skips
                 sink.emit({
                     "event": "plan",
                     "path": parsed.path,
                     "checks": checks,
                     "requests": len(requests),
                     "omitted_checks": len(planner.omissions),
+                    "applicability_skips": applicability_skips,
+                    "applicability_details": planner.applicability_skips,
                     "estimated_input_tokens": planned_tokens,
                     "state_bytes": planned_state_bytes,
                 })
@@ -161,6 +166,7 @@ async def _evaluate_worker(
             )
         selected = {check.target.id for check in planner.checks if check.target.scope == "unit"}
         selected.update(item.check.target.id for item in planner.omissions if item.check.target.scope == "unit")
+        selected.update(target_id for target_id in planner.applicability_skips if target_id != planner.context.file.id)
         summary.units_skipped += len(parsed.units) - len(selected)
         await evaluate_file(planner, client, cache, sink, summary, index)
 

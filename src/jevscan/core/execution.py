@@ -88,7 +88,13 @@ class FileExecutor:
         if digest in self.rejected_requests:
             return "size_rejected"
         try:
-            prediction = await self.inference.predict(request.body, request.questions)
+            prediction = await self.inference.predict(
+                request.body,
+                request.questions,
+                state_bytes=len(request.evidence.encoded),
+                question_bytes=sum(len(self.planner.questions[check.id]) for check in request.checks),
+                state=request.evidence.state,
+            )
         except ContextLimitError as exc:
             self.rejected_requests.add(digest)
             self._record_size_rejection(request, exc)
@@ -106,7 +112,13 @@ class FileExecutor:
             request.questions,
             response,
         )
-        self.results.accept(request, response.answers, response.model, prediction.cached)
+        self.results.accept(
+            request,
+            response.answers,
+            response.model,
+            prediction.cached,
+            {**prediction.metrics, "phase": "initial"},
+        )
         return "accepted"
 
     def _split(self, attempt: Attempt) -> list[Attempt]:

@@ -19,7 +19,7 @@ from jevscan.core.parser import parse_source
 from jevscan.core.planning import Planner
 from jevscan.core.protocol import JevError, NoulAnswer
 from jevscan.core.retrieval import SourceIndex
-from jevscan.core.rules import ChoiceQuestion, Rule
+from jevscan.core.rules import ChoiceQuestion, Rule, TargetedEnrichmentPolicy
 
 pytestmark = [pytest.mark.parser, pytest.mark.usefixtures("grammar_runtime")]
 
@@ -83,10 +83,17 @@ class Responses:
         families: dict[str, float] | None = None,
         relevance: float = 0.9,
         final: str = "clean",
+        initial: str = "missing",
+        initial_confidence: float = 0.9,
         status: int = 200,
     ) -> None:
         self.route, self.route_confidence, self.relevance = route, route_confidence, relevance
-        self.final, self.status = final, status
+        self.final, self.initial, self.initial_confidence, self.status = (
+            final,
+            initial,
+            initial_confidence,
+            status,
+        )
         self.disposition = route if route in DISPOSITIONS else "local_evidence"
         self.families = (
             families if families is not None else {name: 0.9 if name == route else 0.1 for name in EVIDENCE_FAMILIES}
@@ -109,8 +116,10 @@ class Responses:
         elif "candidate_context" in state:
             answers = {key: {"type": "noul", "noul": self.relevance} for key in questions}
         else:
-            selected = self.final if "supplemental_evidence" in state else "missing"
-            answers = {key: choice(question["criteria"], selected) for key, question in questions.items()}
+            enriched = "supplemental_evidence" in state
+            selected = self.final if enriched else self.initial
+            confidence = 0.9 if enriched else self.initial_confidence
+            answers = {key: choice(question["criteria"], selected, confidence) for key, question in questions.items()}
         return httpx.Response(200, json={"model": "jev-test", "answers": answers, "usage": {"input_tokens": 11}})
 
 
@@ -157,8 +166,43 @@ async def test_closed_routing_relevance_and_fresh_judgment(tmp_path: Path, evide
     assert len(last["state"]["documents"]) == 2
     assert "return work(value)" in last["state"]["documents"][0]["content"]
     assert not {"initial_answer", "route", "relevance", "expected_verdict"} & last["state"].keys()
+    metrics = event["inference"]["contract"]
+    assert metrics["question_bytes"] > 0 and not metrics["shared_request"]
+    assert metrics["request"]["input_bytes"] > metrics["request"]["state_bytes"] > 0
+    assert metrics["request"]["question_count"] == 1
+    assert metrics["request"]["evidence_group_density"] == 1.0
+    assert metrics["request"]["input_tokens"] == 11
     assert (summary.enrichment_reviewed, summary.enrichment_reruns, summary.enrichment_resolved) == (1, 1, 1)
     assert summary.checks_evaluated == 1 and not summary.incomplete
+
+
+async def test_declared_targeted_enrichment_works_for_renamed_custom_rule(tmp_path: Path, evidence_rule: Rule) -> None:
+    rule = evidence_rule.model_copy(update={"targeted_enrichment": TargetedEnrichmentPolicy(when_choices=["missing"])})
+    (tmp_path / "caller.py").write_text("from target import work\ndef use(): return work(1)\n")
+    responses = Responses()
+    events, _, _ = await run_review(tmp_path, rule, responses)
+    review = events[0]["reviews"]["contract"]
+    assert review["routing_mode"] == "declared_rule_families"
+    assert "disposition" not in review["predictions"][0].get("answers", {})
+    assert review["outcome"] == "reassessed"
+
+
+async def test_declared_targeted_enrichment_matches_admitted_trigger(tmp_path: Path, evidence_rule: Rule) -> None:
+    report = evidence_rule.report.model_copy(update={"not_applicable_choices": ["clean"]})
+    rule = evidence_rule.model_copy(
+        update={
+            "report": report,
+            "enrich_on": ["applicability"],
+            "targeted_enrichment": TargetedEnrichmentPolicy(when_reasons=["applicability"]),
+        }
+    )
+    (tmp_path / "caller.py").write_text("from target import work\ndef use(): return work(1)\n")
+    responses = Responses(initial="defect", initial_confidence=0.1)
+    events, _, _ = await run_review(tmp_path, rule, responses)
+    review = events[0]["reviews"]["contract"]
+    assert review["trigger"] == "applicability" and review["initial_reason"] == "low_confidence"
+    assert review["routing_mode"] == "declared_rule_families"
+    assert "disposition" not in review["predictions"][0].get("answers", {})
 
 
 @pytest.mark.parametrize(
