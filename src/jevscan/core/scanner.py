@@ -21,6 +21,7 @@ from jevscan.core.config import Config, LoadedConfig
 from jevscan.core.context import ContextBuilder
 from jevscan.core.discovery import discover
 from jevscan.core.evaluation import evaluate_file
+from jevscan.core.model_limits import TokenCalibration
 from jevscan.core.models import Diagnostic, EventSink, FileJob, ParsedFile, Severity, Summary, emit_diagnostic
 from jevscan.core.parser import parse_batch, require_parser_runtime
 from jevscan.core.planning import Planner
@@ -107,9 +108,10 @@ async def _evaluate_worker(
     sink: EventSink,
     summary: Summary,
     index: SourceIndex | None,
+    calibration: TokenCalibration | None,
 ) -> None:
     while (parsed := await queue.get()) is not None:
-        planner = Planner(ContextBuilder(parsed), loaded.config)
+        planner = Planner(ContextBuilder(parsed), loaded.config, calibration)
         selected = {check.target.id for check in planner.checks if check.target.scope == "unit"}
         summary.units_skipped += len(parsed.units) - len(selected)
         await evaluate_file(planner, client, cache, sink, summary, index)
@@ -128,6 +130,7 @@ async def pipeline(
     parsers = worker_count(config)
     evaluators = config.jev.concurrency if client else 0
     index = SourceIndex(loaded.root, config.scan, config.enrichment) if client and config.enrichment.enabled else None
+    calibration = TokenCalibration() if client else None
     file_queue: asyncio.Queue[list[FileJob] | None] = asyncio.Queue(maxsize=parsers * 2)
     work_queue: asyncio.Queue[ParsedFile | None] = asyncio.Queue(maxsize=config.scan.queue_size)
 
@@ -143,7 +146,9 @@ async def pipeline(
         group.create_task(parse_stage())
         if client:
             for _ in range(evaluators):
-                group.create_task(_evaluate_worker(work_queue, loaded, client, cache, sink, summary, index))
+                group.create_task(
+                    _evaluate_worker(work_queue, loaded, client, cache, sink, summary, index, calibration)
+                )
 
 
 def _exception_message(exc: BaseException) -> str:

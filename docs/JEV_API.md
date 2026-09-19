@@ -86,21 +86,23 @@ No absolute home directory is added to an ordinary project-relative path merely 
 
 ## Planning and budgets
 
-`ContextBuilder` supplies exact source documents, including disjoint AST spans after recovery. `Evidence` identity hashes the actual encoded state rather than a bounding interval, so different omissions cannot alias. The planner binds independent questions and packs them under configured local budgets. Token caps are optional (default `null`); byte and question limits remain hard.
+`ContextBuilder` supplies exact source documents, including disjoint AST spans after recovery. `Evidence` identity hashes the actual encoded state rather than a bounding interval, so different omissions cannot alias. The planner binds independent questions and packs them under configured local budgets. Packaged token thresholds are 28k state+longest-question and 56k aggregate. `RequestBudget` also carries the current Jev-1.13 provider profile (32k/64k) for `jev-latest`, `jev-preview`, and pinned 1.13 IDs; local `null` removes headroom but not that known ceiling. Byte and question limits remain hard.
 
-`FileExecutor` owns size recovery. HTTP 413 is a payload-size signal. At HTTP 400/422, the client accepts the exact machine code `max_tokens_exceeded` at top-level `code`, `error.code`, `detail.code`, or as the complete `error`/`detail` string. These are explicit compatibility forms, not a claim that every form has been observed from the live service. Free-text messages mentioning tokens and generic validation failures are **not** size signals. Status, machine code and a sanitized request ID reach the audit; source/error-body text and credentials do not.
+The two token dimensions drive different preflight actions. Aggregate/question-count overflow with a fitting context splits questions while preserving source. Context overflow invokes unit compaction before HTTP. If both overflow, evidence is compacted and questions are repacked. Successful `usage.input_tokens` observations can only make the shared run-local byte/token estimate more conservative.
+
+`FileExecutor` owns bounded recovery. HTTP 413 is a payload-size signal. At HTTP 400/422, the client recursively inspects bounded machine fields (`code`, `type`, `status`, scalar machine-like `error`) and accepts only the exact value `max_tokens_exceeded` as a size signal. Nested validation forms such as `detail[].type=max_tokens_exceeded` are covered; free-text `message`/`msg` token mentions are not. Status, recognized machine fields and a sanitized request ID reach the audit; source/error-body text and credentials do not.
 
 The current official SDK supplies generic status/body error handling, not a published specialized context exception schema. The Pydantic integration documentation identifies `max_tokens_exceeded` and describes Jev-1.13 as 32k state-plus-longest-question / 64k aggregate. No authenticated oversized request was used to capture a production rejection envelope. See [research and recovery](CONTEXT_RECOVERY.md) for evidence, limits and compatibility rationale.
 
-A batch rejection first isolates a short standalone question. Successful probes allow smaller question batches without changing source. Failed singleton state is a conservative per-file compaction hint, not proof about another question's exact token count. Whole-file questions receive their own attempt before provider-based omission. Compacted unit attempts have bounded rounds and decreasing serialized size; exact rejected bodies are never resubmitted within this executor. A final bare complete target can be tried once under local hard limits before omission. Strict context mode disables compaction.
+Recognized provider size rejection remains a fallback for estimator/tokenizer mismatch. A failed singleton state becomes a conservative per-file compaction hint; exact rejected bodies are never replayed. Unknown request-local HTTP 400/422 responses are instead sanitized and attributed to the affected checks, which are omitted while unrelated requests continue. Three equivalent request-local rejections trip a client-wide circuit breaker and become scan-fatal. Authentication/permission and other systemic failures remain immediately fatal.
 
-An entire target that cannot be evaluated is reported as omitted. There is no hidden chunk-score aggregation or generated summary substituted for target source. Disjoint documents retain original UTF-8 byte/line positions and exact omission coverage. File-level judgments always require the full file. Numeric provider windows are not hard-coded or learned permanently across accounts/model versions.
+An entire target that cannot be evaluated is reported as omitted. There is no hidden chunk-score aggregation or generated summary substituted for target source. Disjoint documents retain original UTF-8 byte/line positions and exact omission coverage. File-level judgments always require the full file. Published model profiles are explicit versioned application data; moving aliases may require a jevscan update, while provider rejection remains the final safeguard.
 
 ## Validation and lifecycle
 
 `core/protocol.py` validates network and cache data once before it enters the trusted pipeline. It rejects missing/extra question IDs, answer-type mismatches, labels absent from criteria, malformed numbers, and out-of-range values. Probabilities are preserved as returned; jevscan does not assume they sum to exactly one or normalize them silently. Jev response fields not used by the application are allowed.
 
-`core/client.py` owns HTTPS/origin restrictions, pooled HTTP connections, rate pacing, retries, and provider-error classification. Arbitrary HTTP 400/401 responses do not trigger context reduction. Transient network errors and retryable status codes follow bounded retries and `Retry-After`; waits exceeding the configured ceiling stop rather than retry early. No submitted bodies or API keys appear in error messages.
+`core/client.py` owns HTTPS/origin restrictions, pooled HTTP connections, rate pacing, retries, provider-error classification, and the request-rejection circuit breaker. Unknown HTTP 400/422 responses do not trigger context reduction; they are request-local until three equivalent failures indicate a systemic problem. HTTP 401/403 and other systemic failures abort. Transient network errors and retryable status codes follow bounded retries and `Retry-After`; waits exceeding the configured ceiling stop rather than retry early. No submitted bodies or API keys appear in error messages.
 
 `core/evaluation.py` owns answers for one active file. It reclassifies cached raw responses using the active reporting policy, assigns answers to exact targets, and emits each target once after its file finishes. Abort/cancellation still emits completed answers and records unanswered checks. File evaluators run concurrently; request batches within a file are sequential. Questions in a shared request remain logically independent; a question cannot consume another answer from that same request.
 
@@ -108,7 +110,7 @@ Raw-answer cache keys include endpoint, canonical request body, package version,
 
 ## Machine reports
 
-Report schema **6** is separate from configuration schema **4**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/coverage/diagnostic/evaluation events, and a final `summary`, flushing each event.
+Report schema **7** is separate from configuration schema **4**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/coverage/diagnostic/evaluation events, and a final `summary`, flushing each event.
 
 An `evaluation` event contains:
 
@@ -121,7 +123,7 @@ An `evaluation` event contains:
 | `uncertainty_reasons`, `reviews` | Decision reasons and an auditable, bounded enrichment history |
 | `findings` | Confidence-qualified warning/error findings, each with `target`; these alone determine `--fail-on` |
 | `tentative_findings` | Indicated warning/error signals that remain `unknown`; same item structure, never duplicated in `findings` |
-| `context_selection` | Local recovery/relevance audit, separate from post-answer enrichment reviews |
+| `context_selection` | Local recovery/relevance audit, including safe request-local rejection metadata, separate from post-answer enrichment reviews |
 | `evidence` | Per-rule included ranges, original-file omissions, requested context, `context_complete`, `target_complete` |
 | `models` | Model returned for each rule, including separate batches |
 | `cached_rules`, `cached` | Per-rule cache provenance; whole-target cache flag is true only when all checks completed from cache |
@@ -129,6 +131,8 @@ An `evaluation` event contains:
 | `skipped_rules` | Rules with no result and the explicit reason |
 
 `summary.tentative_findings` counts tentative warnings/errors separately; they are already included in `summary.uncertain`. Reviews distinguish the admitted `trigger` from the `initial_reason`. Ordinary intrinsic ambiguity does not request enrichment by default; no review entry means no review was requested, not that a model approved the evidence.
+Schema 7 coverage events add `request_rejected_checks` beside compacted/omitted counts and preserve `aborted`. `summary.request_rejections` counts request-local HTTP 400/422 rejections that were isolated rather than treated as size errors or immediate scan-fatal failures. Request-local rejection details live under the affected rule's `context_selection.request_rejections`; only sanitized machine metadata is retained.
+
 
 The raw source evidence is not copied into machine reports, but target/declaration metadata may still be sensitive. Verbosity, terminal colors, and text display limits never remove machine-report answers. Completion describes software coverage, not proof of semantic correctness; low-confidence and insufficient-evidence judgments remain distinguishable from clean results.
 

@@ -198,6 +198,7 @@ class Summary:
     enrichment_cache_hits: int = 0
     context_reduced: int = 0
     size_rejections: int = 0
+    request_rejections: int = 0
     compaction_calls: int = 0
     compaction_cache_hits: int = 0
     cache_hits: int = 0

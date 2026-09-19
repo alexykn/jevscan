@@ -242,10 +242,10 @@ def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monke
     assert "\x1b" not in text
     if format_name == "json":
         decoded = json.loads(text)
-        assert decoded["schema_version"] == 6 and decoded["events"] == events
+        assert decoded["schema_version"] == 7 and decoded["events"] == events
     else:
         decoded = [json.loads(line) for line in text.splitlines()]
-        assert decoded[0]["schema_version"] == 6 and decoded[1:-1] == events
+        assert decoded[0]["schema_version"] == 7 and decoded[1:-1] == events
 
 
 @pytest.mark.parametrize("width", [32, 80])
@@ -337,7 +337,7 @@ def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
         assert "? test" in text and "probability ambiguous" in text and "no relevant evidence" in text
     else:
         payload = json.loads(text) if format_name == "json" else json.loads(text.splitlines()[0])
-        assert payload["schema_version"] == 6
+        assert payload["schema_version"] == 7
         actual = payload["events"][0] if format_name == "json" else json.loads(text.splitlines()[1])
         assert actual == event
 
@@ -462,6 +462,20 @@ def test_hundreds_of_coverage_details_are_aggregated_without_hiding_real_errors(
     assert "context-reduced" not in stream.getvalue()
     assert "broken.ts:46" in stream.getvalue()
     assert len(stream.getvalue().splitlines()) <= 8
+
+    aborted = io.StringIO()
+    aborted_reporter = Reporter(aborted, "text", _report_metadata(), width=100)
+    aborted_reporter.emit({
+        "event": "coverage",
+        "path": "commit.ts",
+        "context_reduced_targets": 0,
+        "skipped_checks": 1190,
+        "skipped_file_checks": 2,
+        "request_rejected_checks": 0,
+        "aborted": True,
+    })
+    assert "scan aborted — 1190 checks not completed" in aborted.getvalue()
+    assert "context compacted" not in aborted.getvalue()
     machine = io.StringIO()
     reporter = Reporter(machine, "jsonl", _report_metadata())
     reporter.emit({

@@ -10,13 +10,13 @@ from __future__ import annotations
 import hashlib
 from collections import deque
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from jevscan.core.compaction import Compactor
 from jevscan.core.context import Evidence
 from jevscan.core.inference import Inference
 from jevscan.core.planning import Omission, Planner, Request
-from jevscan.core.protocol import Check, ContextLimitError
+from jevscan.core.protocol import Check, ContextLimitError, RequestRejectedError
 
 if TYPE_CHECKING:
     from jevscan.core.evaluation import FileResults
@@ -36,11 +36,11 @@ class FileExecutor:
         self.rejected: dict[str, tuple[int, dict[str, Any]]] = {}
         self.rejected_requests: set[str] = set()
 
-    async def _send(self, attempt: Attempt) -> bool:
+    async def _send(self, attempt: Attempt) -> Literal["accepted", "size_rejected", "request_rejected"]:
         request = attempt.request
         digest = hashlib.sha256(request.body).hexdigest()
         if digest in self.rejected_requests:
-            return False
+            return "size_rejected"
         try:
             prediction = await self.inference.predict(request.body, request.questions)
         except ContextLimitError as exc:
@@ -57,7 +57,11 @@ class FileExecutor:
                 old = self.rejected.get(request.evidence.key)
                 if old is None or length < old[0]:
                     self.rejected[request.evidence.key] = length, exc.metadata()
-            return False
+            return "size_rejected"
+        except RequestRejectedError as exc:
+            self.results.reject(request, exc)
+            self.inference.summary.request_rejections += 1
+            return "request_rejected"
         for check in request.checks:
             trace = self.results.records[check.target.id].context_selection.get(check.rule_id)
             if trace:
@@ -66,7 +70,7 @@ class FileExecutor:
                 )
         response = prediction.response
         self.results.accept(request, response.answers, response.model, prediction.cached)
-        return True
+        return "accepted"
 
     def _split(self, attempt: Attempt) -> list[Attempt]:
         request = attempt.request
@@ -76,6 +80,15 @@ class FileExecutor:
         midpoint = (len(remaining) + 1) // 2
         batches = [(probe,), remaining[:midpoint], remaining[midpoint:]]
         return [Attempt(self.planner.request(request.evidence, batch), attempt.round) for batch in batches if batch]
+
+    def _split_preflight(self, attempt: Attempt) -> list[Attempt]:
+        checks = attempt.request.checks
+        midpoint = len(checks) // 2
+        return [
+            Attempt(self.planner.request(attempt.request.evidence, batch), attempt.round)
+            for batch in (checks[:midpoint], checks[midpoint:])
+            if batch
+        ]
 
     def _pack(self, evidence: Evidence, checks: list[Check], round_number: int) -> list[Attempt]:
         """Preserve shared-state batching when multiple rules choose identical compacted evidence."""
@@ -126,26 +139,40 @@ class FileExecutor:
             item for evidence, checks in groups.values() for item in self._pack(evidence, checks, attempt.round + 1)
         ] + final_attempts
 
+    async def _preflight(self, attempt: Attempt) -> list[Attempt] | None:
+        request = attempt.request
+        known = self.rejected.get(request.evidence.key)
+        blocked = (
+            not attempt.final
+            and known is not None
+            and all(len(self.planner.questions[check.id]) >= known[0] for check in request.checks)
+        )
+        if blocked:
+            assert known is not None
+            for check in request.checks:
+                self.results.recovery(check)["known_rejection"] = known[1]
+            return await self._recover(attempt, "related_request_rejection")
+
+        violations = self.planner.violations(request.evidence, request.checks)
+        if not violations:
+            return None
+        if "context" not in violations and len(request.checks) > 1:
+            return self._split_preflight(attempt)
+        reason = "model_context_preflight" if "context" in violations else "request_limit_preflight"
+        return await self._recover(attempt, reason)
+
     async def run(self) -> None:
         for planned in self.planner.plan():
             pending = deque([Attempt(planned)])
             while pending:
                 attempt = pending.popleft()
                 request = attempt.request
-                known = self.rejected.get(request.evidence.key)
-                blocked = (
-                    not attempt.final
-                    and known is not None
-                    and all(len(self.planner.questions[check.id]) >= known[0] for check in request.checks)
-                )
-                fits = self.planner.fits(request.evidence, request.checks)
-                if blocked or not fits:
-                    reason = "related_request_rejection" if blocked else "configured_request_limit"
-                    if known is not None:
-                        for check in request.checks:
-                            self.results.recovery(check)["known_rejection"] = known[1]
-                    pending.extendleft(reversed(await self._recover(attempt, reason)))
-                elif not await self._send(attempt):
+                recovery = await self._preflight(attempt)
+                if recovery is not None:
+                    pending.extendleft(reversed(recovery))
+                    continue
+                outcome = await self._send(attempt)
+                if outcome == "size_rejected":
                     recovery = (
                         self._split(attempt)
                         if len(request.checks) > 1

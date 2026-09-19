@@ -40,6 +40,37 @@ class ContextLimitError(JevError):
         return {"status": self.status, "code": self.code, "request_id": self.request_id}
 
 
+class RequestRejectedError(JevError):
+    """A request-local 400/422 rejection with sanitized machine metadata only."""
+
+    def __init__(
+        self,
+        *,
+        status: int,
+        machine_fields: dict[str, tuple[str, ...]],
+        request_id: str,
+        fingerprint: str,
+    ) -> None:
+        super().__init__(f"Jev rejected one request (HTTP {status})")
+        self.status = status
+        self.machine_fields = machine_fields
+        self.request_id = request_id
+        self.fingerprint = fingerprint
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "machine_fields": {key: list(values) for key, values in self.machine_fields.items()},
+            "request_id": self.request_id,
+            "fingerprint": self.fingerprint,
+        }
+
+    @property
+    def signature(self) -> tuple[Any, ...]:
+        fields = tuple((key, values) for key, values in sorted(self.machine_fields.items()))
+        return (self.status, fields, self.fingerprint if not fields else "")
+
+
 class WireModel(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True, strict=True, allow_inf_nan=False)
 
