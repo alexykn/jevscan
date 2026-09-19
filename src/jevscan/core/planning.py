@@ -4,7 +4,6 @@ import math
 from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
-from itertools import islice
 
 from jevscan.core.config import Config, EvaluationConfig
 from jevscan.core.context import ContextBuilder, Evidence
@@ -54,8 +53,8 @@ class RequestBudget:
         context, total, size = self.estimate(state, questions)
         return (
             len(questions) <= self.limits.max_questions
-            and context <= self.limits.max_context_tokens
-            and total <= self.limits.max_total_tokens
+            and (self.limits.max_context_tokens is None or context <= self.limits.max_context_tokens)
+            and (self.limits.max_total_tokens is None or total <= self.limits.max_total_tokens)
             and size <= self.limits.max_request_bytes
         )
 
@@ -75,6 +74,7 @@ class Planner:
     def __init__(self, context: ContextBuilder, config: Config) -> None:
         self.context = context
         self.limits = config.evaluation
+        self.compaction = config.compaction
         self.budget = RequestBudget(config.evaluation, config.jev.model)
         self.checks = self._checks(config)
         self.questions = {check.id: encode(check.question()) for check in self.checks}
@@ -116,30 +116,14 @@ class Planner:
         body = self.budget.body(evidence.encoded, self._encoded_questions(checks))
         return Request(evidence, checks, body)
 
-    def _select(self, check: Check) -> Evidence | None:
-        variants = self.context.variants(check)
-        if self.limits.oversized_context == "skip":
-            variants = islice(variants, 1)
-        return next((evidence for evidence in variants if self.fits(evidence, (check,))), None)
-
-    def plan(self) -> Iterator[Request | Omission]:
+    def plan(self) -> Iterator[Request]:
+        # Group by requested lexical spans, not retained copies of every large owner.
         groups: dict[tuple[int, int], list[Check]] = defaultdict(list)
         for check in self.checks:
-            evidence = self._select(check)
-            if evidence is None:
-                variants = tuple(self.context.variants(check))
-                candidate = variants[0] if self.limits.oversized_context == "skip" else variants[-1]
-                context_tokens, _, body_bytes = self.estimate(candidate, (check,))
-                yield Omission(
-                    check,
-                    f"complete target plus question needs approximately {context_tokens:,} tokens "
-                    f"(context budget {self.limits.max_context_tokens:,}) and {body_bytes:,} request bytes "
-                    f"(byte budget {self.limits.max_request_bytes:,}); target was not truncated",
-                )
-            else:
-                groups[evidence.key].append(check)
-        for key, checks in groups.items():
-            evidence = self.context.envelope(*key)
+            target = self.context.requested_target(check)
+            groups[(target.start_byte, target.end_byte)].append(check)
+        for checks in groups.values():
+            evidence = self.context.requested(checks[0])
             pending: tuple[Check, ...] = ()
             for check in checks:
                 candidate = (*pending, check)
@@ -149,20 +133,3 @@ class Planner:
                 pending = (*pending, check)
             if pending:
                 yield self.request(evidence, pending)
-
-    def recover(self, request: Request) -> tuple[Request | Omission, ...]:
-        """Every recovery reduces questions or source extent. Never truncate a target."""
-        if len(request.checks) > 1:
-            midpoint = len(request.checks) // 2
-            return (
-                self.request(request.evidence, request.checks[:midpoint]),
-                self.request(request.evidence, request.checks[midpoint:]),
-            )
-        check = request.checks[0]
-        if self.limits.oversized_context == "reduce":
-            after_current = False
-            for evidence in self.context.variants(check):
-                if after_current and self.fits(evidence, (check,)):
-                    return (self.request(evidence, (check,)),)
-                after_current |= evidence.key == request.evidence.key
-        return (Omission(check, "provider context limit rejects this complete target; no smaller evidence fits"),)

@@ -141,7 +141,8 @@ Benign Choice labels and missing-evidence labels never acquire an invented defec
 |---|---|
 | scan | Existing five-language include patterns and dependency/build excludes; respect_gitignore=true; jobs=0 (up to 8 parsers); batch_size=8; queue_size=8; max_file_bytes=2000000; max_units_per_file=10000 |
 | jev | model="jev-latest"; concurrency=16; requests_per_minute=600; timeout_seconds=30; retries=3; max_retry_delay=60 |
-| evaluation | max_context_tokens=28000; max_total_tokens=56000; token_reserve=512; bytes_per_token=3.0; max_request_bytes=1048576; max_questions=64; oversized_context="reduce" |
+| evaluation | max_context_tokens=null; max_total_tokens=null; token_reserve=512; bytes_per_token=3.0; max_request_bytes=1048576; max_questions=64; oversized_context="reduce" |
+| compaction | context_tokens=24000; max_rounds=3; max_candidates=32; max_calls_per_file=12; semantic=true |
 | enrichment | enabled=true; max_checks_per_file=12; max_calls_per_file=36; max_candidates=12; max_evidence=3; max_source_files=1000; max_source_bytes=16777216 |
 | cache | enabled=true; path=".jevscan-cache/results.sqlite3"; ttl_seconds=86400 |
 
@@ -189,3 +190,31 @@ rules:
 ```
 
 There is no automatic rewrite or hidden legacy evaluator; the migration changes schema and selection semantics, not serialization. Migration errors are preferable to silently changing which checks a project runs. Numerical defaults were not retuned in rc4.
+
+
+## RC5 context recovery (configuration stays YAML v4)
+
+```yaml
+evaluation:
+  max_context_tokens: null
+  max_total_tokens: null
+  max_request_bytes: 1048576
+  max_questions: 64
+  oversized_context: reduce
+compaction:
+  context_tokens: 24000
+  max_rounds: 3
+  max_candidates: 32
+  max_calls_per_file: 12
+  semantic: true
+```
+
+`null` disables only the optional local estimated-token gate, not byte/question limits or provider limits. Existing projects that explicitly set 28,000/56,000 retain those hard limits; change them to `null` to adopt full-evidence probing. The two hard token limits are independently optional; when both are set, aggregate must be at least context. `token_reserve` and `bytes_per_token` still apply to estimates. These numbers are not a provider tokenizer.
+
+`compaction.context_tokens` is a **recovery target**, not a preflight model limit. Subsequent attempts halve that target and reduce serialized bytes below the previous rejected request. `max_rounds` bounds compacted evaluation attempts (1–8), `max_candidates` caps the syntax-derived local pool (1–128), and `max_calls_per_file` caps auxiliary selection requests, including cache hits (0–256). `semantic: false` or a zero call budget leaves deterministic AST selection enabled. A final complete-target-only attempt can still be made if it satisfies user hard limits and was not already rejected. `oversized_context: skip` disables both forms of context reduction.
+
+Compaction selects source from the already parsed file only. It never silently expands sharing to other files. Ordinary enrichment still uses its separately documented root-level search and budgets. `--no-enrichment` therefore does not disable local recovery or its optional relevance judgments. Offline mode performs neither.
+
+Auxiliary relevance instructions are assembled from `Check.auxiliary`: exact target metadata and the full active `rule.question`, including all criteria. Report thresholds/messages are not injected as semantic instructions, and neither an earlier verdict nor ranking scores enter the final assessment state. Changing a rule question or selected source changes cache identity. Compaction/recovery audits record source spans, budgets, candidate omissions, raw relevance answers, request hashes and explicit stops.
+
+Report schema **6** adds `target.display_name`, `context_selection`, file `coverage` events, and `size_rejections` / `compaction_calls` / `compaction_cache_hits` counters. Existing rule IDs and confirmed/tentative result meanings remain unchanged. Detailed diagnostics remain in machine reports; normal and verbose text summarize routine coverage by file. Reduced contexts and skipped targets still set incomplete status. Unsupported syntax errors are not suppressed or reclassified as successful analysis.

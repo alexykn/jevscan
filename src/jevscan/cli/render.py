@@ -5,7 +5,7 @@ from typing import Any, TextIO
 
 from jevscan.cli.terminal import BOLD, CYAN, DIM, GREEN, KIND_STYLE, LEVEL_MARKER, LEVEL_STYLE, RED, YELLOW, Terminal
 
-REPORT_SCHEMA_VERSION = 5
+REPORT_SCHEMA_VERSION = 6
 
 
 class Reporter:
@@ -72,19 +72,21 @@ class Reporter:
         self.shown += 1
         return True
 
-    def _target_header(self, target: dict[str, Any], cached: bool = False) -> None:
-        path = target["path"]
+    def _file_header(self, path: str) -> None:
         if path != self.current_path:
             if self.current_path is not None:
                 self.stream.write("\n")
             self.current_path = path
             self.terminal.write(path, style=BOLD)
+
+    def _target_header(self, target: dict[str, Any], cached: bool = False) -> None:
+        self._file_header(target["path"])
         if target.get("scope") == "file":
             marker, style = "FILE", CYAN
             location, name = f"1-{target['end_line']}", "whole file"
         else:
             marker, style = KIND_STYLE[target["kind"]]
-            location, name = str(target["start_line"]), target["qualified_name"]
+            location, name = str(target["start_line"]), target.get("display_name") or target["qualified_name"]
         self.terminal.header(marker, location, name, cached, style)
 
     @staticmethod
@@ -141,7 +143,18 @@ class Reporter:
             self._target_header(event["unit"])
         elif event["event"] == "evaluation":
             self._evaluation(event)
+        elif event["event"] == "coverage":
+            self._file_header(event["path"])
+            self.terminal.write(
+                f"coverage — context compacted for {event['context_reduced_targets']} targets; "
+                f"{event['skipped_checks']} checks omitted ({event['skipped_file_checks']} file checks)",
+                2,
+                YELLOW,
+            )
         elif event["event"] == "diagnostic":
+            if event["code"] in {"context-reduced", "evaluation-size-limit"}:
+                return  # The file coverage event preserves visibility without flooding findings.
+
             location = event["path"]
             if location and event.get("line"):
                 location += f":{event['line']}"
@@ -189,6 +202,12 @@ class Reporter:
             f"elapsed={summary['elapsed_seconds']:.2f}s",
             style=DIM,
         )
+        if summary["size_rejections"] or summary["compaction_calls"]:
+            self.terminal.write(
+                f"context: size-rejections={summary['size_rejections']} compact-selection-calls={summary['compaction_calls']} "
+                f"cached={summary['compaction_cache_hits']}",
+                style=DIM,
+            )
         if summary["enrichment_reviewed"]:
             self.terminal.write(
                 f"enrichment: reviewed={summary['enrichment_reviewed']} rerun={summary['enrichment_reruns']} "

@@ -21,19 +21,30 @@ from jevscan.core.protocol import ContextLimitError, JevError, JevResponse, vali
 from jevscan.core.rules import Question
 
 
-def _context_rejected(response: httpx.Response) -> bool:
-    if response.status_code == 413:
-        return True
-    if response.status_code not in {400, 422}:
-        return False
-    try:
-        body = response.json()
-    except ValueError:
-        return False
-    if not isinstance(body, dict):
-        return False
-    error = body.get("error", body)
-    return isinstance(error, dict) and error.get("code") == "max_tokens_exceeded"
+def _context_rejection(response: httpx.Response) -> ContextLimitError | None:
+    """Recognize explicit size signals, never free-text guesses or arbitrary validation failures."""
+    code = "content_too_large" if response.status_code == 413 else ""
+    if response.status_code in {400, 422}:
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        if isinstance(body, dict):
+            fields = (body, body.get("error"), body.get("detail"))
+            if any(
+                value == "max_tokens_exceeded"
+                if isinstance(value, str)
+                else isinstance(value, dict) and value.get("code") == "max_tokens_exceeded"
+                for value in fields
+            ):
+                code = "max_tokens_exceeded"
+    if not code:
+        return None
+    request_id = response.headers.get("x-typesafe-request-id", "")[:100]
+    request_id = "".join(c for c in request_id if c.isalnum() or c in "-_")
+    return ContextLimitError(
+        "Jev rejected the request's context size", status=response.status_code, code=code, request_id=request_id
+    )
 
 
 class RequestLimiter:
@@ -129,8 +140,9 @@ class JevClient:
                 continue
             if response.is_success:
                 return validate_response(response.content, questions)
-            if _context_rejected(response):
-                raise ContextLimitError("Jev rejected the request's context size")
+            rejection = _context_rejection(response)
+            if rejection is not None:
+                raise rejection
             retryable = response.status_code in {408, 429} or response.status_code >= 500
             if not retryable or attempt == self.config.retries:
                 request_id = response.headers.get("x-typesafe-request-id", "unavailable")[:100]

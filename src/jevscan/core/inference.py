@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from jevscan.core.cache import AnswerCache, cache_key
 from jevscan.core.client import JevClient
 from jevscan.core.models import Summary
-from jevscan.core.protocol import JevResponse, validate_response
+from jevscan.core.protocol import ContextLimitError, JevResponse, validate_response
 from jevscan.core.rules import Question
 
 
@@ -21,7 +21,11 @@ class Inference:
     cache: AnswerCache | None
     summary: Summary
 
-    async def predict(self, body: bytes, questions: dict[str, Question], *, enrichment: bool = False) -> Prediction:
+    async def predict(
+        self, body: bytes, questions: dict[str, Question], *, enrichment: bool = False, compaction: bool = False
+    ) -> Prediction:
+        if compaction:
+            self.summary.compaction_calls += 1
         if enrichment:
             self.summary.enrichment_calls += 1
         key = cache_key(self.client.base_url, body)
@@ -30,8 +34,13 @@ class Inference:
             response = validate_response(raw, questions)
             self.summary.cache_hits += 1
             self.summary.enrichment_cache_hits += enrichment
+            self.summary.compaction_cache_hits += compaction
             return Prediction(response, True)
-        response = await self.client.evaluate(body, questions)
+        try:
+            response = await self.client.evaluate(body, questions)
+        except ContextLimitError:
+            self.summary.size_rejections += 1
+            raise
         self.summary.input_tokens += response.usage.input_tokens or 0
         self.summary.output_tokens += response.usage.output_tokens or 0
         if self.cache:
