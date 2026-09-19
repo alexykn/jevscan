@@ -77,9 +77,13 @@ rules:
     require_body: true
     question:
       type: noul
-      instructions: Does `source` interleave independently meaningful responsibilities in a way that makes this
-        operation harder to understand? Do not flag a cohesive orchestration function merely because it calls several
-        different operations. Length alone is not evidence.
+      instructions: Does the target interleave two or more independently meaningful responsibilities inside one
+        operation, rather than only orchestrating cohesive steps?
+      criteria:
+        "true": The target implements multiple independently meaningful responsibilities whose control or state handling
+          is interleaved.
+        "false": The target has one coherent responsibility or only delegates cohesive steps; no concrete interleaving is
+          shown.
     report:
       message: This operation appears to interleave responsibilities that would be clearer as distinct operations.
       uncertain_range: [0.4, 0.6]
@@ -99,12 +103,12 @@ rules:
     require_body: true
     question:
       type: score
-      instructions: How difficult is the main execution path through `source` to follow? Distinguish unavoidable
-        domain branching from avoidable structural confusion.
-      criteria: ['Clear execution path and explicit transitions, including necessary domain branching.', 'Mostly
-          clear, with some local complexity that does not obscure the operation.', Interleaved concerns or nested
-          branches substantially obscure the operation., Tangled control flow makes the operation and its important
-          transitions difficult to determine.]
+      instructions: Select the level that describes how many important execution transitions in the target are
+        obscured by its control-flow structure. Judge path traceability, not domain difficulty or line count.
+      criteria: ['0: The main path and each important transition are direct and explicit.',
+        '1: One local nesting or branch complication exists, but all important transitions remain easy to trace.',
+        '2: Multiple nested or interleaved branches obscure at least one important transition.',
+        '3: Important transitions are scattered or tangled enough that the main path cannot be reconstructed directly.']
     report:
       message: Interleaved concerns or nesting appear to obscure the main execution path.
       levels:
@@ -125,9 +129,13 @@ rules:
     require_body: true
     question:
       type: noul
-      instructions: Does `source` mix high-level orchestration with substantial low-level parsing, resource bookkeeping,
-        or implementation detail such that the main operation is obscured? A small necessary detail or explicit
-        cleanup does not by itself establish a problem.
+      instructions: Does the target mix high-level orchestration with a substantial low-level implementation concern
+        that obscures its primary operation?
+      criteria:
+        "true": The target interleaves orchestration with substantial parsing, resource bookkeeping, or other low-level
+          detail.
+        "false": The target stays at one abstraction level, or its small necessary details and cleanup do not obscure the
+          primary operation.
     report:
       message: High-level orchestration appears mixed with substantial low-level implementation detail.
       uncertain_range: [0.4, 0.6]
@@ -145,22 +153,23 @@ rules:
     context: owner
     applies_to: [function, method, closure]
     require_body: true
+    applicability:
+      requires_any: [validation_candidate]
+    targeted_enrichment:
+      when_choices: [insufficient_context]
     question:
       type: choice
-      instructions: Which statement about repeated validation in `source` is supported by the supplied code? First
-        determine whether the target visibly performs a validation or recheck that could plausibly duplicate an earlier
-        guarantee. If no such repeated check is visible, choose justified_or_absent; do not use insufficient_context
-        merely because callers or contracts are absent. Only choose insufficient_context when a concrete repeated check
-        is visible and deciding whether it is redundant requires a missing upstream guarantee or intervening
-        boundary, mutation, or concurrency. Type annotations, names, and absent callers do not prove an invariant.
+      instructions: Select exactly one outcome for repeated validation in the target. A repeated check is visible only
+        when two validation operations can be identified. If no repeated validation is visible, choose
+        justified_or_absent. Use insufficient_context only when a repeated validation is visible but the missing
+        guarantee or boundary fact determines its classification.
       criteria:
-        demonstrably_redundant: The supplied implementation explicitly establishes an invariant and later rechecks
-          it without a new boundary or invalidating operation.
-        justified_or_absent: There is no repeated check, or the repeated check protects a real boundary or invalidation
-          risk.
-        insufficient_context: A concrete repeated validation is visible, but whether it duplicates an earlier guarantee
-          cannot be decided because the necessary upstream guarantee or intervening behavior is missing from the
-          supplied evidence.
+        demonstrably_redundant: A visible operation establishes a specific invariant and the target later checks that
+          same invariant again without a new boundary, mutation, or concurrency risk.
+        justified_or_absent: No repeated validation is visible, or every visible repeat follows a new boundary or
+          possible invalidation.
+        insufficient_context: A concrete repeated validation is visible, but the missing upstream guarantee or boundary
+          fact is required to choose between redundant and justified_or_absent.
     report:
       message: A validation check appears to repeat an invariant explicitly established in the supplied code.
       choices: [demonstrably_redundant]
@@ -181,20 +190,23 @@ rules:
     context: owner
     applies_to: [function, method, closure]
     require_body: true
+    applicability:
+      requires_any: [fallback_candidate]
+    targeted_enrichment:
+      when_choices: [insufficient_context]
     question:
       type: choice
-      instructions: Does a default value, swallowed exception, best-effort continuation, or similar fallback in
-        `source` conceal a violation of an internal invariant? First identify such behavior in the target. If none is
-        visible, choose legitimate_behavior; do not use insufficient_context merely because callers, contracts, or
-        invariants outside the file are absent. Only choose insufficient_context when the fallback behavior is visible
-        but deciding whether it conceals a bug requires a missing invariant or intended failure contract. Legitimate
-        I/O failures, cancellation, user input errors, and documented optional behavior are not invariant violations.
+      instructions: Select exactly one outcome for fallback or swallowed-failure behavior visible in the target. A
+        fallback behavior is visible only when a fallback, swallowed failure, or best-effort continuation is concrete.
+        If no such behavior is visible, choose legitimate_behavior. Use insufficient_context only when the visible
+        behavior needs a missing invariant or failure contract to classify.
       criteria:
-        concealed_bug: A clearly established internal invariant is violated and the implementation silently conceals
-          it.
-        legitimate_behavior: The behavior handles a legitimate runtime condition or no such concealment is present.
-        insufficient_context: A concrete fallback, swallowed failure, or best-effort continuation is visible, but the
-          invariant or intended failure behavior needed to classify it cannot be established from the supplied evidence.
+        concealed_bug: A visible fallback or swallowed failure silently hides a violation of an invariant established by
+          the supplied evidence.
+        legitimate_behavior: No fallback or swallowed failure is visible, or the behavior handles a legitimate runtime
+          condition such as I/O failure, cancellation, input error, or documented optional behavior.
+        insufficient_context: A concrete fallback or swallowed failure is visible, but a missing invariant or intended
+          failure contract is required to choose between concealed_bug and legitimate_behavior.
     report:
       message: A fallback or swallowed failure appears to conceal a violation of an established internal invariant.
       choices: [concealed_bug]
@@ -215,23 +227,25 @@ rules:
     target: unit
     context: owner
     applies_to: [class, impl, package, module]
+    applicability:
+      requires_any: [helper_relationship]
+    targeted_enrichment:
+      when_choices: [insufficient_context]
     question:
       type: choice
-      instructions: Do the helpers visible in `source` make their callers easier to understand by naming coherent
-        operations, or mainly add forwarding or line-splitting indirection? First determine whether the target actually
-        contains helper decomposition relevant to this question. If no such decomposition is present, choose
-        not_applicable. If the visible caller/helper relationship is sufficient, choose meaningful or
-        needless_indirection. Only choose insufficient_context when helper decomposition is visibly present but missing
-        helper implementations or callers are required to distinguish those outcomes. Small helpers, interface adapters,
-        decorators, and required protocol methods are not inherently bad.
+      instructions: Select exactly one outcome for helper decomposition in the target. helper decomposition is visibly
+        present only when an implemented caller/helper relationship is visible. If no caller/helper decomposition is
+        visible, choose not_applicable. If it is visible but a missing implementation or caller is needed to classify
+        it, choose insufficient_context.
       criteria:
-        meaningful: Decomposition gives coherent operations meaningful names or serves an evident interface requirement.
-        needless_indirection: Visible helpers mainly move lines or forward arguments without hiding meaningful detail,
-          and visibly make the caller harder to follow.
-        not_applicable: No helper decomposition is present in the target; a data-only type, exception, enum or interface
-          declaration is not a decomposition defect.
-        insufficient_context: Helper decomposition is visibly present, but a relevant helper implementation or caller
-          needed to distinguish meaningful decomposition from needless indirection is missing from the supplied evidence.
+        meaningful: Each visible helper hides a coherent operation behind a meaningful name or satisfies an evident
+          interface requirement, and the caller is clearer.
+        needless_indirection: Visible helpers only forward arguments or move lines without hiding meaningful detail,
+          and the caller is less clear because of that indirection.
+        not_applicable: No helper decomposition is visible in the target; data-only types and declarations are not
+          decomposition defects.
+        insufficient_context: Helper decomposition is visibly present, but a missing helper implementation or caller
+          is required to distinguish meaningful from needless_indirection.
     report:
       message: Helper indirection appears to obscure the caller without providing meaningful decomposition.
       choices: [needless_indirection]
@@ -253,10 +267,13 @@ rules:
     context: file
     question:
       type: noul
-      instructions: Does `source` maintain duplicate authoritative state or distribute lifecycle bookkeeping across
-        conflicting owners in a way that visibly creates synchronization obligations? Derived caches and deliberately
-        synchronized representations are not problems merely because data is repeated; require a concrete ownership
-        conflict in the supplied implementation.
+      instructions: Does the file assign the same authoritative state or lifecycle bookkeeping to conflicting owners,
+        creating a concrete synchronization obligation?
+      criteria:
+        "true": Two or more owners visibly act as authoritative for the same state or lifecycle transition, creating a
+          synchronization obligation.
+        "false": State has one authoritative owner, or repeated data is a derived cache or deliberately synchronized
+          representation without a concrete ownership conflict.
     report:
       message: State or lifecycle bookkeeping appears to have competing authoritative owners.
       uncertain_range: [0.4, 0.6]
@@ -273,11 +290,17 @@ rules:
     target: unit
     context: owner
     applies_to: [class, impl, package, module]
+    applicability:
+      requires_any: [executable_behavior]
     question:
       type: noul
-      instructions: Does this owner in `source` combine unrelated responsibilities whose state and behavior have
-        little meaningful connection? A domain aggregate, a cohesive facade, or one implementation of a required
-        interface is not incohesive merely because it contains many methods.
+      instructions: Does this owner combine two or more unrelated responsibilities with weakly connected state or
+        behavior?
+      criteria:
+        "true": The owner contains multiple responsibilities with weakly connected state or behavior and no clear
+          cohesive boundary.
+        "false": The owner is cohesive, a domain aggregate or facade, or one implementation of a required interface;
+          method count alone is not evidence.
     report:
       message: This owner appears to combine unrelated state and behavior.
       uncertain_range: [0.4, 0.6]
@@ -295,9 +318,14 @@ rules:
     context: file
     question:
       type: noul
-      instructions: Does `source` contain materially duplicated implementations of the same owned behavior, creating
-        a clear maintenance obligation to keep them in sync? Similar syntax alone, distinct trust boundaries, or
-        required trait/interface implementations are insufficient.
+      instructions: Does the file contain materially duplicated implementations of the same owned behavior, creating a
+        maintenance obligation to keep them in sync? Similar syntax alone, distinct trust boundaries, and required
+        trait/interface implementations are insufficient.
+      criteria:
+        "true": At least two implementations contain materially duplicated owned behavior with a concrete obligation to
+          keep them synchronized.
+        "false": No implementation is materially duplicated behavior, or similarity is explained by a distinct boundary
+          or required implementation.
     report:
       message: The same owned behavior appears implemented more than once and may need to be maintained in sync.
       uncertain_range: [0.4, 0.6]

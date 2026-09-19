@@ -9,7 +9,17 @@ from pathlib import Path
 from typing import Any, cast
 
 from jevscan.core.languages import SPECS
-from jevscan.core.models import CALLABLE_KINDS, Diagnostic, FileJob, Kind, ParsedFile, Reference, Severity, Unit
+from jevscan.core.models import (
+    CALLABLE_KINDS,
+    Diagnostic,
+    FileJob,
+    Kind,
+    ParsedFile,
+    Reference,
+    Severity,
+    SyntaxFact,
+    Unit,
+)
 from jevscan.core.syntax import callback_label, source_blocks
 
 
@@ -166,7 +176,57 @@ _NAME_NODES = frozenset({
     "function",
     "method",
 })
-_CALL_NODES = frozenset({"call", "call_expression", "function_call_expression", "method_call_expression"})
+_CALL_NODES = frozenset({
+    "call",
+    "call_expression",
+    "func1op_call_expression",
+    "function_call_expression",
+    "method_call_expression",
+})
+_VALIDATION_NODES = _CALL_NODES | frozenset({
+    "assert_expression",
+    "assert_statement",
+    "binary_expression",
+    "boolean_operator",
+    "comparison_expression",
+    "comparison_operator",
+    "conditional_expression",
+    "conditional_statement",
+    "if_expression",
+    "if_statement",
+    "in_operator",
+    "is_operator",
+    "macro_invocation",
+    "match_expression",
+    "type_check",
+    "unary_expression",
+    "unless_statement",
+})
+_FALLBACK_NODES = _CALL_NODES | frozenset({
+    "assignment_expression",
+    "binary_expression",
+    "boolean_operator",
+    "catch_clause",
+    "coalesce_expression",
+    "conditional_expression",
+    "conditional_statement",
+    "default_parameter",
+    "else_clause",
+    "eval_expression",
+    "except_clause",
+    "finally_clause",
+    "if_expression",
+    "if_statement",
+    "macro_invocation",
+    "match_expression",
+    "optional_parameter",
+    "rescue_clause",
+    "try_expression",
+    "try_statement",
+    "unless_statement",
+})
+_SENTINEL_NODES = frozenset({"none", "null", "undefined", "undef", "undef_expression"})
+_SENTINEL_NAMES = frozenset({"None", "null", "undefined", "undef"})
 
 
 def _callee_name(node: Any, source: bytes) -> str | None:
@@ -227,7 +287,98 @@ def _has_implementation(symbol: _Symbol) -> bool:
     return False
 
 
-def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: list[int]) -> tuple[Unit, ...]:
+def _syntax_node_types(node: Any) -> frozenset[str]:
+    pending = [node]
+    result: set[str] = set()
+    while pending:
+        current = pending.pop()
+        result.add(current.type)
+        pending.extend(current.named_children)
+    return frozenset(result)
+
+
+def _contains_sentinel(node: Any, source: bytes) -> bool:
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        if current.type in _SENTINEL_NODES:
+            return True
+        if current.type in _NAME_NODES and not current.named_children and _text(current, source) in _SENTINEL_NAMES:
+            return True
+        pending.extend(current.named_children)
+    return False
+
+
+def _syntax_facts(symbol: _Symbol, node_types: frozenset[str], source: bytes) -> tuple[SyntaxFact, ...]:
+    """Record broad syntactic admission facts; semantic classification remains with Jev."""
+    facts: set[SyntaxFact] = set()
+    if node_types & _VALIDATION_NODES:
+        facts.add("validation_candidate")
+    if node_types & _FALLBACK_NODES or _contains_sentinel(symbol.node, source):
+        facts.add("fallback_candidate")
+    if symbol.kind in CALLABLE_KINDS and _has_implementation(symbol):
+        facts.add("executable_behavior")
+    return tuple(sorted(facts))
+
+
+def _calls_by_callable(units: list[Unit], references: tuple[Reference, ...]) -> dict[str, set[str]]:
+    callables = iter(unit for unit in units if unit.kind in CALLABLE_KINDS and unit.has_implementation)
+    following = next(callables, None)
+    stack: list[Unit] = []
+    result: dict[str, set[str]] = defaultdict(set)
+    for reference in sorted((item for item in references if item.kind == "call"), key=lambda item: item.start_byte):
+        while following is not None and following.start_byte <= reference.start_byte:
+            while stack and following.start_byte >= stack[-1].end_byte:
+                stack.pop()
+            stack.append(following)
+            following = next(callables, None)
+        while stack and reference.end_byte > stack[-1].end_byte:
+            stack.pop()
+        if stack:
+            result[stack[-1].id].add(reference.name)
+    return result
+
+
+def _has_helper_relationship(children: list[Unit], calls_by_callable: dict[str, set[str]]) -> bool:
+    ids_by_name: dict[str, set[str]] = defaultdict(set)
+    for child in children:
+        ids_by_name[child.name.rsplit("::", 1)[-1].rsplit(".", 1)[-1]].add(child.id)
+    for caller in children:
+        for called_name in calls_by_callable.get(caller.id, ()):
+            if any(child_id != caller.id for child_id in ids_by_name.get(called_name, ())):
+                return True
+    return False
+
+
+def _finalize_units(
+    units: list[Unit], member_counts: dict[str, int], references: tuple[Reference, ...]
+) -> tuple[Unit, ...]:
+    children_by_parent: dict[str, list[Unit]] = defaultdict(list)
+    for child in units:
+        if child.parent_id:
+            children_by_parent[child.parent_id].append(child)
+    calls_by_callable = _calls_by_callable(units, references)
+    result = []
+    for unit in units:
+        children = [
+            child for child in children_by_parent[unit.id] if child.kind in CALLABLE_KINDS and child.has_implementation
+        ]
+        facts = set(unit.syntax_facts)
+        if children:
+            facts.add("executable_behavior")
+        if len(children) >= 2 and _has_helper_relationship(children, calls_by_callable):
+            facts.add("helper_relationship")
+        result.append(replace(unit, member_count=member_counts[unit.id], syntax_facts=tuple(sorted(facts))))
+    return tuple(result)
+
+
+def _normalize(
+    symbols: list[_Symbol],
+    source: bytes,
+    job: FileJob,
+    branches: list[int],
+    references: tuple[Reference, ...],
+) -> tuple[Unit, ...]:
     # Sorting and this interval stack avoid an O(symbols**2) enclosing-parent search.
     symbols.sort(key=lambda item: (item.start, -item.end))
     newlines = [match.start() for match in re.finditer(b"\n", source)]
@@ -259,6 +410,7 @@ def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: li
         display = parent.display_name + separator + label if parent else label
         if job.language == "perl" and (kind in {Kind.PACKAGE, Kind.CLASS} or "::" in symbol.name):
             display = symbol.name
+        node_types = _syntax_node_types(symbol.node)
         unit = Unit(
             id=f"{job.display_path}:{symbol.start}:{kind}",
             path=job.display_path,
@@ -278,12 +430,13 @@ def _normalize(symbols: list[_Symbol], source: bytes, job: FileJob, branches: li
             body_end_byte=symbol.body.end_byte if symbol.body is not None else None,
             has_implementation=_has_implementation(symbol),
             branch_nodes=bisect_left(branches, symbol.end) - bisect_left(branches, symbol.start),
+            syntax_facts=_syntax_facts(symbol, node_types, source),
         )
         if parent:
             member_counts[parent.id] += 1
         units.append(unit)
         stack.append(unit)
-    return tuple(replace(unit, member_count=member_counts[unit.id]) for unit in units)
+    return _finalize_units(units, member_counts, references)
 
 
 def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> ParsedFile:
@@ -310,7 +463,8 @@ def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> Parsed
     if job.language == "perl":
         _extend_perl_namespaces(symbols)
     branches = sorted(node.start_byte for node in captures.get("branch", []))
-    units = _normalize(symbols, source, job, branches)
+    references = _references(tree.root_node, source)
+    units = _normalize(symbols, source, job, branches, references)
     declarations = tuple(
         _text(node, source)[:1024] for node in sorted(captures.get("import", []), key=lambda n: n.start_byte)[:32]
     )
@@ -320,7 +474,7 @@ def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> Parsed
         source,
         units,
         declarations,
-        references=_references(tree.root_node, source),
+        references=references,
         blocks=source_blocks(tree.root_node, source),
     )
 

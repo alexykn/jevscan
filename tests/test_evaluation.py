@@ -55,6 +55,48 @@ def answer(request: httpx.Request, probability: float = 0.95) -> httpx.Response:
     )
 
 
+async def test_declared_applicability_is_generic_for_renamed_custom_rules(basic_rule: Rule) -> None:
+    rule = Rule.model_validate({
+        **basic_rule.model_dump(),
+        "applicability": {"requires_any": ["fallback_candidate"]},
+    })
+    config = Config(
+        rules={"RENAMED01": rule},
+        evaluation=EvaluationConfig(),
+        jev=JevConfig(requests_per_minute=0, retries=0),
+    )
+    planner = planned("def work(value): return value + 1\n", config)
+    assert planner.applicability_skips
+    sink, summary = Sink(), Summary("live")
+
+    def no_request(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("an inapplicable target must not call Jev")
+
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(no_request)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+    event = next(event for event in sink.events if event["event"] == "evaluation")
+    assert event["applicability_skips"]["RENAMED01"].endswith("(fallback_candidate)")
+    assert not event["skipped_rules"]
+    assert summary.applicability_skips == 1
+    assert summary.not_applicable == 1 and summary.checks_skipped == 0
+    assert not summary.incomplete
+
+
+def test_declared_applicability_is_generic_for_file_rules(basic_rule: Rule) -> None:
+    rule = Rule.model_validate({
+        **basic_rule.model_dump(),
+        "target": "file",
+        "context": "file",
+        "applies_to": [],
+        "applicability": {"requires_any": ["fallback_candidate"]},
+    })
+    config = Config(rules={"CUSTOM_FILE": rule})
+    source = "VALUE = 1\n"
+    planner = planned(source, config)
+    assert not planner.checks
+    assert planner.applicability_skips[planner.context.file.id]["CUSTOM_FILE"].endswith("(fallback_candidate)")
+
+
 def test_large_class_shared_once_with_independent_method_bindings(basic_rule: Rule) -> None:
     source = 'class Coordinator:\n    """BODY_SENTINEL ' + "some background. " * 2300 + '"""\n'
     source += "    def first(self): return self.second()\n    def second(self): return 1\n"
@@ -72,7 +114,37 @@ def test_large_class_shared_once_with_independent_method_bindings(basic_rule: Ru
     body = json.loads(request.body)
     assert body["state"]["documents"][0]["content"] == source.rstrip()
     for check in request.checks:
-        assert body["questions"][check.id]["instructions"]["target"] == check.target.metadata()
+        target = body["questions"][check.id]["instructions"]["target"]
+        assert target == check.target.model_metadata()
+        assert not {"id", "start_byte", "end_byte", "display_name"} & target.keys()
+
+
+async def test_rule_metrics_distinguish_question_bytes_from_shared_request_usage(basic_rule: Rule) -> None:
+    config = configured(basic_rule)
+    planner = planned("class S:\n    def first(self): return 1\n    def second(self): return 2\n", config)
+    sink, summary = Sink(), Summary("live")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": "test",
+                "usage": {"input_tokens": 90, "output_tokens": 3},
+                "answers": {key: {"type": "noul", "noul": 0.1} for key in body["questions"]},
+            },
+        )
+
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+        assert client.requests == 1
+    metrics = [
+        metric for event in sink.events if event["event"] == "evaluation" for metric in event["inference"].values()
+    ]
+    assert len(metrics) == 3 and all(metric["shared_request"] for metric in metrics)
+    assert all(metric["request"]["input_tokens"] == 90 for metric in metrics)
+    assert all(metric["request"]["question_bytes"] > metric["question_bytes"] for metric in metrics)
+    assert len({metric["request"]["request_sha256"] for metric in metrics}) == 1
 
 
 def test_rust_owner_supplies_fields_and_sibling_impls(basic_rule: Rule) -> None:
@@ -291,13 +363,11 @@ def test_utf8_target_ranges_and_exact_request_byte_accounting(basic_rule: Rule) 
         assert isinstance(request, Request)
         assert planner.estimate(request.evidence, request.checks)[2] == len(request.body)
         body = json.loads(request.body)
-        document = body["state"]["documents"][0]
-        evidence = document["content"].encode("utf-8")
         for question in body["questions"].values():
             target = question["instructions"]["target"]
-            relative = target["start_byte"] - document["start_byte"]
-            length = target["end_byte"] - target["start_byte"]
-            assert evidence[relative : relative + length] == source.encode()[target["start_byte"] : target["end_byte"]]
+            assert target["path"] == "sample.py"
+            assert target["start_line"] <= target["end_line"]
+            assert not {"id", "start_byte", "end_byte"} & target.keys()
             assert target["qualified_name"] in {"Café", "Café.méthode"}
 
 
@@ -761,7 +831,10 @@ async def test_mixed_rule_primitives_share_one_owner_request(tmp_path: Path) -> 
             "jev": config.jev.model_copy(update={"requests_per_minute": 0, "retries": 0}),
         }
     )
-    planner = planned("class S:\n    def work(self, value):\n        return value\n", config)
+    planner = planned(
+        "class S:\n    def work(self, value):\n        if value is None:\n            return 0\n        return value\n",
+        config,
+    )
     requests = list(planner.plan())
     method_request = next(
         request for request in requests if any(check.target.qualified_name == "S.work" for check in request.checks)

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Any
 
@@ -5,7 +6,7 @@ import pytest
 import yaml
 
 from jevscan.core.config import ConfigError, default_yaml, load_config, resolved_yaml
-from jevscan.core.rules import ChoiceQuestion
+from jevscan.core.rules import ChoiceQuestion, NoulQuestion
 
 
 def write_config(path: Path, document: dict) -> Path:
@@ -170,8 +171,29 @@ def test_default_context_sensitive_choices_require_visible_phenomena(tmp_path: P
         assert criterion_phrase in question.criteria["insufficient_context"]
 
 
+def test_all_builtin_nouls_declare_native_true_false_criteria(tmp_path: Path) -> None:
+    config = load_config([tmp_path], cwd=tmp_path).config
+    for rule in config.rules.values():
+        if isinstance(rule.question, NoulQuestion):
+            assert rule.question.criteria is not None
+            assert set(rule.question.criteria.model_dump()) == {"true", "false"}
+
+
 def test_default_has_no_personal_document_reference() -> None:
     assert "AGENTS.md" not in default_yaml()
+
+
+def test_readme_yaml_rule_examples_load(tmp_path: Path) -> None:
+    examples = re.findall(r"```yaml\n(.*?)```", Path("README.md").read_text(), re.DOTALL)
+    assert len(examples) >= 6
+    for index, example in enumerate(examples):
+        document = yaml.safe_load(example)
+        if not isinstance(document, dict) or "rules" not in document:
+            continue
+        directory = tmp_path / str(index)
+        directory.mkdir()
+        (directory / "jevscan.yaml").write_text(example)
+        load_config([directory], cwd=directory)
 
 
 @pytest.mark.parametrize("value", ["/tmp/cache.sqlite3", "../cache.sqlite3", "", "."])
@@ -220,6 +242,7 @@ def test_packaged_file_rules(tmp_path):
         {"rules": [{"name": "JEV01", "report": {"uncertain_range": [0.7, 0.4]}}]},
         {"rules": [{"name": "JEV04", "report": {"not_applicable_choices": ["demonstrably_redundant"]}}]},
         {"rules": [{"name": "JEV04", "enrich_on": ["invented"]}]},
+        {"rules": [{"name": "JEV04", "enrichment_families": []}]},
     ],
 )
 def test_enrichment_policy_is_validated_at_configuration_boundary(tmp_path, patch):

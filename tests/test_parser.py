@@ -132,6 +132,96 @@ def test_decorators_nested_owners_and_unicode_byte_ranges() -> None:
     assert method.parent_id == parsed.units[0].id
 
 
+@pytest.mark.parametrize(
+    ("grammar", "language", "source"),
+    [
+        ("python", "python", "def work(x):\n    if x is None:\n        return 0\n    return x\n"),
+        ("rust", "rust", "fn work(x: i32) -> i32 { if x < 0 { return 0; } x }\n"),
+        ("javascript", "javascript", "function work(x) { if (x === null) return 0; return x; }\n"),
+        (
+            "typescript",
+            "typescript",
+            "function work(x: number | null): number { if (x === null) return 0; return x; }\n",
+        ),
+        ("perl", "perl", "sub work { my ($x) = @_; if ($x) { return 0; } return $x; }\n"),
+    ],
+)
+def test_common_validation_and_fallback_constructs_are_admitted(grammar: str, language: str, source: str) -> None:
+    parsed = parse_source(source.encode(), FileJob("sample", "sample", grammar, language))
+    assert not parsed.failed, parsed.diagnostics
+    facts = next(unit.syntax_facts for unit in parsed.units if unit.name == "work")
+    assert {"validation_candidate", "fallback_candidate"} <= set(facts)
+
+
+@pytest.mark.parametrize(
+    ("grammar", "language", "source"),
+    [
+        ("python", "python", "def unavailable():\n    return None\n"),
+        ("rust", "rust", "fn unavailable() -> Option<i32> { None }\n"),
+        ("javascript", "javascript", "function unavailable() { return undefined; }\n"),
+        ("typescript", "typescript", "function unavailable(): number | undefined { return undefined; }\n"),
+        ("perl", "perl", "sub unavailable { return undef; }\n"),
+    ],
+)
+def test_direct_sentinel_returns_are_fallback_candidates(grammar: str, language: str, source: str) -> None:
+    parsed = parse_source(source.encode(), FileJob("sample", "sample", grammar, language))
+    assert not parsed.failed, parsed.diagnostics
+    facts = next(unit.syntax_facts for unit in parsed.units if unit.name == "unavailable")
+    assert "fallback_candidate" in facts
+
+
+@pytest.mark.parametrize(
+    ("grammar", "language", "owner", "source"),
+    [
+        (
+            "python",
+            "python",
+            "Helpers",
+            "class Helpers:\n def public(self): return self.helper()\n def helper(self): return 1\n",
+        ),
+        (
+            "rust",
+            "rust",
+            "impl Helpers",
+            "struct Helpers; impl Helpers { fn public(&self) -> i32 { self.helper() } fn helper(&self) -> i32 { 1 } }\n",
+        ),
+        (
+            "javascript",
+            "javascript",
+            "Helpers",
+            "class Helpers { public() { return this.helper(); } helper() { return 1; } }\n",
+        ),
+        (
+            "typescript",
+            "typescript",
+            "Helpers",
+            "class Helpers { public(): number { return this.helper(); } helper(): number { return 1; } }\n",
+        ),
+        (
+            "perl",
+            "perl",
+            "Helpers",
+            "package Helpers; sub public { return helper(); } sub helper { return 1; }\n",
+        ),
+    ],
+)
+def test_helper_relationship_recognizes_visible_sibling_calls(
+    grammar: str, language: str, owner: str, source: str
+) -> None:
+    parsed = parse_source(source.encode(), FileJob("sample", "sample", grammar, language))
+    assert not parsed.failed
+    units = {unit.qualified_name: unit for unit in parsed.units}
+    assert "helper_relationship" in units[owner].syntax_facts
+
+
+def test_helper_relationship_requires_a_visible_sibling_call() -> None:
+    source = "class Independent:\n def first(self): return 1\n def second(self): return 2\n"
+    parsed = parse_source(source.encode(), FileJob("sample.py", "sample.py", "python", "python"))
+    assert not parsed.failed
+    units = {unit.qualified_name: unit for unit in parsed.units}
+    assert "helper_relationship" not in units["Independent"].syntax_facts
+
+
 def test_syntax_error_is_incomplete_not_clean() -> None:
     parsed = parse_source(b"def broken(:\n", FileJob("broken.py", "broken.py", "python", "python"))
     assert parsed.failed

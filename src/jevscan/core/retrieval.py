@@ -133,6 +133,21 @@ class Candidate:
             }
         return result
 
+    def model_metadata(self) -> dict[str, Any]:
+        """Candidate locator safe to include in model-facing evidence state."""
+        result = {
+            "target": self.target.model_metadata(),
+            "relation": self.relation,
+            "resolution": "lexical_candidate_not_resolved",
+        }
+        if self.reference is not None:
+            result["reference"] = {
+                "name": self.reference.name,
+                "kind": self.reference.kind,
+                "start_line": self.snapshot.parsed.source.count(b"\n", 0, self.reference.start_byte) + 1,
+            }
+        return result
+
     def preview(self) -> dict[str, Any]:
         source = self.snapshot.parsed.source
         anchor = self.reference.start_byte if self.reference is not None else self.target.start_byte
@@ -143,9 +158,9 @@ class Candidate:
         content = source[start : self.target.end_byte].decode("utf-8")
         preview = content[:1200]
         return {
-            **self.metadata(),
+            **self.model_metadata(),
+            "candidate_id": self.id,
             "preview": preview,
-            "preview_start_byte": start,
             "preview_start_line": source.count(b"\n", 0, start) + 1,
             "preview_complete": start == self.target.start_byte and len(content) <= 1200,
         }

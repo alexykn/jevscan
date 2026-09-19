@@ -1,10 +1,12 @@
 """One validated, cached prediction path for scan, compaction, and enrichment questions."""
 
+import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from jevscan.core.cache import AnswerCache, cache_key, judgment_cache_key
-from jevscan.core.client import JevClient
+from jevscan.core.client import JevClient, ReservationUsage
 from jevscan.core.model_limits import TokenCalibration
 from jevscan.core.models import Summary
 from jevscan.core.protocol import Answer, ContextLimitError, JevError, JevResponse, validate_answer, validate_response
@@ -15,6 +17,7 @@ from jevscan.core.rules import Question
 class Prediction:
     response: JevResponse
     cached: bool
+    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -80,13 +83,22 @@ class Inference:
         await self.cache.put_judgments(tuple(entries))
 
     async def predict(
-        self, body: bytes, questions: dict[str, Question], *, enrichment: bool = False, compaction: bool = False
+        self,
+        body: bytes,
+        questions: dict[str, Question],
+        *,
+        enrichment: bool = False,
+        compaction: bool = False,
+        state_bytes: int | None = None,
+        question_bytes: int | None = None,
+        state: dict[str, Any] | None = None,
     ) -> Prediction:
         if compaction:
             self.summary.compaction_calls += 1
         if enrichment:
             self.summary.enrichment_calls += 1
         key = cache_key(self.client.base_url, body)
+        metrics = self._metrics(body, questions, state_bytes, question_bytes, state)
         raw = await self.cache.get(key) if self.cache else None
         if raw is not None:
             response = validate_response(raw, questions)
@@ -95,20 +107,20 @@ class Inference:
             self.summary.compaction_cache_hits += compaction
             if self.calibration is not None:
                 self.calibration.observe(len(body), response.usage.input_tokens)
-            return Prediction(response, True)
+            self._usage(metrics, response)
+            return Prediction(response, True, metrics)
         phase = "compaction" if compaction else "enrichment" if enrichment else "evaluation"
-        reserved_before = self.client.estimated_input_tokens
+        reservation = ReservationUsage()
         try:
-            response = await self.client.evaluate(body, questions)
+            response = await self.client.evaluate(body, questions, reservation=reservation)
         except ContextLimitError:
             self.summary.size_rejections += 1
             raise
         finally:
-            reserved = self.client.estimated_input_tokens - reserved_before
             setattr(
                 self.summary,
                 f"{phase}_reserved_input_tokens",
-                getattr(self.summary, f"{phase}_reserved_input_tokens") + reserved,
+                getattr(self.summary, f"{phase}_reserved_input_tokens") + reservation.input_tokens,
             )
         if self.calibration is not None:
             self.calibration.observe(len(body), response.usage.input_tokens)
@@ -118,4 +130,39 @@ class Inference:
         self.summary.output_tokens += response.usage.output_tokens or 0
         if self.cache:
             await self.cache.put(key, response.model_dump_json().encode())
-        return Prediction(response, False)
+        self._usage(metrics, response)
+        return Prediction(response, False, metrics)
+
+    @staticmethod
+    def _metrics(
+        body: bytes,
+        questions: dict[str, Question],
+        state_bytes: int | None,
+        question_bytes: int | None,
+        state: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        metrics: dict[str, Any] = {
+            "request_sha256": hashlib.sha256(body).hexdigest(),
+            "input_bytes": len(body),
+            "question_count": len(questions),
+            "state_bytes": state_bytes,
+            "question_bytes": question_bytes,
+        }
+        if state is not None:
+            documents = state.get("documents", [])
+            paths = {document.get("path") for document in documents if isinstance(document, dict)}
+            source_bytes = sum(
+                len(document.get("content", "").encode("utf-8"))
+                for document in documents
+                if isinstance(document, dict) and isinstance(document.get("content", ""), str)
+            )
+            metrics["evidence_documents"] = len(documents)
+            metrics["evidence_files"] = len(paths)
+            metrics["evidence_source_bytes"] = source_bytes
+            metrics["evidence_group_density"] = round(len(documents) / max(1, len(paths)), 3)
+        return metrics
+
+    @staticmethod
+    def _usage(metrics: dict[str, Any], response: JevResponse) -> None:
+        metrics["input_tokens"] = response.usage.input_tokens
+        metrics["output_tokens"] = response.usage.output_tokens

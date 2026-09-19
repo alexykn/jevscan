@@ -1,12 +1,12 @@
 # jevscan
 
-A configuration-driven semantic code-quality scanner for **Python, Rust, Perl, TypeScript, and JavaScript**. Tree-sitter extracts source; Jev answers independent typed questions. jevscan does not execute or import the code being scanned.
+jevscan scans Python, Rust, Perl, TypeScript, and JavaScript source. Tree-sitter establishes syntax facts and source
+locations; Jev makes the configured semantic judgments. Source is sent to TypeSafe only during a live scan. Offline
+scans parse files and list discovered units without API calls or cache writes.
 
-**0.2.0rc7** makes paid inference reusable and budgeted. Checks sharing exact evidence stay batched across rules and targets, oversized owner context is compacted before sibling checks fragment, independent requests from a large file can use global concurrency, and validated judgments are cached independently of HTTP batch composition. Targeted rule-specific enrichment, a 3,000-line default ceiling for complete-file semantics, `--plan`, live spending guards, progress reporting, and clean parser-worker interruption make whole-repository scans observable before they spend credits. This is a release candidate, not a claim of calibrated semantic accuracy. [Verification](docs/VERIFICATION.md) separates software checks from live model acceptance.
+## Quick start
 
-## Install and run
-
-Python 3.12 or newer is required. The distribution is `py3-jevscan`; the command and import package are `jevscan`.
+From a source checkout, install Python 3.12 or newer and `uv`:
 
 ```bash
 uv sync --locked
@@ -28,61 +28,81 @@ uv run jevscan src --max-requests 500 --max-cost 0.20
 uv run jevscan src --enrichment-mode off
 ```
 
-An installed wheel works without this checkout:
+To install a built wheel instead of running from the checkout:
 
 ```bash
 uv tool install ./dist/py3_jevscan-0.2.0rc7-py3-none-any.whl
 ```
 
-The pinned `tree-sitter==0.25.2` and `tree-sitter-language-pack==0.13.0` bundle native grammars. Scans never download grammars. Updating these pins requires parser integration tests.
+`TYPESAFE_API_KEY` is read from the environment. It is not accepted in YAML or command-line arguments. Live scans send
+selected source and evidence to the configured TypeSafe endpoint. Review that data-sharing and billing boundary before
+scanning private or large repositories.
 
-## Named rules and additive configuration
+Useful commands:
 
-A project `jevscan.yaml` (or `jevscan.yml`) **adds to the built-in catalogue**. There is no `extends` switch and an empty project configuration does not remove the defaults. Rules merge by their unique `name`; nested settings merge, while lists replace. A new name adds a rule. An existing name overrides only the supplied fields.
+```bash
+uv run jevscan --init-config
+uv run jevscan --show-config
+uv run jevscan --list-rules
+uv run jevscan src --select JEV --ignore JEV09
+uv run jevscan src --rule JEV04 --no-enrichment
+uv run jevscan src --format json -o report.json
+```
+
+`--init-config` refuses to overwrite an existing file. `--show-config` prints the complete resolved YAML. `--list-rules`
+shows names, titles, rulesets, and effective enablement. `--rule` is an alias for `--select`; both can be repeated.
+
+## Results and exit status
+
+Text output shows confirmed warnings and errors by default. Use `-v` to show every answer, including clean and
+uncertain results. JSON and JSONL preserve raw typed answers, target attribution, evidence coverage, skipped-rule
+reasons, enrichment audits, and inference metrics. Each rule entry records its own question bytes and nests the shared
+request's serialized input/state/question bytes and provider `usage.input_tokens`/`usage.output_tokens`. Shared request
+totals must not be summed once per rule; use `request_sha256` to deduplicate them. Provider-reported usage is never
+invented; `--plan` and live budget reservations expose separately labeled conservative estimates.
+
+Exit codes are:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | No confirmed finding at or above `--fail-on`, or `--fail-on never` |
+| `1` | A confirmed finding meets `--fail-on` |
+| `2` | The scan is incomplete or an operational/configuration error occurred |
+
+Reduced evidence, omitted checks, and isolated provider request failures are visible as incomplete coverage. A
+deterministic applicability exclusion counts as not applicable, not as a skipped or incomplete model check; its declared
+missing syntax fact and rule are recorded separately in machine output.
+
+## Configuration
+
+Configuration is YAML in `jevscan.yaml` or `jevscan.yml`. Version 4 is required. Project configuration is additive:
+the packaged JEV01–JEV09 rules remain active unless selected or ignored explicitly. Rules merge by `name`; mappings
+merge recursively and lists replace. There is no `extends` setting.
 
 ```yaml
 version: 4
 lint:
-  ignore: [JEV09]
-rules:
-  - name: JEV02
-    report:
-      levels:
-        warning:
-          min_score: 1.2
-```
-
-Names are stable identities; titles describe the check. The built-in ruleset is `JEV`:
-
-| Name | Title | Target |
-|---|---|---|
-| JEV01 | mixed-responsibilities | unit |
-| JEV02 | unclear-control-flow | unit |
-| JEV03 | mixed-abstraction-levels | unit |
-| JEV04 | redundant-validation | unit |
-| JEV05 | hidden-invariant-failure | unit |
-| JEV06 | unhelpful-decomposition | unit |
-| JEV07 | fragmented-ownership | file |
-| JEV08 | incohesive-owner | unit |
-| JEV09 | duplicated-behavior | file |
-
-Custom rules use the same selection and reporting contracts:
-
-```yaml
+  select: [ALL]
+  ignore: []
 rulesets:
-  TEAM:
-    description: Team-specific conventions
+  project:
+    enabled: true
+    description: Project-specific checks
 rules:
   - name: TEAM01
-    title: blocking-io-in-async-code
-    ruleset: TEAM
+    title: blocking-io-in-async-operation
+    ruleset: project
     target: unit
-    context: file
+    context: owner
     applies_to: [function, method]
+    languages: [python]
     require_body: true
     question:
       type: noul
-      instructions: Does this async operation perform clearly blocking I/O on the event-loop thread?
+      instructions: Does the target perform clearly blocking I/O on the event-loop thread?
+      criteria:
+        "true": The target performs blocking I/O without an explicit offload or nonblocking boundary.
+        "false": The target is nonblocking, explicitly offloaded, or no blocking I/O is visible.
     report:
       message: Review blocking I/O in this async operation.
       uncertain_range: [0.4, 0.6]
@@ -93,21 +113,220 @@ rules:
           min_probability: 0.95
 ```
 
-This adds `TEAM01` without removing `JEV01`–`JEV09`. A rule without `ruleset` belongs to the built-in empty `project` group. Other groups must be declared. To disable a whole set, set `enabled: false` under `rulesets.TEAM`; to disable a rule, override its `enabled: false`. `ignore: [TEAM]` under `lint` also suppresses the whole set. To run only custom rules, explicitly use `select: [TEAM]` under `lint`. Definitions remain available for inspection.
+### Rule fields
 
-Selectors accept exact rule names, exact ruleset names, or `ALL`, not arbitrary prefixes or globs. Ignore wins; `enabled: false` on either a rule or its set also wins. Unknown selectors and duplicate rule names are errors, not silently ignored typos.
+Every rule needs a unique `name`, a `question`, and a `report`. `title` is the display label. `ruleset` groups rules
+and defaults to `project`. `enabled` disables a rule without deleting its definition.
 
-```bash
-uv run jevscan --init-config          # minimal additive YAML; refuses to overwrite
-uv run jevscan --show-config          # full resolved, round-trippable YAML
-uv run jevscan --list-rules           # identities, titles, sets, effective enablement
-uv run jevscan src --select JEV --ignore JEV09
-uv run jevscan src --rule TEAM01      # --rule is an alias for --select
+`target` is `unit` or `file`. Unit rules require `applies_to`; file rules use `context: file` and no
+`applies_to`, `require_body`, or `require_members`. Supported `context` values are `unit`, `owner`, and `file`.
+`owner` means the lexical owner of a callable; Rust owner context starts with the file. `languages` defaults to all
+five supported languages. `require_body` excludes declarations and obvious stubs. `require_members` requires
+implemented callable members for an owner-level target.
+
+`enrich` defaults to true. `enrich_on` is a replaceable list containing `missing_evidence`, `reduced_context`,
+`applicability`, `low_confidence`, `low_choice_probability`, `weak_defect_signal`, or `probability_ambiguous`.
+Enrichment is bounded and retrieves local source candidates only; it is not a resolved call graph.
+
+### Noul
+
+A Noul asks one yes/no proposition and returns the probability that the proposition is true. Built-in Noul questions
+use native TypeSafe `criteria.true` and `criteria.false` descriptions. Criteria are optional for compatibility with
+simple custom rules, but explicit descriptions are recommended.
+
+```yaml
+rules:
+  - name: TEAM02
+    title: public-api-without-contract
+    target: unit
+    applies_to: [function, method]
+    require_body: true
+    question:
+      type: noul
+      instructions: Does the target expose a public operation without a visible input contract?
+      criteria:
+        "true": The public operation lacks a visible validation or documented input contract.
+        "false": A contract is visible, the operation is not public, or the evidence does not show a missing contract.
+    report:
+      message: This public operation may lack an explicit input contract.
+      expected: true
+      uncertain_range: [0.4, 0.6]
+      levels:
+        warning:
+          min_probability: 0.70
+        error:
+          min_probability: 0.92
 ```
 
-Repeat `--select`/`--ignore` for several names. CLI selection replaces the configured selection; CLI ignores add to configured ignores. Explicitly disabled rules are not re-enabled.
+`report.expected: false` reports low Noul values instead of high values. `uncertain_range` applies to the raw Noul
+value and must contain `0.5`. Noul levels use `min_probability`; Noul levels do not use confidence thresholds.
 
-**Configuration schema:** YAML and the existing filenames are retained. Version 4 changes the rule catalogue to named entries; an older schema version produces an explicit migration error rather than silently changing rule selection. Read the [v3-to-v4 migration guide](docs/CONFIGURATION.md#migration-from-yaml-v3). Rule IDs and machine reports changed too; numerical finding thresholds did not.
+### Choice
+
+A Choice selects exactly one label from `question.criteria`. `report.choices` identifies defect labels,
+`uncertain_choices` identifies missing-evidence labels, and `not_applicable_choices` identifies clean exclusions. These
+sets must be disjoint.
+
+```yaml
+rules:
+  - name: TEAM03
+    title: concealed-failure
+    target: unit
+    applies_to: [function, method]
+    context: file
+    require_body: true
+    question:
+      type: choice
+      instructions: Select the single outcome for fallback behavior visible in the target.
+      criteria:
+        concealed: A visible fallback silently hides an established invariant failure.
+        legitimate: No concealment is visible or the fallback handles a legitimate runtime condition.
+        missing: The fallback is visible but its invariant or failure contract is absent from the evidence.
+    report:
+      message: A fallback may conceal an invariant failure.
+      choices: [concealed]
+      uncertain_choices: [missing]
+      levels:
+        warning:
+          min_probability: 0.70
+          min_confidence: 0.55
+        error:
+          min_probability: 0.92
+          min_confidence: 0.75
+```
+
+Choice levels require `min_probability` and may set `min_confidence`. `report.choices` is required for Choice rules.
+
+### Score
+
+A Score selects one zero-based level from an ordered, one-dimensional `question.criteria` list. Use concrete levels
+that describe the same dimension. Score levels use exactly one of `min_score` or `max_score`, with the same direction
+for warning and error.
+
+```yaml
+rules:
+  - name: TEAM04
+    title: control-flow-traceability
+    target: unit
+    applies_to: [function, method]
+    require_body: true
+    question:
+      type: score
+      instructions: Select the level for how many important execution transitions are obscured.
+      criteria:
+        - "0: The main path and every important transition are direct."
+        - "1: One local complication exists, but transitions remain easy to trace."
+        - "2: Multiple branches obscure at least one important transition."
+        - "3: The main path cannot be reconstructed directly."
+    report:
+      message: The main execution path is difficult to trace.
+      levels:
+        warning:
+          min_score: 1
+        error:
+          min_score: 2
+```
+
+### Declarative applicability
+
+Tree-sitter extracts syntax-neutral facts per target. A rule may declare prerequisites:
+
+```yaml
+rules:
+  - name: TEAM05
+    title: fallback-contract
+    target: unit
+    applies_to: [function, method]
+    require_body: true
+    applicability:
+      requires_any: [fallback_candidate]
+    question:
+      type: noul
+      instructions: Does the target conceal an invariant failure behind a fallback?
+      criteria:
+        "true": A fallback conceals an established invariant failure.
+        "false": No such concealment is visible.
+    report:
+      message: Review this fallback.
+      levels:
+        warning: {min_probability: 0.75}
+        error: {min_probability: 0.95}
+```
+
+The supported syntax facts are `validation_candidate`, `fallback_candidate`, `helper_relationship`, and
+`executable_behavior`. `requires_any` needs at least one listed fact; `requires_all` needs every listed fact. The two
+lists cannot overlap. An absent `applicability` policy means no deterministic gate. Built-in and custom rules use this
+same path. Validation and fallback facts deliberately admit broad call, predicate, and control-flow syntax; Jev still
+decides whether that syntax has the rule's semantic meaning. `helper_relationship` requires a visible lexical call
+between implemented siblings. An exclusion records the declared missing fact and does not mark the scan incomplete.
+
+### Declarative targeted enrichment
+
+Rules that have a concrete missing answer and known useful evidence families can opt into direct code-owned retrieval:
+
+```yaml
+rules:
+  - name: TEAM06
+    title: contract-needs-caller-evidence
+    target: unit
+    context: file
+    applies_to: [function, method]
+    require_body: true
+    enrichment_families: [callers, callees, tests]
+    targeted_enrichment:
+      when_choices: [missing]
+      when_reasons: [missing_evidence]
+    question:
+      type: choice
+      instructions: Select the outcome for the target's contract.
+      criteria:
+        defect: The target violates its contract.
+        clean: The target is justified or no violation is visible.
+        missing: A concrete contract check is visible but required evidence is absent.
+    report:
+      message: Review the target contract.
+      choices: [defect]
+      uncertain_choices: [missing]
+      levels:
+        warning: {min_probability: 0.70}
+        error: {min_probability: 0.92}
+```
+
+`enrichment_families` accepts `callers`, `callees`, `tests`, and `enclosing_context`. `callees` means syntax-linked
+referenced definitions. `targeted_enrichment` is optional; `when_choices` refers to Choice labels and `when_reasons`
+refers to the `enrich_on` reason vocabulary.
+Without it, custom rules retain the generic disposition-and-family routing path. Declared targeted enrichment retrieves
+candidates in code, batches independent relevance questions over shared candidate state where budgets allow, and
+reassesses once only when useful evidence is admitted.
+
+## Built-in rules
+
+| Name | Title | Target |
+| --- | --- | --- |
+| JEV01 | mixed-responsibilities | unit |
+| JEV02 | unclear-control-flow | unit |
+| JEV03 | mixed-abstraction-levels | unit |
+| JEV04 | redundant-validation | unit |
+| JEV05 | hidden-invariant-failure | unit |
+| JEV06 | unhelpful-decomposition | unit |
+| JEV07 | fragmented-ownership | file |
+| JEV08 | incohesive-owner | unit |
+| JEV09 | duplicated-behavior | file |
+
+Inspect the fully resolved catalogue with:
+
+```bash
+uv run jevscan --show-config
+uv run jevscan --list-rules
+```
+
+## Further documentation
+
+- [Configuration reference](docs/CONFIGURATION.md)
+- [Jev request and response contract](docs/JEV_API.md)
+- [Context recovery](docs/CONTEXT_RECOVERY.md)
+- [Evidence enrichment](docs/ENRICHMENT.md)
+- [Verification and live acceptance boundaries](docs/VERIFICATION.md)
 
 ## Targets and evidence are different
 
@@ -194,7 +413,9 @@ discovery → spawned Tree-sitter parsers → bounded file queue
           → terminal / JSON / JSONL
 ```
 
-Each evaluator owns one file's plan/results. Independent request batches inside a large file can also run concurrently; one client semaphore and one rate limiter bound concurrency and pacing across the whole scan. Full source/context is retained for active files; the optional shared source catalogue has separate limits. Resource lifecycle belongs to `scanner.py`; selection/loading to `config.py`; question contracts to `rules.py`; packing to `planning.py`; bounded recovery to `execution.py`; exact evidence to `context.py`; local selection to `compaction.py` and shared relevance questions to `selection.py`; assessment to `assessment.py`; HTTP/cache prediction to `inference.py`; local candidates to `retrieval.py`; refinement to `enrichment.py`; results to `evaluation.py`; presentation to `cli/`.
+Files and independent ready request batches inside a large file can run concurrently. One client semaphore and one rate
+limiter bound concurrency and pacing across the whole scan. Full source/context is retained for active files; the
+optional shared source catalogue has separate limits.
 
 Live requests use `POST https://api.typesafe.ai/v1/systemone`. Authentication comes only from `TYPESAFE_API_KEY`. Model precedence is CLI, then `TYPESAFE_DEFAULT_MODEL`, then YAML. `TYPESAFE_BASE_URL` is an environment-only origin override; project config cannot redirect credentials. HTTPS is required except for loopback tests, and redirects are disabled.
 
@@ -215,3 +436,6 @@ uv build
 ```
 
 CI checks the full project, runs actual bundled parsers, and builds/smoke-tests installed wheels outside the checkout on Linux and macOS. Tests mock the HTTP boundary and require no provider credentials. [Configuration reference](docs/CONFIGURATION.md).
+The repository uses `uv run pytest`, `uv run ruff format`, `uv run ruff check`, `uv run ty check`, and
+`uv run radon cc -s src/jevscan`. No human-labeled corpus is bundled, so numerical thresholds and candidate retrieval
+are not claims of calibrated semantic accuracy.

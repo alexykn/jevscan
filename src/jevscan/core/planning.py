@@ -9,7 +9,7 @@ from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.model_limits import TokenCalibration, limits_for_model
 from jevscan.core.models import CALLABLE_KINDS, Target
 from jevscan.core.protocol import Check, encode
-from jevscan.core.rules import Question
+from jevscan.core.rules import Question, Rule
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +108,8 @@ class Planner:
         self.limits = config.evaluation
         self.compaction = config.compaction
         self.budget = RequestBudget(config.evaluation, config.jev.model, calibration)
+        self.targets = (self.context.file, *(Target.from_unit(unit) for unit in self.context.parsed.units))
+        self.applicability_skips: dict[str, dict[str, str]] = {}
         checks = self._checks(config)
         self.omissions: tuple[Omission, ...] = ()
         line_limit = config.scan.max_full_file_lines
@@ -133,8 +135,25 @@ class Planner:
         self.checks = checks
         self.questions = {check.id: encode(check.question()) for check in self.checks}
 
+    def _facts(self, target: Target) -> frozenset[str]:
+        if target.scope == "file":
+            return frozenset(fact for unit in self.context.parsed.units for fact in unit.syntax_facts)
+        return frozenset(self.context.units[target.id].syntax_facts)
+
+    def _applicability_reason(self, target: Target, rule: Rule) -> str | None:
+        policy = rule.applicability
+        if policy is None:
+            return None
+        facts = self._facts(target)
+        missing_all = [fact for fact in policy.requires_all if fact not in facts]
+        any_present = not policy.requires_any or bool(facts & set(policy.requires_any))
+        if not missing_all and any_present:
+            return None
+        missing = [*missing_all, *(policy.requires_any if not any_present else [])]
+        declared = ", ".join(missing)
+        return f"applicability: declared syntax prerequisite absent ({declared})"
+
     def _checks(self, config: Config) -> tuple[Check, ...]:
-        targets = [self.context.file, *(Target.from_unit(unit) for unit in self.context.parsed.units)]
         checks = []
         rules = sorted(config.selected_rules().items())
         owners_with_members = {
@@ -142,7 +161,7 @@ class Planner:
             for unit in self.context.parsed.units
             if unit.kind in CALLABLE_KINDS and unit.has_implementation
         }
-        for target in targets:
+        for target in self.targets:
             for name, rule in rules:
                 if rule.target != target.scope or target.language not in rule.languages:
                     continue
@@ -154,6 +173,9 @@ class Planner:
                         continue
                     if rule.require_members and target.id not in owners_with_members:
                         continue
+                if (reason := self._applicability_reason(target, rule)) is not None:
+                    self.applicability_skips.setdefault(target.id, {})[name] = reason
+                    continue
                 checks.append(Check(f"q{len(checks):05d}", target, name, rule))
         return tuple(checks)
 

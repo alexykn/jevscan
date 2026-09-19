@@ -9,6 +9,7 @@ import hashlib
 import math
 import random
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Self
@@ -27,6 +28,13 @@ from jevscan.core.protocol import (
     validate_response,
 )
 from jevscan.core.rules import Question
+
+
+@dataclass(slots=True)
+class ReservationUsage:
+    """Request-local conservative input reservations, including retries."""
+
+    input_tokens: int = 0
 
 
 def _safe_request_id(response: httpx.Response) -> str:
@@ -191,7 +199,7 @@ class JevClient:
             },
         )
 
-    def _reserve_budget(self, body: bytes) -> None:
+    def _reserve_budget(self, body: bytes) -> int:
         estimated = math.ceil(len(body) / self.bytes_per_token) + self.token_reserve
         next_requests = self.requests + 1
         next_tokens = self.estimated_input_tokens + estimated
@@ -208,8 +216,15 @@ class JevClient:
             )
         self.estimated_input_tokens = next_tokens
         self.estimated_cost = next_cost
+        return estimated
 
-    async def evaluate(self, body: bytes, questions: dict[str, Question]) -> JevResponse:
+    async def evaluate(
+        self,
+        body: bytes,
+        questions: dict[str, Question],
+        *,
+        reservation: ReservationUsage | None = None,
+    ) -> JevResponse:
         for attempt in range(self.config.retries + 1):
             if attempt:
                 self.retry_attempts += 1
@@ -217,7 +232,9 @@ class JevClient:
                 async with self.semaphore:
                     # Pace actual transport starts, not tasks waiting for a connection slot.
                     await self.limiter.acquire()
-                    self._reserve_budget(body)
+                    reserved = self._reserve_budget(body)
+                    if reservation is not None:
+                        reservation.input_tokens += reserved
                     self.requests += 1
                     try:
                         response = await self.http.post("/v1/systemone", content=body)

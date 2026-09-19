@@ -5,6 +5,7 @@ cache use and termination; no model-generated paths or executable actions exist.
 """
 
 import hashlib
+import json
 from dataclasses import dataclass
 from itertools import zip_longest
 from typing import Any
@@ -116,7 +117,7 @@ def _augment(
             **context.coverage(documents),
             "external_references": "Selected syntax/name-based candidates only; no complete or resolved call graph. Sources are per-file snapshots, not an atomic repository snapshot.",
         },
-        "supplemental_evidence": [candidate.metadata() for candidate in candidates],
+        "supplemental_evidence": [candidate.model_metadata() for candidate in candidates],
         "retrieval_coverage": retrieval,
     }
     return Evidence(state, encode(state))
@@ -151,10 +152,18 @@ class Enricher:
         body = self.budget.body(state, wire)
         entry: dict[str, Any] = {"phase": phase, "request_sha256": hashlib.sha256(body).hexdigest()}
         trace["predictions"].append(entry)
-        prediction = await self.inference.predict(body, questions, enrichment=True)
+        prediction = await self.inference.predict(
+            body,
+            questions,
+            enrichment=True,
+            state_bytes=len(state),
+            question_bytes=sum(map(len, wire.values())),
+            state=json.loads(state),
+        )
         entry.update({
             "model": prediction.response.model,
             "cached": prediction.cached,
+            "metrics": prediction.metrics,
             "answers": {key: answer.model_dump(mode="json") for key, answer in prediction.response.answers.items()},
         })
         return prediction
@@ -310,10 +319,20 @@ class Enricher:
         self.inference.summary.enrichment_reviewed += 1
         trace["outcome"] = "failed"  # Retained if a genuine service/validation failure aborts the scan.
         try:
-            if not self._allowed_families(check):
+            allowed_families = self._allowed_families(check)
+            if not allowed_families:
                 trace["outcome"] = "enrichment_disabled"
                 return None
-            routing = await self._route(check, evidence, trace)
+            policy = check.rule.targeted_enrichment
+            declared = policy is not None and (
+                (isinstance(answer, ChoiceAnswer) and answer.choice in policy.when_choices)
+                or (trace.get("trigger") in policy.when_reasons)
+            )
+            if declared:
+                routing = Routing("local_evidence", allowed_families)
+                trace["routing_mode"] = "declared_rule_families"
+            else:
+                routing = await self._route(check, evidence, trace)
             trace["disposition"] = routing.disposition
             trace["evidence_families"] = list(routing.families)
             if routing.disposition is None:
