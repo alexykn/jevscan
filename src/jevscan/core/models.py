@@ -205,6 +205,20 @@ class Summary:
     requests: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    evaluation_input_tokens: int = 0
+    compaction_input_tokens: int = 0
+    enrichment_input_tokens: int = 0
+    evaluation_reserved_input_tokens: int = 0
+    compaction_reserved_input_tokens: int = 0
+    enrichment_reserved_input_tokens: int = 0
+    retry_attempts: int = 0
+    estimated_input_tokens: int = 0
+    estimated_cost: float = 0.0
+    reported_cost: float = 0.0
+    planned_checks: int = 0
+    planned_requests: int = 0
+    planned_input_tokens: int = 0
+    planned_state_bytes: int = 0
     diagnostics: int = 0
     incomplete: bool = False
     findings: dict[str, int] = field(default_factory=lambda: {str(s): 0 for s in Severity})

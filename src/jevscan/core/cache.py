@@ -21,6 +21,11 @@ def cache_key(endpoint: str, body: bytes) -> str:
     return hashlib.sha256(prefix + body).hexdigest()
 
 
+def judgment_cache_key(endpoint: str, model: str, state: bytes, question: bytes) -> str:
+    prefix = f"jevscan:judgment:prompt:{PROMPT_VERSION}:{endpoint}:{model}\n".encode()
+    return hashlib.sha256(prefix + state + b"\n" + question).hexdigest()
+
+
 class AnswerCache:
     def __init__(self, path: Path, ttl_seconds: int) -> None:
         self.path = path
@@ -40,14 +45,19 @@ class AnswerCache:
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA synchronous=NORMAL")
         version = self.connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in {0, 1}:
+        if version not in {0, 1, 2}:
             raise CacheError(f"unsupported cache schema {version}; use a new cache path")
         self.connection.execute(
             "CREATE TABLE IF NOT EXISTS answers (key TEXT PRIMARY KEY, created REAL NOT NULL, body BLOB NOT NULL)"
         )
-        self.connection.execute("PRAGMA user_version=1")
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS judgments (key TEXT PRIMARY KEY, created REAL NOT NULL, body BLOB NOT NULL)"
+        )
+        self.connection.execute("PRAGMA user_version=2")
         if self.ttl:
-            self.connection.execute("DELETE FROM answers WHERE created < ?", (time.time() - self.ttl,))
+            cutoff = time.time() - self.ttl
+            self.connection.execute("DELETE FROM answers WHERE created < ?", (cutoff,))
+            self.connection.execute("DELETE FROM judgments WHERE created < ?", (cutoff,))
 
     def _get(self, key: str) -> bytes | None:
         assert self.connection is not None
@@ -62,6 +72,41 @@ class AnswerCache:
             "INSERT OR REPLACE INTO answers (key, created, body) VALUES (?, ?, ?)", (key, time.time(), body)
         )
 
+    def _get_judgment(self, key: str) -> bytes | None:
+        assert self.connection is not None
+        row = self.connection.execute("SELECT created, body FROM judgments WHERE key = ?", (key,)).fetchone()
+        if row is None or (self.ttl and row[0] < time.time() - self.ttl):
+            return None
+        return row[1]
+
+    def _put_judgment(self, key: str, body: bytes) -> None:
+        assert self.connection is not None
+        self.connection.execute(
+            "INSERT OR REPLACE INTO judgments (key, created, body) VALUES (?, ?, ?)", (key, time.time(), body)
+        )
+
+    def _get_judgments(self, keys: tuple[str, ...]) -> dict[str, bytes]:
+        assert self.connection is not None
+        if not keys:
+            return {}
+        placeholders = ",".join("?" for _ in keys)
+        rows = self.connection.execute(
+            f"SELECT key, created, body FROM judgments WHERE key IN ({placeholders})",  # noqa: S608 -- placeholders only
+            keys,
+        ).fetchall()
+        cutoff = time.time() - self.ttl if self.ttl else None
+        return {key: body for key, created, body in rows if cutoff is None or created >= cutoff}
+
+    def _put_judgments(self, entries: tuple[tuple[str, bytes], ...]) -> None:
+        assert self.connection is not None
+        if not entries:
+            return
+        created = time.time()
+        self.connection.executemany(
+            "INSERT OR REPLACE INTO judgments (key, created, body) VALUES (?, ?, ?)",
+            ((key, created, body) for key, body in entries),
+        )
+
     def _close(self) -> None:
         if self.connection is not None:
             self.connection.close()
@@ -72,6 +117,18 @@ class AnswerCache:
 
     async def put(self, key: str, body: bytes) -> None:
         await self._call(self._put, key, body)
+
+    async def get_judgment(self, key: str) -> bytes | None:
+        return await self._call(self._get_judgment, key)
+
+    async def put_judgment(self, key: str, body: bytes) -> None:
+        await self._call(self._put_judgment, key, body)
+
+    async def get_judgments(self, keys: tuple[str, ...]) -> dict[str, bytes]:
+        return await self._call(self._get_judgments, keys)
+
+    async def put_judgments(self, entries: tuple[tuple[str, bytes], ...]) -> None:
+        await self._call(self._put_judgments, entries)
 
     async def __aenter__(self) -> Self:
         try:

@@ -3,9 +3,21 @@
 import json
 from typing import Any, TextIO
 
-from jevscan.cli.terminal import BOLD, CYAN, DIM, GREEN, KIND_STYLE, LEVEL_MARKER, LEVEL_STYLE, RED, YELLOW, Terminal
+from jevscan.cli.terminal import (
+    BOLD,
+    CYAN,
+    DIM,
+    GREEN,
+    KIND_STYLE,
+    LEVEL_MARKER,
+    LEVEL_STYLE,
+    RED,
+    YELLOW,
+    Terminal,
+    safe_text,
+)
 
-REPORT_SCHEMA_VERSION = 7
+REPORT_SCHEMA_VERSION = 8
 
 
 class Reporter:
@@ -24,6 +36,7 @@ class Reporter:
         self.limit, self.shown, self.hidden = max_display, 0, 0
         self.verbose = verbose
         self.current_path: str | None = None
+        self.progress_width = 0
         self.terminal = Terminal(stream, width)
         if self.format == "json":
             self.stream.write(
@@ -49,9 +62,32 @@ class Reporter:
         self.stream.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
         self.stream.flush()
 
+    def _progress(self, event: dict[str, Any]) -> None:
+        text = safe_text(
+            f"working — requests={event['completed_requests']}/{event['requests']} "
+            f"cache-hits={event['cache_hits']} input={event['input_tokens']} "
+            f"reserved≈{event['estimated_cost']:.4f} elapsed={event['elapsed_seconds']:.1f}s"
+        )
+        width = max(self.progress_width, len(text))
+        self.stream.write("\r" + text.ljust(width))
+        self.stream.flush()
+        self.progress_width = width
+
+    def _clear_progress(self) -> None:
+        if not self.progress_width:
+            return
+        self.stream.write("\r" + (" " * self.progress_width) + "\r")
+        self.progress_width = 0
+
     def emit(self, event: dict[str, Any]) -> None:
         if self.closed:
             return
+        if event["event"] == "progress":
+            if self.format == "text" and self.stream.isatty():
+                self._progress(event)
+            return
+        if self.format == "text":
+            self._clear_progress()
         if event["event"] == "summary":
             self._finish(event)
         elif self.format == "jsonl":
@@ -87,7 +123,7 @@ class Reporter:
         else:
             marker, style = KIND_STYLE[target["kind"]]
             location, name = str(target["start_line"]), target.get("display_name") or target["qualified_name"]
-        self.terminal.header(marker, location, name, cached, style)
+        self.terminal.header(marker, location, name, cached, style, indent=6 if target.get("kind") == "closure" else 4)
 
     @staticmethod
     def _answer_text(answer: dict[str, Any], scale: int | None) -> str:
@@ -141,6 +177,14 @@ class Reporter:
         if event["event"] == "unit" and self._admit():
             # Offline is an inventory command, not a semantic report filtered to findings.
             self._target_header(event["unit"])
+        elif event["event"] == "plan":
+            self._file_header(event["path"])
+            self.terminal.write(
+                f"plan — {event['checks']} checks, {event['requests']} requests, "
+                f"~{event['estimated_input_tokens']} input tokens; {event['omitted_checks']} omitted",
+                2,
+                DIM,
+            )
         elif event["event"] == "evaluation":
             self._evaluation(event)
         elif event["event"] == "coverage":
@@ -206,14 +250,30 @@ class Reporter:
                 "(included in uncertain checks; not confirmed, do not trigger --fail-on)",
                 style=CYAN,
             )
-        self.terminal.write(
-            f"files={summary['files_parsed']}/{summary['files_discovered']}  units={summary['units_found']}  "
-            f"evaluated={summary['units_evaluated']} units/{summary['file_targets_evaluated']} files  "
-            f"checks={summary['checks_evaluated']}  skipped={summary['checks_skipped']}  "
-            f"requests={summary['requests']}  cache-hits={summary['cache_hits']}  "
-            f"elapsed={summary['elapsed_seconds']:.2f}s",
-            style=DIM,
-        )
+        if summary["mode"] == "plan":
+            self.terminal.write(
+                f"files={summary['files_parsed']}/{summary['files_discovered']}  units={summary['units_found']}  "
+                f"planned-checks={summary['planned_checks']}  planned-requests={summary['planned_requests']}  "
+                f"estimated-input={summary['planned_input_tokens']}  estimated-cost={summary['estimated_cost']:.4f}",
+                style=DIM,
+            )
+        else:
+            self.terminal.write(
+                f"files={summary['files_parsed']}/{summary['files_discovered']}  units={summary['units_found']}  "
+                f"evaluated={summary['units_evaluated']} units/{summary['file_targets_evaluated']} files  "
+                f"checks={summary['checks_evaluated']}  skipped={summary['checks_skipped']}  "
+                f"requests={summary['requests']}  cache-hits={summary['cache_hits']}  "
+                f"input={summary['input_tokens']}  reported-cost={summary['reported_cost']:.4f}  "
+                f"reserved-cost={summary['estimated_cost']:.4f}  "
+                f"elapsed={summary['elapsed_seconds']:.2f}s",
+                style=DIM,
+            )
+            self.terminal.write(
+                f"input-by-phase: evaluation={summary['evaluation_input_tokens']} "
+                f"compaction={summary['compaction_input_tokens']} enrichment={summary['enrichment_input_tokens']}  "
+                f"retries={summary['retry_attempts']}",
+                style=DIM,
+            )
         if summary["size_rejections"] or summary.get("request_rejections", 0) or summary["compaction_calls"]:
             self.terminal.write(
                 f"context: size-rejections={summary['size_rejections']} request-rejections={summary.get('request_rejections', 0)} "

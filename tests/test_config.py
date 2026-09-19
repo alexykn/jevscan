@@ -232,3 +232,15 @@ def test_enrichment_policy_is_validated_at_configuration_boundary(tmp_path, patc
 def test_project_can_replace_enrichment_admission(tmp_path, triggers):
     write_config(tmp_path, {"rules": [{"name": "JEV04", "enrich_on": triggers}]})
     assert load_config([tmp_path], cwd=tmp_path).config.rules["JEV04"].enrich_on == triggers
+
+
+def test_default_enrichment_is_targeted_and_rules_declare_evidence_families(tmp_path: Path) -> None:
+    config = load_config([tmp_path], cwd=tmp_path).config
+    assert config.enrichment.mode == "targeted"
+    assert config.rules["JEV04"].enrichment_families == ["callers", "callees"]
+    assert config.rules["JEV06"].enrichment_families == ["callees", "enclosing_context"]
+    assert config.rules["JEV04"].context == "owner"
+    assert config.rules["JEV08"].context == "owner"
+    assert config.scan.max_full_file_lines == 3000
+    assert config.budget.max_requests == 1500
+    assert config.budget.max_input_tokens == 5_000_000

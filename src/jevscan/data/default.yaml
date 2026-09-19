@@ -11,6 +11,7 @@ scan:
   queue_size: 8
   max_file_bytes: 2000000
   max_units_per_file: 10000
+  max_full_file_lines: 3000
 jev:
   model: jev-latest
   concurrency: 16
@@ -34,6 +35,7 @@ compaction:
   semantic: true
 enrichment:
   enabled: true
+  mode: targeted
   max_checks_per_file: 12
   max_calls_per_file: 36
   max_candidates: 12
@@ -44,6 +46,11 @@ enrichment:
   max_source_files: 1000
   max_source_bytes: 16777216
   min_evidence_probability: 0.6
+budget:
+  max_requests: 1500
+  max_input_tokens: 5000000
+  max_cost: null
+  input_cost_per_million: 0.042
 cache:
   enabled: true
   path: .jevscan-cache/results.sqlite3
@@ -63,6 +70,7 @@ rules:
     title: mixed-responsibilities
     ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
     target: unit
     context: owner
     applies_to: [function, method, closure]
@@ -84,6 +92,7 @@ rules:
     title: unclear-control-flow
     ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
     target: unit
     context: owner
     applies_to: [function, method, closure]
@@ -109,6 +118,7 @@ rules:
     title: mixed-abstraction-levels
     ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
     target: unit
     context: owner
     applies_to: [function, method, closure]
@@ -130,8 +140,9 @@ rules:
     title: redundant-validation
     ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callers, callees]
     target: unit
-    context: file
+    context: owner
     applies_to: [function, method, closure]
     require_body: true
     question:
@@ -165,8 +176,9 @@ rules:
     title: hidden-invariant-failure
     ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callers, callees, tests]
     target: unit
-    context: file
+    context: owner
     applies_to: [function, method, closure]
     require_body: true
     question:
@@ -198,9 +210,10 @@ rules:
     title: unhelpful-decomposition
     ruleset: JEV
     enrich_on: [missing_evidence, reduced_context, applicability]
+    enrichment_families: [callees, enclosing_context]
     require_members: true
     target: unit
-    context: file
+    context: owner
     applies_to: [class, impl, package, module]
     question:
       type: choice
@@ -234,6 +247,7 @@ rules:
   - name: JEV07
     title: fragmented-ownership
     ruleset: JEV
+    enrich: false
     enrich_on: [missing_evidence, reduced_context]
     target: file
     context: file
@@ -255,8 +269,9 @@ rules:
     title: incohesive-owner
     ruleset: JEV
     enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
     target: unit
-    context: file
+    context: owner
     applies_to: [class, impl, package, module]
     question:
       type: noul
@@ -274,6 +289,7 @@ rules:
   - name: JEV09
     title: duplicated-behavior
     ruleset: JEV
+    enrich: false
     enrich_on: [missing_evidence, reduced_context]
     target: file
     context: file

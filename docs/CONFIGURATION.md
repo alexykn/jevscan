@@ -139,18 +139,29 @@ Benign Choice labels and missing-evidence labels never acquire an invented defec
 
 | Section | Important defaults / meaning |
 |---|---|
-| scan | Existing five-language include patterns and dependency/build excludes; respect_gitignore=true; jobs=0 (up to 8 parsers); batch_size=8; queue_size=8; max_file_bytes=2000000; max_units_per_file=10000 |
+| scan | Existing five-language include patterns and dependency/build excludes; respect_gitignore=true; jobs=0 (up to 8 parsers); batch_size=8; queue_size=8; max_file_bytes=2000000; max_units_per_file=10000; max_full_file_lines=3000 |
 | jev | model="jev-latest"; concurrency=16; requests_per_minute=600; timeout_seconds=30; retries=3; max_retry_delay=60 |
 | evaluation | max_context_tokens=28000; max_total_tokens=56000; token_reserve=512; bytes_per_token=3.0; max_request_bytes=1048576; max_questions=64; oversized_context="reduce" |
 | compaction | context_tokens=24000; max_rounds=3; max_candidates=32; max_calls_per_file=12; semantic=true |
-| enrichment | enabled=true; max_checks_per_file=12; max_calls_per_file=36; max_candidates=12; max_evidence=3; max_source_files=1000; max_source_bytes=16777216 |
+| enrichment | enabled=true; mode="targeted"; max_checks_per_file=12; max_calls_per_file=36; max_candidates=12; max_evidence=3; max_source_files=1000; max_source_bytes=16777216 |
+| budget | max_requests=1500; max_input_tokens=5000000; max_cost=null; input_cost_per_million=0.042 |
 | cache | enabled=true; path=".jevscan-cache/results.sqlite3"; ttl_seconds=86400 |
 
 Use `--show-config` for the complete resolved values, including source patterns. API pacing is a local budget, not an account quota claim. Context estimates are not a provider tokenizer. `oversized_context: skip` forbids reducing requested evidence. Targets are never truncated.
 
 Routing uses `min_route_probability=0.70` and `min_route_confidence=0.50` for the **disposition Choice**, `min_evidence_probability=0.60` independently for each evidence-family Noul, and `min_relevance=0.65` for each candidate. Do not add or normalize independent family probabilities. A disposition stop wins over speculative family answers. One review can use several families, but the candidate/evidence/call budgets stay shared, not multiplied by family count.
 
-The cache path must be relative and inside the project. Cache entries contain raw provider answers, not source. `--no-cache` disables all cache use, including enrichment. CLI model/config operational overrides are validated by the same schema.
+The cache path must be relative and inside the project. Cache entries contain provider answers, not submitted source. rc7 also stores validated per-judgment entries keyed by endpoint, model, exact evidence, exact bound question, and prompt compatibility, so changing HTTP batch composition does not force an unchanged judgment to be purchased again. `--no-cache` disables both request and judgment cache use, including enrichment.
+
+`enrichment.mode` is `off`, `targeted`, or `full`. In targeted mode each rule's `enrichment_families` list limits retrieval to relevant evidence families. `callees` is the user-facing name for syntax-linked referenced definitions; `callers`, `tests`, and `enclosing_context` are also available. `full` admits every family; `off` disables the enrichment pass.
+
+`budget` guards paid request attempts before transport. `max_requests`, `max_input_tokens`, and `max_cost` are optional hard ceilings; `input_cost_per_million` gives the configurable input-price basis for cost estimates. A cost limit is expressed in the same currency/unit as that configured price. The CLI exposes `--max-requests`, `--max-input-tokens`, and `--max-cost`. Budget exhaustion is incomplete coverage, not a clean result. The packaged profile defaults to 1,500 request attempts and 5,000,000 estimated input tokens as a safety ceiling; set either to `null` in YAML to remove that guard.
+
+`scan.max_full_file_lines` limits only analysis that requires a complete file state. A larger file produces an explicit coverage error for those checks while smaller owner/unit contexts can continue. This threshold is operational and does not by itself claim that the file is semantically defective. Set it to `null` to remove the line ceiling.
+
+`--plan` performs parsing and initial packing without an API key or live inference. Its token/cost estimate is intentionally conservative and does not predict later compaction, enrichment, retries, or warm judgment-cache reuse. `--changed` scans Git working-tree/staged changes plus untracked files; `--staged` scans the index only. These modes restrict the selected files and do not claim that downstream dependents are unaffected.
+
+CLI model/config operational overrides are validated by the same schema.
 
 ## Migration from YAML v3
 
@@ -226,3 +237,27 @@ Compaction selects source from the already parsed file only. It never silently e
 Auxiliary relevance instructions are assembled from `Check.auxiliary`: exact target metadata and the full active `rule.question`, including all criteria. Report thresholds/messages are not injected as semantic instructions, and neither an earlier verdict nor ranking scores enter the final assessment state. Changing a rule question or selected source changes cache identity. Compaction/recovery audits record source spans, budgets, candidate omissions, raw relevance answers, request hashes, request-local provider rejections and explicit stops.
 
 Report schema **7** adds the request-rejection counter and request-local rejection metadata while preserving rc5's `target.display_name`, `context_selection`, file `coverage` events and size/compaction counters. Text coverage now distinguishes `scan aborted` from ordinary compaction/omission; a file with zero compacted targets is no longer described as compacted merely because unfinished checks exist. Reduced contexts and skipped targets still set incomplete status.
+
+## RC7 cost-aware evidence batching (configuration stays YAML v4)
+
+rc7 does not add a new question primitive. It uses System One's existing map of independent typed questions more aggressively: checks of different rules and targets are packed together whenever they share the exact evidence state. Noul, Choice, and Score questions may coexist in the same request. Source is never enlarged merely to create a batch.
+
+When a shared owner exceeds the context ceiling, its sibling checks are kept together long enough for bounded recovery to prepare smaller evidence. Checks that arrive at identical compacted evidence are repacked before transport. Independent ready batches within a large file may run concurrently, while one client semaphore and one request limiter enforce scan-wide concurrency and pacing.
+
+The built-in rules also use narrower primary context where the question permits it. JEV04, JEV05, JEV06, and JEV08 start from owner context rather than a complete file. Targeted enrichment then supplies only rule-declared relationship families when missing evidence warrants it. JEV07 and JEV09 already judge a complete file and do not perform cross-source enrichment by default.
+
+The packaged additions are:
+
+```yaml
+scan:
+  max_full_file_lines: 3000
+enrichment:
+  mode: targeted
+budget:
+  max_requests: 1500
+  max_input_tokens: 5000000
+  max_cost: null
+  input_cost_per_million: 0.042
+```
+
+These settings can be overridden without changing schema version 4.

@@ -17,6 +17,8 @@ EnrichmentTrigger = Literal[
     "probability_ambiguous",
 ]
 DEFAULT_ENRICHMENT_TRIGGERS: tuple[EnrichmentTrigger, ...] = ("missing_evidence", "reduced_context", "applicability")
+EnrichmentFamily = Literal["callers", "callees", "tests", "enclosing_context"]
+DEFAULT_ENRICHMENT_FAMILIES: tuple[EnrichmentFamily, ...] = ("callers", "callees", "tests", "enclosing_context")
 
 
 class StrictModel(BaseModel):
@@ -92,6 +94,7 @@ class Rule(StrictModel):
     require_members: bool = False
     enrich: bool = True
     enrich_on: list[EnrichmentTrigger] = Field(default_factory=lambda: list(DEFAULT_ENRICHMENT_TRIGGERS))
+    enrichment_families: list[EnrichmentFamily] = Field(default_factory=lambda: list(DEFAULT_ENRICHMENT_FAMILIES))
     question: Question
     report: ReportPolicy
 

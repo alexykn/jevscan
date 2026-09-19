@@ -1,7 +1,6 @@
 """Bind checks to targets, choose evidence, and pack bounded shared-state requests."""
 
 import math
-from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -109,7 +108,29 @@ class Planner:
         self.limits = config.evaluation
         self.compaction = config.compaction
         self.budget = RequestBudget(config.evaluation, config.jev.model, calibration)
-        self.checks = self._checks(config)
+        checks = self._checks(config)
+        self.omissions: tuple[Omission, ...] = ()
+        line_limit = config.scan.max_full_file_lines
+        self.full_file_limited = line_limit is not None and self.context.file.end_line > line_limit
+        if self.full_file_limited:
+            kept: list[Check] = []
+            omitted: list[Omission] = []
+            for check in checks:
+                # Explicit file judgments and rules that explicitly require file context
+                # are not approximated. Top-level owner-context unit checks may fall
+                # back to their complete target and are marked context-reduced.
+                if check.target.scope == "file" or check.rule.context == "file":
+                    omitted.append(
+                        Omission(
+                            check,
+                            f"full-file context is {self.context.file.end_line} lines; configured limit is {line_limit}",
+                        )
+                    )
+                else:
+                    kept.append(check)
+            checks = tuple(kept)
+            self.omissions = tuple(omitted)
+        self.checks = checks
         self.questions = {check.id: encode(check.question()) for check in self.checks}
 
     def _checks(self, config: Config) -> tuple[Check, ...]:
@@ -136,6 +157,23 @@ class Planner:
                 checks.append(Check(f"q{len(checks):05d}", target, name, rule))
         return tuple(checks)
 
+    def requested_target(self, check: Check) -> Target:
+        target = self.context.requested_target(check)
+        if (
+            self.full_file_limited
+            and check.target.scope == "unit"
+            and check.rule.context == "owner"
+            and target.scope == "file"
+        ):
+            return check.target
+        return target
+
+    def requested_evidence(self, check: Check) -> Evidence:
+        target = self.requested_target(check)
+        if target == check.target and self.context.requested_target(check).scope == "file":
+            return self.context.envelope(check.target.start_byte, check.target.end_byte)
+        return self.context.requested(check)
+
     def _encoded_questions(self, checks: tuple[Check, ...]) -> dict[str, bytes]:
         return {check.id: self.questions[check.id] for check in checks}
 
@@ -152,20 +190,36 @@ class Planner:
         body = self.budget.body(evidence.encoded, self._encoded_questions(checks))
         return Request(evidence, checks, body)
 
-    def plan(self) -> Iterator[Request]:
-        # Group by requested lexical spans, not retained copies of every large owner.
-        groups: dict[tuple[int, int], list[Check]] = defaultdict(list)
+    def _evidence_groups(self) -> list[tuple[Evidence, list[Check]]]:
+        groups: dict[str, tuple[Evidence, list[Check]]] = {}
         for check in self.checks:
-            target = self.context.requested_target(check)
-            groups[(target.start_byte, target.end_byte)].append(check)
-        for checks in groups.values():
-            evidence = self.context.requested(checks[0])
-            pending: tuple[Check, ...] = ()
-            for check in checks:
-                candidate = (*pending, check)
-                if pending and not self.fits(evidence, candidate):
-                    yield self.request(evidence, pending)
-                    pending = ()
-                pending = (*pending, check)
-            if pending:
+            evidence = self.requested_evidence(check)
+            groups.setdefault(evidence.key, (evidence, []))[1].append(check)
+        return list(groups.values())
+
+    def _pack_group(self, evidence: Evidence, checks: list[Check]) -> Iterator[Request]:
+        # Evidence that cannot fit even one question must reach recovery intact.
+        # Fragmenting it here would prevent recovery from regrouping sibling checks
+        # that converge on the same compacted evidence.
+        singleton_violations = self.violations(evidence, (checks[0],))
+        if singleton_violations & {"context", "bytes"}:
+            step = self.limits.max_questions
+            for start in range(0, len(checks), step):
+                yield self.request(evidence, tuple(checks[start : start + step]))
+            return
+
+        pending: tuple[Check, ...] = ()
+        for check in checks:
+            candidate = (*pending, check)
+            if pending and not self.fits(evidence, candidate):
                 yield self.request(evidence, pending)
+                pending = ()
+            pending = (*pending, check)
+        if pending:
+            yield self.request(evidence, pending)
+
+    def plan(self) -> Iterator[Request]:
+        # Exact encoded evidence is the batching identity. Rule and target identity
+        # remain on each typed question and do not prevent sharing one System One state.
+        for evidence, checks in self._evidence_groups():
+            yield from self._pack_group(evidence, checks)

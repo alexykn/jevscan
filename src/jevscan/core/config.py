@@ -59,6 +59,7 @@ class ScanConfig(StrictModel):
     respect_gitignore: bool = True
     max_file_bytes: int = Field(default=2_000_000, ge=1)
     max_units_per_file: int = Field(default=10_000, ge=1)
+    max_full_file_lines: int | None = Field(default=3000, ge=100)
     batch_size: int = Field(default=8, ge=1, le=256)
     jobs: int = Field(default=0, ge=0, le=256)
     queue_size: int = Field(default=8, ge=1)
@@ -111,6 +112,7 @@ class EnrichmentConfig(StrictModel):
     """One bounded evidence-enrichment pass; limits apply even to cache hits."""
 
     enabled: bool = True
+    mode: Literal["off", "targeted", "full"] = "targeted"
     max_checks_per_file: int = Field(default=12, ge=1, le=128)
     max_calls_per_file: int = Field(default=36, ge=1, le=512)
     max_candidates: int = Field(default=12, ge=1, le=64)
@@ -127,6 +129,15 @@ class EnrichmentConfig(StrictModel):
         if self.max_evidence > self.max_candidates:
             raise ValueError("max_evidence cannot exceed max_candidates")
         return self
+
+
+class BudgetConfig(StrictModel):
+    """Optional hard limits for paid live inference. Null means unlimited."""
+
+    max_requests: int | None = Field(default=None, ge=1)
+    max_input_tokens: int | None = Field(default=None, ge=1)
+    max_cost: float | None = Field(default=None, gt=0)
+    input_cost_per_million: float = Field(default=0.042, ge=0)
 
 
 class CacheConfig(StrictModel):
@@ -162,6 +173,7 @@ class Config(StrictModel):
     cache: CacheConfig = Field(default_factory=CacheConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
     compaction: CompactionConfig = Field(default_factory=CompactionConfig)
     lint: LintConfig = Field(default_factory=LintConfig)
     rulesets: dict[str, Ruleset] = Field(default_factory=lambda: {"project": Ruleset()})

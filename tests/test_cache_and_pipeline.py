@@ -1,11 +1,12 @@
 import asyncio
 import json
+import sqlite3
 from pathlib import Path
 
 import httpx
 import pytest
 
-from jevscan.core.cache import AnswerCache, cache_key
+from jevscan.core.cache import AnswerCache, cache_key, judgment_cache_key
 from jevscan.core.client import JevClient
 from jevscan.core.config import Config, LoadedConfig
 from jevscan.core.models import FileJob, Kind, ParsedFile, Summary, Unit
@@ -103,6 +104,33 @@ async def test_cache_key_includes_endpoint_model_source_and_questions(tmp_path: 
         await cache.put(key, b'{"answers":{}}')
         assert await cache.get(key) == b'{"answers":{}}'
     assert b"secret" not in (tmp_path / "cache.sqlite3").read_bytes()
+
+
+async def test_judgment_cache_identity_and_v1_database_upgrade(tmp_path: Path) -> None:
+    state = b'{"documents":[{"content":"secret"}]}'
+    question = b'{"type":"noul","instructions":"q"}'
+    key = judgment_cache_key("https://api.typesafe.ai", "jev-1.13", state, question)
+    assert key != judgment_cache_key("https://api.typesafe.ai", "jev-1.14", state, question)
+    assert key != judgment_cache_key("https://api.typesafe.ai", "jev-1.13", state + b"x", question)
+    assert key != judgment_cache_key("https://api.typesafe.ai", "jev-1.13", state, question + b"x")
+
+    path = tmp_path / "cache.sqlite3"
+    connection = sqlite3.connect(path)
+    connection.execute("CREATE TABLE answers (key TEXT PRIMARY KEY, created REAL NOT NULL, body BLOB NOT NULL)")
+    connection.execute("PRAGMA user_version=1")
+    connection.commit()
+    connection.close()
+
+    async with AnswerCache(path, 3600) as cache:
+        assert await cache.get_judgment(key) is None
+        await cache.put_judgment(key, b'{"model":"jev-1.13","answer":{"type":"noul","noul":0.2}}')
+        assert await cache.get_judgment(key) is not None
+
+    connection = sqlite3.connect(path)
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert connection.execute("SELECT count(*) FROM judgments").fetchone()[0] == 1
+    connection.close()
+    assert b"secret" not in path.read_bytes()
 
 
 async def test_api_failure_cancels_pipeline_instead_of_marking_units_clean(tmp_path: Path, config: Config) -> None:

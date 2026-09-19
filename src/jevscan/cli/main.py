@@ -2,6 +2,8 @@
 
 import asyncio
 import os
+import shutil
+import subprocess
 import sys
 from contextlib import nullcontext
 from dataclasses import replace
@@ -31,8 +33,21 @@ def _overrides(loaded: LoadedConfig, args: Any) -> LoadedConfig:
     document = loaded.config.model_dump(mode="json")
     if args.no_enrichment:
         document["enrichment"]["enabled"] = False
+        document["enrichment"]["mode"] = "off"
+    if args.enrichment_mode is not None:
+        document["enrichment"]["mode"] = args.enrichment_mode
+        document["enrichment"]["enabled"] = args.enrichment_mode != "off"
     if args.jobs is not None:
         document["scan"]["jobs"] = args.jobs
+    if args.max_full_file_lines is not None:
+        document["scan"]["max_full_file_lines"] = args.max_full_file_lines
+    for key, value in (
+        ("max_requests", args.max_requests),
+        ("max_input_tokens", args.max_input_tokens),
+        ("max_cost", args.max_cost),
+    ):
+        if value is not None:
+            document["budget"][key] = value
     for key, value in (
         ("concurrency", args.concurrency),
         ("requests_per_minute", args.rpm),
@@ -77,8 +92,42 @@ def _validate_output(output: Path | None, paths: list[Path], config_source: str)
 def _validate_scan_options(config: Config, args: Any) -> None:
     if args.max_display < 0:
         raise ConfigError("--max-display must be nonnegative")
+    if args.plan and args.offline:
+        raise ConfigError("--plan and --offline are separate modes; choose one")
     if not args.offline and not config.selected_rules():
         raise ConfigError("there are no enabled rules; use --offline for an inventory or enable a rule")
+
+
+def _git_selected_paths(root: Path, requested: list[Path], *, staged: bool) -> list[Path]:
+    git = shutil.which("git")
+    if git is None:
+        raise ConfigError("cannot select Git-changed files: git executable not found")
+
+    def run(*args: str) -> list[str]:
+        try:
+            result = subprocess.run(  # noqa: S603 -- fixed Git executable and fixed command families below
+                [git, "-C", str(root), *args],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            raise ConfigError(f"cannot select Git-changed files: {exc}") from exc
+        return [line for line in result.stdout.splitlines() if line]
+
+    names = run("diff", "--name-only", "--diff-filter=ACMR", *(["--cached"] if staged else ["HEAD"]))
+    if not staged:
+        names.extend(run("ls-files", "--others", "--exclude-standard"))
+    candidates: list[Path] = []
+    for name in dict.fromkeys(names):
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            continue
+        candidate = Path(os.path.abspath(root / relative))  # noqa: PTH100 -- do not resolve symlinks here
+        if any(candidate == target or (target.is_dir() and candidate.is_relative_to(target)) for target in requested):
+            candidates.append(candidate)
+    return candidates
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -98,13 +147,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.list_rules:
             _list_rules(loaded.config)
             return 0
+        if args.changed or args.staged:
+            paths = _git_selected_paths(loaded.root, paths, staged=args.staged)
         _validate_scan_options(loaded.config, args)
         _validate_output(args.output, paths, loaded.source)
         metadata = {
             "version": __version__,
             "root": str(loaded.root),
             "config": loaded.source,
-            "mode": "offline" if args.offline else "live",
+            "mode": "offline" if args.offline else "plan" if args.plan else "live",
             "model": loaded.config.jev.model,
             "parser_processes": worker_count(loaded.config),
             "concurrency": 0 if args.offline else loaded.config.jev.concurrency,
@@ -119,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
                     loaded,
                     reporter,
                     offline=args.offline,
+                    plan_only=args.plan,
                     no_cache=args.no_cache,
                     api_key=os.environ.get("TYPESAFE_API_KEY", ""),
                     base_url=os.environ.get("TYPESAFE_BASE_URL", "").strip() or "https://api.typesafe.ai",

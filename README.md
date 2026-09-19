@@ -2,7 +2,7 @@
 
 A configuration-driven semantic code-quality scanner for **Python, Rust, Perl, TypeScript, and JavaScript**. Tree-sitter extracts source; Jev answers independent typed questions. jevscan does not execute or import the code being scanned.
 
-**0.2.0rc6** restores Jev-1.13-aware preflight planning: the published 32k state+longest-question and 64k aggregate limits are treated as provider ceilings, with 28k/56k local headroom by default. Aggregate overflow splits questions; context overflow invokes bounded rule-aware AST compaction before HTTP. Request-local 400/422 failures are isolated instead of cancelling unrelated files. Coverage remains summarized by file, callback display names describe call sites, and named rules/rulesets remain additive YAML. This is a release candidate, not a claim of calibrated semantic accuracy. [Verification](docs/VERIFICATION.md) separates software checks from live model acceptance.
+**0.2.0rc7** makes paid inference reusable and budgeted. Checks sharing exact evidence stay batched across rules and targets, oversized owner context is compacted before sibling checks fragment, independent requests from a large file can use global concurrency, and validated judgments are cached independently of HTTP batch composition. Targeted rule-specific enrichment, a 3,000-line default ceiling for complete-file semantics, `--plan`, live spending guards, progress reporting, and clean parser-worker interruption make whole-repository scans observable before they spend credits. This is a release candidate, not a claim of calibrated semantic accuracy. [Verification](docs/VERIFICATION.md) separates software checks from live model acceptance.
 
 ## Install and run
 
@@ -19,12 +19,19 @@ export TYPESAFE_API_KEY='your-key'
 uv run jevscan src                   # confirmed and uncertain warning/error signals
 uv run jevscan src -v                # every evaluated answer
 uv run jevscan src --format jsonl -o report.jsonl
+
+# No API key or paid inference: estimate initial packing and input cost.
+uv run jevscan src --plan
+
+# Hard live guards; unfinished checks remain explicit incomplete coverage.
+uv run jevscan src --max-requests 500 --max-cost 0.20
+uv run jevscan src --enrichment-mode off
 ```
 
 An installed wheel works without this checkout:
 
 ```bash
-uv tool install ./dist/py3_jevscan-0.2.0rc6-py3-none-any.whl
+uv tool install ./dist/py3_jevscan-0.2.0rc7-py3-none-any.whl
 ```
 
 The pinned `tree-sitter==0.25.2` and `tree-sitter-language-pack==0.13.0` bundle native grammars. Scans never download grammars. Updating these pins requires parser integration tests.
@@ -112,7 +119,13 @@ A method can be judged independently while Jev sees its whole class. Checks shar
 
 Jev-1.13 planning uses two published provider ceilings: **32,000 tokens for state plus the longest question** and **64,000 tokens for state plus all questions**. The packaged configuration keeps conservative 28,000/56,000 thresholds so the byte-based estimator has headroom. Setting either local threshold to `null` removes only that extra margin; known model ceilings still apply. Explicit values above a known model ceiling are clamped to the provider ceiling. Unknown model IDs fall back to the configured limits and the byte/question caps.
 
-Preflight distinguishes the two dimensions before making an HTTP request. Aggregate/question-count overflow with a fitting context is handled by splitting questions while retaining the intact state. Context overflow invokes rule-aware AST compaction. If both are over budget, context is compacted and the resulting questions are repacked. The run also observes successful `usage.input_tokens` and can only tighten the byte/token estimate; it never relaxes the configured or provider limits.
+Preflight distinguishes the two dimensions before making an HTTP request. Aggregate/question-count overflow with fitting evidence is handled by splitting questions while retaining the exact state. If a shared owner is itself over the context ceiling, sibling checks stay together until recovery prepares smaller exact evidence; checks that converge on identical evidence are repacked into mixed Noul/Choice/Score batches. The run also observes successful `usage.input_tokens` and can only tighten the byte/token estimate; it never relaxes the configured or provider limits.
+
+Batching follows **evidence identity**, not rule identity. Different rules and different targets share one System One request whenever they refer to the same exact state and fit the provider budgets. The planner does not enlarge a small owner merely to manufacture sharing: input-token reuse, not minimum HTTP count by itself, is the objective.
+
+Complete-file semantic checks have a separate `scan.max_full_file_lines` ceiling (3,000 by default). Exceeding it produces an explicit `file-size-limit` coverage error and omits only checks that truly require the complete file; unit/owner checks continue. The limit is an operational policy, not a semantic claim that a 3,001-line file is inherently defective.
+
+`--plan` parses and packs without contacting TypeSafe. It reports a conservative initial request/input estimate before compaction, enrichment, retries, or warm judgment-cache reuse. Live guards can cap request attempts, estimated input tokens, or configured input cost. The packaged profile stops after 1,500 request attempts or 5,000,000 estimated input tokens unless those guards are overridden in YAML; budget exhaustion leaves remaining work incomplete.
 
 Provider rejection remains a second line of defence because the local estimator is not TypeSafe's tokenizer. HTTP 413 and exact structured `max_tokens_exceeded` machine values trigger bounded size recovery. A rejected state becomes a per-file scheduling hint so hundreds of sibling checks do not repeatedly send it. Identical failed request bytes are not replayed. Unknown request-local HTTP 400/422 responses are sanitized, attributed to the affected checks and allowed to continue; three equivalent failures trip a scan-wide circuit breaker. Authentication/permission and other systemic failures still abort.
 
@@ -124,7 +137,7 @@ The default recovery policy allows three progressively smaller compacted request
 
 Only actionable uncertainty is reviewed by default: missing evidence, reduced context, and eligible applicability questions. Scheduling prioritizes evidence gaps across the whole file before consuming review slots. Ordinary low confidence or ambiguous probabilities do not automatically trigger retrieval. Rules can customize `enrich_on`.
 
-One routing request normally contains a **disposition Choice** and four **independent Nouls** for callers, definitions, tests, and enclosing context. The family questions use an explicit speculative premise and cannot see each other's answers. Several families or none can qualify; their probabilities are not competing shares of one distribution.
+In `targeted` mode, each rule declares which evidence families may matter. `callers`, `callees` (syntax-linked referenced definitions), `tests`, and `enclosing_context` remain independent possibilities; `full` exposes all families and `off` performs no cross-source enrichment. The disposition Choice and selected family Nouls share one bounded request when they fit. Several families or none can qualify; their probabilities are not competing shares of one distribution.
 
 A confident `local_evidence` disposition allows qualifying families through. `sufficient`, `not_applicable`, `unavailable`, uncertain disposition, or no qualifying family stops explicitly. Family results do not override a stop disposition. Small request budgets split the routing questions, rather than ignoring those budgets.
 
@@ -132,6 +145,8 @@ Candidates from all qualifying families are deduplicated and combined in determi
 
 ```bash
 uv run jevscan src --no-enrichment
+uv run jevscan src --enrichment-mode targeted  # default: only rule-declared families
+uv run jevscan src --enrichment-mode full      # broader, potentially more expensive
 ```
 
 Global `enrichment.enabled: false`, per-rule `enrich: false`, or `enrich_on: []` also disables refinement. Defaults limit reviews to 12 checks and 36 auxiliary prediction requests per file, 12 candidates total per review, 3 admitted evidence units, and a lazy project catalogue of at most 1,000 source files / 16 MiB. Cache hits count toward logical limits. Existing token/byte/question budgets apply in every phase.
@@ -154,11 +169,11 @@ Confirmed warnings are yellow `!`; errors are red `x`. Signals that cross a conf
 
 Callback names use syntax-derived labels such as `describe["mutation renderer"].test["mounts ..."]`, `Promise[arg1]`, `queueMicrotask[arg1]`, and `OutputWaitOwner.pump.then[arg2]`. Generic argument roles do not claim a particular runtime API. Canonical byte-span IDs, lexical names, retrieval references, and the set of scanned callbacks are unchanged; labels are presentation metadata.
 
-Coverage warnings no longer flood the terminal. A single per-file summary reports compacted targets and omitted checks. Detailed `context-reduced` / `evaluation-size-limit` diagnostics stay in JSON/JSONL; even `-v` does not print hundreds of them. Genuine parser, filesystem and API errors remain visible immediately. The new `context_selection` audit is separate from post-judgment enrichment `reviews`.
+Coverage warnings no longer flood the terminal. While live requests are active, an interactive terminal shows one updating progress line with sent/completed requests, cache hits, input tokens, and elapsed time. A single per-file summary reports compacted targets and omitted checks. Detailed `context-reduced` / `evaluation-size-limit` diagnostics stay in JSON/JSONL; even `-v` does not print hundreds of them. Genuine parser, filesystem and API errors remain visible immediately. The new `context_selection` audit is separate from post-judgment enrichment `reviews`.
 
 All text, including messages and long titles, wraps to terminal display width with continuation indentation. Colors are automatic for terminals; `COLOR=yes|no` overrides detection and `NO_COLOR` disables them. Display limits count targets after filtering. Diagnostics and summaries are never hidden. Offline inventory lists units without `-v`.
 
-JSON/JSONL **schema 7** includes all raw answers, stable rule IDs, `rule_metadata` (title/ruleset), statuses, separate confirmed/tentative findings, evidence/model/cache provenance, review audits, context-selection traces, and sanitized provider-request-rejection counters/metadata. Verbosity and display limits do not filter machine reports. Review audits preserve initial answers, disposition/family predictions, candidate family membership, selected spans, omissions, and stopping outcomes. JSONL flushes each event. File results are grouped when evaluation finishes; files may finish in any order.
+JSON/JSONL **schema 8** includes all raw answers, stable rule IDs, `rule_metadata` (title/ruleset), statuses, separate confirmed/tentative findings, evidence/model/cache provenance, review audits, context-selection traces, and sanitized provider-request-rejection counters/metadata. Verbosity and display limits do not filter machine reports. Review audits preserve initial answers, disposition/family predictions, candidate family membership, selected spans, omissions, and stopping outcomes. JSONL flushes each event. File results are grouped when evaluation finishes; files may finish in any order.
 
 | Exit | Meaning |
 |---|---|
@@ -179,11 +194,11 @@ discovery → spawned Tree-sitter parsers → bounded file queue
           → terminal / JSON / JSONL
 ```
 
-Each evaluator owns one file's plan/results. Files run concurrently; requests within a file are sequential. Full source/context is retained for active files; the optional shared source catalogue has separate limits. Resource lifecycle belongs to `scanner.py`; selection/loading to `config.py`; question contracts to `rules.py`; packing to `planning.py`; bounded recovery to `execution.py`; exact evidence to `context.py`; local selection to `compaction.py` and shared relevance questions to `selection.py`; assessment to `assessment.py`; HTTP/cache prediction to `inference.py`; local candidates to `retrieval.py`; refinement to `enrichment.py`; results to `evaluation.py`; presentation to `cli/`.
+Each evaluator owns one file's plan/results. Independent request batches inside a large file can also run concurrently; one client semaphore and one rate limiter bound concurrency and pacing across the whole scan. Full source/context is retained for active files; the optional shared source catalogue has separate limits. Resource lifecycle belongs to `scanner.py`; selection/loading to `config.py`; question contracts to `rules.py`; packing to `planning.py`; bounded recovery to `execution.py`; exact evidence to `context.py`; local selection to `compaction.py` and shared relevance questions to `selection.py`; assessment to `assessment.py`; HTTP/cache prediction to `inference.py`; local candidates to `retrieval.py`; refinement to `enrichment.py`; results to `evaluation.py`; presentation to `cli/`.
 
 Live requests use `POST https://api.typesafe.ai/v1/systemone`. Authentication comes only from `TYPESAFE_API_KEY`. Model precedence is CLI, then `TYPESAFE_DEFAULT_MODEL`, then YAML. `TYPESAFE_BASE_URL` is an environment-only origin override; project config cannot redirect credentials. HTTPS is required except for loopback tests, and redirects are disabled.
 
-The SQLite cache stores raw responses, not submitted source or credentials. Identity includes endpoint, request body, package version, and prompt version. Threshold/title/selection-only edits reuse eligible cached answers when the actual request is unchanged. Batch composition changes may change that identity. Pin the model for reproducibility; an alias may reuse cached results until expiry. `--no-cache` disables reads and writes. `--no-enrichment` disables cross-file uncertainty refinement, not local size recovery; set `compaction.semantic: false` to disable auxiliary Jev ordering during recovery. Reports contain source metadata and are potentially sensitive.
+The SQLite cache stores raw responses and independently reusable validated judgments, not submitted source or credentials. Request-cache identity still follows the canonical request. Judgment-cache identity follows endpoint, model, exact evidence, exact bound question, and prompt compatibility, so changing batch composition or an unrelated selected rule does not repurchase an unchanged judgment. Changing required context or the question still invalidates it. Pin the model for reproducibility; an alias may reuse cached results until expiry. `--no-cache` disables reads and writes. `--no-enrichment` disables cross-file uncertainty refinement, not local size recovery; set `compaction.semantic: false` to disable auxiliary Jev ordering during recovery. Reports contain source metadata and are potentially sensitive.
 
 Source is not sandboxed against a hostile filesystem or proven immune to prompt injection. Aliases, dynamic dispatch, macros, external contracts, and cross-language resolution remain limited. Global Git excludes are not read. [API/evidence contracts](docs/JEV_API.md).
 

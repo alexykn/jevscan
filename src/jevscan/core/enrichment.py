@@ -159,7 +159,20 @@ class Enricher:
         })
         return prediction
 
-    def _routing_questions(self) -> dict[str, Question]:
+    def _allowed_families(self, check: Check) -> tuple[str, ...]:
+        if not self.limits.enabled or self.limits.mode == "off":
+            return ()
+        if self.limits.mode == "full":
+            return tuple(EVIDENCE_FAMILIES)
+        aliases = {"callees": "definitions"}
+        allowed = []
+        for configured in check.rule.enrichment_families:
+            family = aliases.get(configured, configured)
+            if family in EVIDENCE_FAMILIES and family not in allowed:
+                allowed.append(family)
+        return tuple(allowed)
+
+    def _routing_questions(self, check: Check) -> dict[str, Question]:
         questions: dict[str, Question] = {
             "disposition": ChoiceQuestion(
                 type="choice",
@@ -172,7 +185,8 @@ class Enricher:
                 criteria=DISPOSITIONS,
             )
         }
-        for family, description in EVIDENCE_FAMILIES.items():
+        for family in self._allowed_families(check):
+            description = EVIDENCE_FAMILIES[family]
             questions[family] = NoulQuestion(
                 type="noul",
                 instructions=(
@@ -187,7 +201,7 @@ class Enricher:
 
     async def _routing_answers(self, check: Check, evidence: Evidence, trace: dict[str, Any]) -> dict[str, Answer]:
         """Batch independent routing questions; small configured request budgets still apply."""
-        questions = self._routing_questions()
+        questions = self._routing_questions(check)
         wire = self._wire(check, questions)
         pending: dict[str, Question] = {}
         answers: dict[str, Answer] = {}
@@ -212,7 +226,7 @@ class Enricher:
         disposition = answers["disposition"]
         assert isinstance(disposition, ChoiceAnswer)
         scores = {}
-        for name in EVIDENCE_FAMILIES:
+        for name in self._allowed_families(check):
             answer = answers[name]
             assert isinstance(answer, NoulAnswer)
             scores[name] = answer.noul
@@ -296,6 +310,9 @@ class Enricher:
         self.inference.summary.enrichment_reviewed += 1
         trace["outcome"] = "failed"  # Retained if a genuine service/validation failure aborts the scan.
         try:
+            if not self._allowed_families(check):
+                trace["outcome"] = "enrichment_disabled"
+                return None
             routing = await self._route(check, evidence, trace)
             trace["disposition"] = routing.disposition
             trace["evidence_families"] = list(routing.families)
