@@ -371,23 +371,25 @@ async def test_tentative_severity_reclassifies_from_cache_without_double_countin
     assert len(calls) == 1
 
 
-async def test_large_complete_file_is_attempted_before_any_compaction(basic_rule):
+async def test_known_model_limit_preflights_oversized_complete_file_without_http(basic_rule):
     rule = Rule.model_validate({**basic_rule.model_dump(), "target": "file", "context": "file", "applies_to": []})
     config = configured(rule)
     source = "# " + "context with words " * 8000 + "\ndef f(): return 1\n"
     planner = planned(source, config)
-    assert planner.estimate(planner.context.requested(planner.checks[0]), planner.checks)[0] > 46_000
-    bodies = []
+    requested = planner.context.requested(planner.checks[0])
+    assert planner.estimate(requested, planner.checks)[0] > 46_000
+    assert "context" in planner.violations(requested, planner.checks)
 
-    def handle(request):
-        bodies.append(json.loads(request.content))
-        return answer(request)
+    def never(_request):
+        raise AssertionError("known Jev planning limit must trigger recovery before HTTP")
 
     sink, summary = Sink(), Summary("live")
-    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(never)) as client:
         await evaluate_file(planner, client, None, sink, summary)
-    assert len(bodies) == 1 and bodies[0]["state"]["documents"][0]["content"] == source
-    assert summary.context_reduced == summary.compaction_calls == summary.checks_skipped == 0
+        assert client.requests == 0
+    assert summary.checks_evaluated == 0 and summary.checks_skipped == 1 and summary.incomplete
+    event = next(event for event in sink.events if event["event"] == "evaluation")
+    assert event["context_selection"]["cohesion"]["trigger"] == "model_context_preflight"
 
 
 async def test_rejected_source_is_not_reprobed_for_every_method(basic_rule):
@@ -407,7 +409,7 @@ async def test_rejected_source_is_not_reprobed_for_every_method(basic_rule):
     sink, summary = Sink(), Summary("live")
     async with JevClient(configured(basic_rule).jev, "test-key", transport=httpx.MockTransport(handle)) as client:
         await evaluate_file(planner, client, None, sink, summary)
-    assert len(rejected) == 2  # one batch and one smallest-question probe
+    assert not rejected  # documented local limits compact before the provider sees the oversized state
     assert len(compact) == 24 and summary.units_evaluated == 24
     assert summary.units_skipped == 1 and summary.checks_skipped == 1
     coverage = [event for event in sink.events if event["event"] == "coverage"]
@@ -585,3 +587,31 @@ async def test_equal_compacted_context_still_batches_independent_rules(basic_rul
     assert any(len(body["questions"]) > 1 for body in accepted)
     assert sum(len(body["questions"]) for body in accepted) == 9 == summary.checks_evaluated
     assert len(accepted) < 9 and summary.checks_skipped == 0
+
+
+async def test_unknown_request_rejection_isolated_to_one_request_and_scan_continues(basic_rule):
+    config = configured(basic_rule, max_questions=1)
+    source = "class S:\n    def one(self): return 1\n    def two(self): return 2\n"
+    planner = planned(source, config)
+    seen = 0
+
+    def handle(request):
+        nonlocal seen
+        seen += 1
+        if seen == 1:
+            return httpx.Response(
+                400, json={"error": {"type": "invalid_request"}}, headers={"x-typesafe-request-id": "bad-1"}
+            )
+        return answer(request)
+
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+    assert summary.request_rejections == 1
+    assert summary.checks_skipped == 1 and summary.checks_evaluated == len(planner.checks) - 1
+    assert summary.incomplete
+    diagnostics = [event for event in sink.events if event.get("code") == "provider-request-rejected"]
+    assert len(diagnostics) == 1
+    assert "invalid_request" in diagnostics[0]["message"]
+    assert "bad-1" in diagnostics[0]["message"]
+    assert any(event["event"] == "evaluation" and event["answers"] for event in sink.events)

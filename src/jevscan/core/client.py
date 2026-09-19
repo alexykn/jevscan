@@ -5,6 +5,7 @@ API keys or request/response bodies. Source text leaves the machine only in live
 """
 
 import asyncio
+import hashlib
 import math
 import random
 import time
@@ -17,33 +18,85 @@ import httpx
 
 from jevscan import __version__
 from jevscan.core.config import JevConfig
-from jevscan.core.protocol import ContextLimitError, JevError, JevResponse, validate_response
+from jevscan.core.protocol import (
+    ContextLimitError,
+    JevError,
+    JevResponse,
+    RequestRejectedError,
+    validate_response,
+)
 from jevscan.core.rules import Question
 
 
+def _safe_request_id(response: httpx.Response) -> str:
+    value = response.headers.get("x-typesafe-request-id", "")[:100]
+    return "".join(c for c in value if c.isalnum() or c in "-_")
+
+
+def _safe_machine_value(value: object) -> str | None:
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, int):
+        return str(value)
+    if not isinstance(value, str) or not 1 <= len(value) <= 80:
+        return None
+    return value if all(c.isalnum() or c in "._:-" for c in value) else None
+
+
+def _machine_fields(body: object) -> dict[str, tuple[str, ...]]:
+    """Keep bounded machine tokens only; never retain free-text messages or response bodies."""
+    found: dict[str, set[str]] = {}
+
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            for raw_key, child in value.items():
+                key = str(raw_key)
+                if key in {"code", "type", "status", "error"}:
+                    safe = _safe_machine_value(child)
+                    if safe is not None:
+                        found.setdefault(key, set()).add(safe)
+                visit(child)
+        elif isinstance(value, list):
+            for child in value[:64]:
+                visit(child)
+
+    visit(body)
+    return {key: tuple(sorted(values)) for key, values in sorted(found.items())}
+
+
+def _json_body(response: httpx.Response) -> object:
+    try:
+        return response.json()
+    except ValueError:
+        return None
+
+
 def _context_rejection(response: httpx.Response) -> ContextLimitError | None:
-    """Recognize explicit size signals, never free-text guesses or arbitrary validation failures."""
+    """Recognize published size signals from bounded machine fields, never free text."""
     code = "content_too_large" if response.status_code == 413 else ""
     if response.status_code in {400, 422}:
-        try:
-            body = response.json()
-        except ValueError:
-            body = None
-        if isinstance(body, dict):
-            fields = (body, body.get("error"), body.get("detail"))
-            if any(
-                value == "max_tokens_exceeded"
-                if isinstance(value, str)
-                else isinstance(value, dict) and value.get("code") == "max_tokens_exceeded"
-                for value in fields
-            ):
-                code = "max_tokens_exceeded"
+        fields = _machine_fields(_json_body(response))
+        if any("max_tokens_exceeded" in values for values in fields.values()):
+            code = "max_tokens_exceeded"
     if not code:
         return None
-    request_id = response.headers.get("x-typesafe-request-id", "")[:100]
-    request_id = "".join(c for c in request_id if c.isalnum() or c in "-_")
     return ContextLimitError(
-        "Jev rejected the request's context size", status=response.status_code, code=code, request_id=request_id
+        "Jev rejected the request's context size",
+        status=response.status_code,
+        code=code,
+        request_id=_safe_request_id(response),
+    )
+
+
+def _request_rejection(response: httpx.Response) -> RequestRejectedError | None:
+    if response.status_code not in {400, 422}:
+        return None
+    body = _json_body(response)
+    return RequestRejectedError(
+        status=response.status_code,
+        machine_fields=_machine_fields(body),
+        request_id=_safe_request_id(response),
+        fingerprint=hashlib.sha256(response.content).hexdigest()[:16],
     )
 
 
@@ -111,6 +164,7 @@ class JevClient:
         self.base_url = endpoint_from(base_url)
         self.limiter = RequestLimiter(config.requests_per_minute)
         self.requests = 0
+        self.request_rejection_counts: dict[tuple[object, ...], int] = {}
         self.http = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=config.timeout_seconds,
@@ -143,10 +197,20 @@ class JevClient:
             rejection = _context_rejection(response)
             if rejection is not None:
                 raise rejection
+            request_rejection = _request_rejection(response)
+            if request_rejection is not None:
+                signature = request_rejection.signature
+                count = self.request_rejection_counts.get(signature, 0) + 1
+                self.request_rejection_counts[signature] = count
+                if count >= 3:
+                    raise JevError(
+                        f"Jev rejected {count} equivalent requests (HTTP {response.status_code}); "
+                        "stopping because the failure appears systemic"
+                    )
+                raise request_rejection
             retryable = response.status_code in {408, 429} or response.status_code >= 500
             if not retryable or attempt == self.config.retries:
-                request_id = response.headers.get("x-typesafe-request-id", "unavailable")[:100]
-                request_id = "".join(c for c in request_id if c.isalnum() or c in "-_")
+                request_id = _safe_request_id(response) or "unavailable"
                 raise JevError(f"Jev HTTP {response.status_code}; request ID: {request_id}")
             server_delay = _retry_after(response.headers)
             delay = server_delay if server_delay is not None else self._backoff(attempt)

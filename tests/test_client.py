@@ -11,7 +11,7 @@ from jevscan.core.config import Config
 from jevscan.core.context import ContextBuilder
 from jevscan.core.models import ParsedFile, Severity, Target, Unit
 from jevscan.core.planning import Planner, Request
-from jevscan.core.protocol import Check, ContextLimitError, JevError, validate_response
+from jevscan.core.protocol import Check, ContextLimitError, JevError, RequestRejectedError, validate_response
 from jevscan.core.rules import Rule
 
 
@@ -333,6 +333,7 @@ def test_ambiguous_noul_requires_a_directional_signal_for_tentative_severity(uni
         (422, {"error": "max_tokens_exceeded"}, True),
         (400, {"error": {"code": "max_tokens_exceeded"}}, True),
         (422, {"detail": {"code": "max_tokens_exceeded"}}, True),
+        (422, {"detail": [{"type": "max_tokens_exceeded", "msg": "private source"}]}, True),
         (422, {"detail": [{"type": "missing", "msg": "max_tokens_exceeded"}]}, False),
         (400, {"message": "max_tokens_exceeded"}, False),
         (401, {"code": "max_tokens_exceeded"}, False),
@@ -355,3 +356,71 @@ async def test_size_error_envelopes_are_strict_and_safe(status, body, rejected, 
         assert captured.value.metadata()["status"] == status
         assert captured.value.metadata()["request_id"] == "safe-id"
     assert "secret-key" not in str(captured.value)
+
+
+async def test_unknown_400_exposes_only_sanitized_machine_metadata(basic_rule):
+    from jevscan.core.config import JevConfig
+
+    body = {
+        "detail": [{"type": "validation_error", "msg": "private source should never escape"}],
+        "message": "more private source",
+    }
+
+    def handle(_request):
+        return httpx.Response(400, json=body, headers={"x-typesafe-request-id": "safe-id"})
+
+    async with JevClient(
+        JevConfig(requests_per_minute=0, retries=0), "secret-key", transport=httpx.MockTransport(handle)
+    ) as client:
+        with pytest.raises(RequestRejectedError) as caught:
+            await client.evaluate(b"{}", {"q": basic_rule.question})
+    metadata = caught.value.metadata()
+    assert metadata["status"] == 400
+    assert metadata["machine_fields"] == {"type": ["validation_error"]}
+    assert metadata["request_id"] == "safe-id"
+    assert "private source" not in str(caught.value) and "secret-key" not in str(caught.value)
+
+
+async def test_repeated_equivalent_request_rejections_trip_global_circuit_breaker(basic_rule):
+    from jevscan.core.config import JevConfig
+
+    def handle(_request):
+        return httpx.Response(422, json={"error": {"type": "invalid_request"}})
+
+    async with JevClient(
+        JevConfig(requests_per_minute=0, retries=0), "key", transport=httpx.MockTransport(handle)
+    ) as client:
+        for _ in range(2):
+            with pytest.raises(RequestRejectedError):
+                await client.evaluate(b"{}", {"q": basic_rule.question})
+        with pytest.raises(JevError, match="3 equivalent requests"):
+            await client.evaluate(b"{}", {"q": basic_rule.question})
+
+
+def test_known_jev_limits_bound_null_user_caps_and_defaults_keep_headroom() -> None:
+    from jevscan.core.config import EvaluationConfig
+    from jevscan.core.planning import RequestBudget
+
+    default = EvaluationConfig()
+    assert default.max_context_tokens == 28_000 and default.max_total_tokens == 56_000
+    known = RequestBudget(EvaluationConfig(max_context_tokens=None, max_total_tokens=None), "jev-latest")
+    assert known.max_context_tokens == 32_000 and known.max_total_tokens == 64_000
+    pinned = RequestBudget(EvaluationConfig(max_context_tokens=None, max_total_tokens=None), "jev-1.13.0")
+    assert pinned.max_context_tokens == 32_000 and pinned.max_total_tokens == 64_000
+    above_provider = RequestBudget(EvaluationConfig(max_context_tokens=40_000, max_total_tokens=70_000), "jev-latest")
+    assert above_provider.max_context_tokens == 32_000 and above_provider.max_total_tokens == 64_000
+    unknown = RequestBudget(EvaluationConfig(max_context_tokens=None, max_total_tokens=None), "jev-future")
+    assert unknown.max_context_tokens is None and unknown.max_total_tokens is None
+
+
+def test_token_calibration_only_tightens_byte_estimates() -> None:
+    from jevscan.core.model_limits import TokenCalibration
+
+    calibration = TokenCalibration()
+    assert calibration.effective(3.0) == 3.0
+    calibration.observe(20_000, 10_000)
+    assert calibration.observations == 1
+    assert calibration.effective(3.0) == pytest.approx(1.8)
+    calibration.observe(40_000, 10_000)
+    assert calibration.observations == 2
+    assert calibration.effective(3.0) == pytest.approx(1.8)

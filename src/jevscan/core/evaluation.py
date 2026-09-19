@@ -10,9 +10,9 @@ from jevscan.core.context import Evidence
 from jevscan.core.enrichment import REVIEW_PRIORITY, Enricher, review_trigger
 from jevscan.core.execution import FileExecutor
 from jevscan.core.inference import Inference
-from jevscan.core.models import Diagnostic, EventSink, Summary, Target, emit_diagnostic
+from jevscan.core.models import Diagnostic, EventSink, Severity, Summary, Target, emit_diagnostic
 from jevscan.core.planning import Omission, Planner, Request
-from jevscan.core.protocol import Answer, Check
+from jevscan.core.protocol import Answer, Check, RequestRejectedError
 from jevscan.core.retrieval import SourceIndex
 from jevscan.core.rules import ScoreQuestion
 
@@ -144,6 +144,8 @@ class FileResults:
     def __init__(self, planner: Planner) -> None:
         self.planner = planner
         self.records: dict[str, TargetResults] = {}
+        self.request_failures: dict[tuple[object, ...], dict[str, Any]] = {}
+        self.request_rejected_checks = 0
         for check in planner.checks:
             if check.target.id not in self.records:
                 self.records[check.target.id] = TargetResults(check.target)
@@ -161,6 +163,26 @@ class FileResults:
     def omit(self, omission: Omission) -> None:
         check = omission.check
         self.records[check.target.id].skipped[check.rule_id] = omission.reason
+
+    def reject(self, request: Request, error: RequestRejectedError) -> None:
+        metadata = error.metadata()
+        entry = self.request_failures.setdefault(error.signature, {**metadata, "requests": 0, "checks": 0})
+        entry["requests"] += 1
+        entry["checks"] += len(request.checks)
+        self.request_rejected_checks += len(request.checks)
+        for check in request.checks:
+            trace = self.recovery(check)
+            trace["request_rejections"] = [
+                *trace.get("request_rejections", []),
+                {
+                    **metadata,
+                    "request_bytes": len(request.body),
+                    "state_sha256": request.evidence.key,
+                    "questions": len(request.checks),
+                },
+            ]
+            trace["outcome"] = "provider_request_rejected"
+            self.omit(Omission(check, f"provider request rejected (HTTP {error.status})"))
 
     def accept(self, request: Request, answers: dict[str, Answer], model: str, cached: bool) -> None:
         for check in request.checks:
@@ -214,27 +236,56 @@ class FileResults:
             initial.review["final_status"] = final.status
             enricher.inference.summary.enrichment_resolved += final.status != "unknown"
 
-    def finish(self, sink: EventSink, summary: Summary, aborted: bool) -> None:
+    def _finalize_missing(self, aborted: bool) -> None:
         for check in self.planner.checks:
             record = self.records[check.target.id]
-            if check.rule_id not in record.judgments and check.rule_id not in record.skipped:
-                assert aborted, "every planned check must have an answer or explicit omission"
-                record.skipped[check.rule_id] = "scan aborted before an answer was received"
+            if check.rule_id in record.judgments or check.rule_id in record.skipped:
+                continue
+            assert aborted, "every planned check must have an answer or explicit omission"
+            record.skipped[check.rule_id] = "scan aborted before an answer was received"
+
+    def _emit_request_failures(self, sink: EventSink, summary: Summary) -> None:
+        for failure in self.request_failures.values():
+            fields = (
+                ", ".join(f"{key}={','.join(values)}" for key, values in failure["machine_fields"].items())
+                or "no machine fields"
+            )
+            emit_diagnostic(
+                sink,
+                summary,
+                Diagnostic(
+                    self.planner.context.parsed.path,
+                    "provider-request-rejected",
+                    f"Jev HTTP {failure['status']} rejected {failure['checks']} checks "
+                    f"across {failure['requests']} request(s); {fields}; request ID: "
+                    f"{failure['request_id'] or 'unavailable'}",
+                    severity=Severity.ERROR,
+                ),
+            )
+
+    def _emit_coverage(self, sink: EventSink, aborted: bool) -> None:
         reduced_targets = sum(
             any(not item.evidence["context_complete"] for item in record.judgments.values())
             for record in self.records.values()
         )
         skipped = sum(len(record.skipped) for record in self.records.values())
+        if not reduced_targets and not skipped:
+            return
         file_skipped = sum(len(record.skipped) for record in self.records.values() if record.target.scope == "file")
-        if reduced_targets or skipped:
-            sink.emit({
-                "event": "coverage",
-                "path": self.planner.context.parsed.path,
-                "context_reduced_targets": reduced_targets,
-                "skipped_checks": skipped,
-                "skipped_file_checks": file_skipped,
-                "aborted": aborted,
-            })
+        sink.emit({
+            "event": "coverage",
+            "path": self.planner.context.parsed.path,
+            "context_reduced_targets": reduced_targets,
+            "skipped_checks": skipped,
+            "skipped_file_checks": file_skipped,
+            "request_rejected_checks": self.request_rejected_checks,
+            "aborted": aborted,
+        })
+
+    def finish(self, sink: EventSink, summary: Summary, aborted: bool) -> None:
+        self._finalize_missing(aborted)
+        self._emit_request_failures(sink, summary)
+        self._emit_coverage(sink, aborted)
         for record in self.records.values():
             if aborted:
                 for trace in record.context_selection.values():
@@ -252,7 +303,7 @@ async def evaluate_file(
     index: SourceIndex | None = None,
 ) -> None:
     results = FileResults(planner)
-    inference = Inference(client, cache, summary)
+    inference = Inference(client, cache, summary, planner.budget.calibration)
     finished = False
     try:
         await FileExecutor(planner, inference, results).run()

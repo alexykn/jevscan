@@ -74,9 +74,10 @@ class JevConfig(StrictModel):
 
 
 class EvaluationConfig(StrictModel):
-    # Estimates, not a claim that TypeSafe publishes this tokenizer or these quotas.
-    max_context_tokens: int | None = Field(default=None, ge=1024)
-    max_total_tokens: int | None = Field(default=None, ge=1024)
+    # Conservative local planning thresholds below Jev 1.13's published 32k/64k ceilings.
+    # Set null only to remove the extra local margin; known provider ceilings still apply.
+    max_context_tokens: int | None = Field(default=28_000, ge=1024)
+    max_total_tokens: int | None = Field(default=56_000, ge=1024)
     token_reserve: int = Field(default=512, ge=0)
     bytes_per_token: float = Field(default=3.0, ge=1, le=8)
     max_request_bytes: int = Field(default=1_048_576, ge=1024)

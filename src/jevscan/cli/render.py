@@ -5,7 +5,7 @@ from typing import Any, TextIO
 
 from jevscan.cli.terminal import BOLD, CYAN, DIM, GREEN, KIND_STYLE, LEVEL_MARKER, LEVEL_STYLE, RED, YELLOW, Terminal
 
-REPORT_SCHEMA_VERSION = 6
+REPORT_SCHEMA_VERSION = 7
 
 
 class Reporter:
@@ -145,12 +145,24 @@ class Reporter:
             self._evaluation(event)
         elif event["event"] == "coverage":
             self._file_header(event["path"])
-            self.terminal.write(
-                f"coverage — context compacted for {event['context_reduced_targets']} targets; "
-                f"{event['skipped_checks']} checks omitted ({event['skipped_file_checks']} file checks)",
-                2,
-                YELLOW,
-            )
+            rejected = event.get("request_rejected_checks", 0)
+            if event.get("aborted"):
+                text = (
+                    f"scan aborted — {event['skipped_checks']} checks not completed "
+                    f"({event['skipped_file_checks']} file checks)"
+                )
+            elif event["context_reduced_targets"]:
+                text = (
+                    f"coverage — context compacted for {event['context_reduced_targets']} targets; "
+                    f"{event['skipped_checks']} checks omitted ({event['skipped_file_checks']} file checks)"
+                )
+            else:
+                text = (
+                    f"coverage — {event['skipped_checks']} checks omitted ({event['skipped_file_checks']} file checks)"
+                )
+            if rejected:
+                text += f"; {rejected} provider-rejected"
+            self.terminal.write(text, 2, YELLOW)
         elif event["event"] == "diagnostic":
             if event["code"] in {"context-reduced", "evaluation-size-limit"}:
                 return  # The file coverage event preserves visibility without flooding findings.
@@ -202,9 +214,10 @@ class Reporter:
             f"elapsed={summary['elapsed_seconds']:.2f}s",
             style=DIM,
         )
-        if summary["size_rejections"] or summary["compaction_calls"]:
+        if summary["size_rejections"] or summary.get("request_rejections", 0) or summary["compaction_calls"]:
             self.terminal.write(
-                f"context: size-rejections={summary['size_rejections']} compact-selection-calls={summary['compaction_calls']} "
+                f"context: size-rejections={summary['size_rejections']} request-rejections={summary.get('request_rejections', 0)} "
+                f"compact-selection-calls={summary['compaction_calls']} "
                 f"cached={summary['compaction_cache_hits']}",
                 style=DIM,
             )

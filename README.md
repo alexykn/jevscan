@@ -2,7 +2,7 @@
 
 A configuration-driven semantic code-quality scanner for **Python, Rust, Perl, TypeScript, and JavaScript**. Tree-sitter extracts source; Jev answers independent typed questions. jevscan does not execute or import the code being scanned.
 
-**0.2.0rc5** attempts intact evidence before applying bounded, rule-aware AST context recovery. Coverage is summarized by file, and callback display names describe their call sites. Named rules/rulesets remain additive YAML. This is a release candidate, not a claim of calibrated semantic accuracy. [Verification](docs/VERIFICATION.md) separates software checks from live model acceptance.
+**0.2.0rc6** restores Jev-1.13-aware preflight planning: the published 32k state+longest-question and 64k aggregate limits are treated as provider ceilings, with 28k/56k local headroom by default. Aggregate overflow splits questions; context overflow invokes bounded rule-aware AST compaction before HTTP. Request-local 400/422 failures are isolated instead of cancelling unrelated files. Coverage remains summarized by file, callback display names describe call sites, and named rules/rulesets remain additive YAML. This is a release candidate, not a claim of calibrated semantic accuracy. [Verification](docs/VERIFICATION.md) separates software checks from live model acceptance.
 
 ## Install and run
 
@@ -24,7 +24,7 @@ uv run jevscan src --format jsonl -o report.jsonl
 An installed wheel works without this checkout:
 
 ```bash
-uv tool install ./dist/py3_jevscan-0.2.0rc5-py3-none-any.whl
+uv tool install ./dist/py3_jevscan-0.2.0rc6-py3-none-any.whl
 ```
 
 The pinned `tree-sitter==0.25.2` and `tree-sitter-language-pack==0.13.0` bundle native grammars. Scans never download grammars. Updating these pins requires parser integration tests.
@@ -110,9 +110,11 @@ A method can be judged independently while Jev sees its whole class. Checks shar
 
 `unit` context means the target itself. `owner` means the enclosing class, impl, or callable for methods/nested functions; a top-level function uses its file. Owner-level checks see that owner. Rust owner context starts with the file to include sibling type declarations and impls, without claiming compiler-level resolution. File checks inspect the whole file, including top-level code; they are not averages of unit scores. Module/tree targets are unsupported.
 
-There is **no 32 KB unit cutoff or default 28k estimated-token rejection**. Requested source is tried intact when it fits the 1 MiB serialized byte ceiling and 64-question cap. `evaluation.max_context_tokens` and `max_total_tokens` now default to `null`; explicit numeric values remain hard local limits. Estimates still support diagnostics and recovery. This does not imply a larger provider context window: actual model/tokenizer limits remain authoritative.
+Jev-1.13 planning uses two published provider ceilings: **32,000 tokens for state plus the longest question** and **64,000 tokens for state plus all questions**. The packaged configuration keeps conservative 28,000/56,000 thresholds so the byte-based estimator has headroom. Setting either local threshold to `null` removes only that extra margin; known model ceilings still apply. Explicit values above a known model ceiling are clamped to the provider ceiling. Unknown model IDs fall back to the configured limits and the byte/question caps.
 
-On explicit provider size rejection, the executor distinguishes a question-batch problem from a source-size problem. It first probes a singleton, then splits remaining batches. A rejected state becomes a per-file scheduling hint so hundreds of sibling checks do not repeatedly send it. The hint is not an exact tokenizer result: whole-file questions still get their own attempt, and complete unit targets get a final standalone attempt before omission, subject to local hard limits. Identical failed request bytes are not replayed.
+Preflight distinguishes the two dimensions before making an HTTP request. Aggregate/question-count overflow with a fitting context is handled by splitting questions while retaining the intact state. Context overflow invokes rule-aware AST compaction. If both are over budget, context is compacted and the resulting questions are repacked. The run also observes successful `usage.input_tokens` and can only tighten the byte/token estimate; it never relaxes the configured or provider limits.
+
+Provider rejection remains a second line of defence because the local estimator is not TypeSafe's tokenizer. HTTP 413 and exact structured `max_tokens_exceeded` machine values trigger bounded size recovery. A rejected state becomes a per-file scheduling hint so hundreds of sibling checks do not repeatedly send it. Identical failed request bytes are not replayed. Unknown request-local HTTP 400/422 responses are sanitized, attributed to the affected checks and allowed to continue; three equivalent failures trip a scan-wide circuit breaker. Authentication/permission and other systemic failures still abort.
 
 For units, recovery constructs exact AST source spans: the complete target, affordable lexical headers, referenced local definitions/types, fields, constructors, and imports. If the candidate source does not fit, optional Jev questions rank the remaining blocks. Those questions are built from **the active YAML rule's full instructions and criteria**, for custom and built-in rules alike. No rule ID such as JEV04 is hard-coded into relevance logic. Ranking is evidence selection, not proof that omitted code is irrelevant.
 
@@ -156,7 +158,7 @@ Coverage warnings no longer flood the terminal. A single per-file summary report
 
 All text, including messages and long titles, wraps to terminal display width with continuation indentation. Colors are automatic for terminals; `COLOR=yes|no` overrides detection and `NO_COLOR` disables them. Display limits count targets after filtering. Diagnostics and summaries are never hidden. Offline inventory lists units without `-v`.
 
-JSON/JSONL **schema 6** includes all raw answers, stable rule IDs, `rule_metadata` (title/ruleset), statuses, separate confirmed/tentative findings, evidence/model/cache provenance, and review audits. Verbosity and display limits do not filter machine reports. Review audits preserve initial answers, disposition/family predictions, candidate family membership, selected spans, omissions, and stopping outcomes. JSONL flushes each event. File results are grouped when evaluation finishes; files may finish in any order.
+JSON/JSONL **schema 7** includes all raw answers, stable rule IDs, `rule_metadata` (title/ruleset), statuses, separate confirmed/tentative findings, evidence/model/cache provenance, review audits, context-selection traces, and sanitized provider-request-rejection counters/metadata. Verbosity and display limits do not filter machine reports. Review audits preserve initial answers, disposition/family predictions, candidate family membership, selected spans, omissions, and stopping outcomes. JSONL flushes each event. File results are grouped when evaluation finishes; files may finish in any order.
 
 | Exit | Meaning |
 |---|---|

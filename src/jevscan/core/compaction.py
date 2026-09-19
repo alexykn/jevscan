@@ -193,7 +193,7 @@ class Compactor:
         # Serialized request size decreases even when the approximate tokenizer was wrong.
         byte_limit = min(limits.max_request_bytes, max(1, int(previous_bytes * 0.70)))
         reduced = limits.model_copy(update={"max_context_tokens": context_tokens, "max_request_bytes": byte_limit})
-        return RequestBudget(reduced, self.inference.client.config.model)
+        return RequestBudget(reduced, self.inference.client.config.model, self.planner.budget.calibration)
 
     async def _predict(
         self, phase: str, state: bytes, questions: dict[str, Question], wire: dict[str, bytes], trace: dict[str, Any]

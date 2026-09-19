@@ -1,40 +1,40 @@
-# Verification record — 0.2.0rc5
+# Verification record — 0.2.0rc6
 
 ## Baseline and local environment
 
-The baseline is merged main commit `6afbfe670df2bb79792bc076cf98a2c721d3a439`, tree `8ec8297c7c8a36465ad92d069ec0189c20e1d71e`. The local archive's Git tree was verified before editing. Dependencies came from a read-only GitHub workspace workflow because this container cannot resolve external package hosts; no runtime dependency or lockfile change was needed.
+The baseline is merged main commit `c8ec885be94265a9f6a237ca8ab7b088e2f9cb94`, tree `95a5437e303ef7955018e566e2b0e1c91109b064` (merged rc5). The local source was reconstructed from the prior verified rc5 artifact; all non-workflow source matched the merged tree, and the permanent read-only CI workflow was synchronized from main before editing. No runtime dependency or lockfile change is required for rc6.
 
-Local checks used Linux x86-64 CPython 3.13.5, real pinned Tree-sitter grammars, HTTPX 0.28.1, Pydantic 2.13.5, PyYAML 6.0.3, Ruff 0.16.8 and ty 0.0.82. Production transport tests use HTTPX MockTransport, not simulated parser trees or a separate request implementation.
+Local checks used Linux x86-64 CPython 3.13.5, the pinned native Tree-sitter grammars, HTTPX 0.28.1, Pydantic 2.13.5, PyYAML 6.0.3, Ruff 0.16.8 and ty 0.0.82. Transport tests use HTTPX MockTransport; parser tests use the real bundled grammars.
 
 ## Coordinated checks
 
 ```text
-uv run --no-sync ruff format --check src tests
-uv run --no-sync ruff check src tests
-uv run --no-sync ty check
-uv run --no-sync pytest -q -rs
-uv run --no-sync radon cc -s -n C src
-uv build --offline --no-build-isolation
+.venv/bin/ruff format --check src tests
+.venv/bin/ruff check src tests
+.venv/bin/ty check
+.venv/bin/pytest -q -rs
+.venv/bin/radon cc -s -n C src
+python -m build --no-isolation
 ```
 
-Formatting, lint and type checks passed. **223 tests passed, no skips.** Both sdist and wheel built. Radon is an informational report: existing normalization/assessment paths still have nontrivial complexity. New source selection, query construction, request execution and presentation responsibilities have separate owners rather than being added to a generic agent state machine.
+Formatting, lint and type checks passed. **229 tests passed, no skips.** Both sdist and wheel built. Radon remains informational; the touched request-execution and file-finalization paths were decomposed so the new preflight/rejection handling is not concentrated in one large orchestration method.
 
-A clean installed-wheel smoke test outside the checkout verifies version, YAML round-trip/default null token caps, compaction defaults, entry points, schema-6 reports, and real parsing for all five languages. Final PR CI is authoritative for locked Linux Python 3.12/3.13/3.14 and macOS Python 3.12 verification. Permanent CI remains read-only and does not publish or merge releases.
+A clean installed-wheel smoke test outside the checkout verified `0.2.0rc6`, YAML round-trip/default 28k/56k planning thresholds, schema-7 reports, the command entry point, and real five-language offline parsing. Final PR CI remains authoritative for Linux Python 3.12/3.13/3.14 and macOS Python 3.12. Permanent CI is read-only and does not publish or merge a release.
 
-## Regressions and source examples
+## Regressions and failure transitions
 
-The tests exercise an intact file above the old 28k and 46k estimated-token levels being sent to the mock provider without pruning; individual/context and aggregate-question rejection; exact supported error envelopes versus unrelated validation/auth failures; finite decreasing compaction attempts; no replay of identical failed bodies; and complete-target fallback. A rejected file rule cannot silently omit a second file rule whose own request could succeed. File targets are never assessed as fragments.
+The model-budget tests assert that Jev-1.13/`jev-latest`/`jev-preview` use the published 32k state+longest-question and 64k aggregate ceilings even when local token caps are `null`, while the packaged defaults preserve 28k/56k headroom. Explicit values above the known ceiling are capped; unknown future model IDs do not receive invented limits. Run-local token calibration is one-way: observed `usage.input_tokens` can only tighten the byte/token estimate.
 
-A large owner with many methods demonstrates per-file rejection hints rather than a full-state retry for each sibling. Identical compacted evidence still batches independent rules. AST checks retain a complete target and referenced local helper/constant, state fields, constructor, and imports while omitting a large unrelated body. Custom YAML instructions are embedded in real auxiliary requests; source-selection call limits and honest coverage are asserted. Original question meaning/target attribution and existing cross-file enrichment/cache/error tests remain covered.
+A >46k estimated complete-file judgment now fails preflight without an HTTP request rather than discovering a known limit at the provider. Aggregate/question-count overflow is split without reducing source. Large unit contexts exercise the AST compactor before HTTP and preserve the complete target, referenced helper/constant, owner state/constructor and imports while excluding a large unrelated body. Custom YAML questions still appear verbatim in auxiliary relevance bindings; no built-in rule ID carries hidden semantics.
 
-The terminal regression supplies 580 detailed reduction diagnostics and verifies one concise coverage summary in both normal and verbose text, while real syntax errors stay visible and machine diagnostics remain intact. Callback tests cover nested Bun test labels, Promise constructors, nested microtasks and generic argument roles without changing canonical names/IDs or filtering callbacks.
+Provider compatibility tests cover HTTP 413, top-level/nested `max_tokens_exceeded`, and nested validation `detail[].type=max_tokens_exceeded`. Free-text `message`/`msg` token mentions do not enter size recovery. Unknown HTTP 400/422 responses expose only bounded machine fields, sanitized request ID and a response fingerprint; source-bearing messages are not retained. One request-local rejection omits only its checks and later requests in the file continue. The third equivalent request-local rejection trips the shared circuit breaker and becomes scan-fatal.
 
-In addition to committed representative fixtures, the exact public `packages/iyon-tui/src/runtime/output-waiter.ts` Git blob `fbf736fd3adeb8e002af850b3bd6586d97e36e2d` was fetched, copied into the local verification workspace, and its Git blob hash checked. Real TypeScript parsing produced 14 units and 13 declaration spans; its three pump callbacks display as `OutputWaitOwner.pump.then[arg1]`, `then[arg1]`, and `then[arg2]`, distinguished by source lines. This source file is not duplicated into the repository or executed. The larger test patterns in the suite are adapted minimal cases, not an entire live iyon-tui scan.
+Coverage presentation has a regression for the exact rc5 failure shape: `aborted: true`, zero compacted targets and 1,190 unfinished checks renders as **scan aborted**, never as “context compacted for 0 targets.” The existing 580-detail aggregation test still verifies that routine context diagnostics collapse to one file summary while syntax/API errors and machine diagnostics remain visible.
+
+Existing regressions for bounded provider-size recovery, no replay of identical rejected bodies, complete-file/complete-target guarantees, cache identity, cross-file enrichment, callback display names and source provenance remain green.
 
 ## Research and remaining acceptance
 
-See [CONTEXT_RECOVERY.md](CONTEXT_RECOVERY.md) for primary-source references and the distinction between integration documentation and a captured provider error. No authenticated Jev call was made. The accepted `max_tokens_exceeded` compatibility forms are tested, but not represented as individually observed production responses. The documented Jev-1.13 32k/64k limits mean an approximately 46k-token local estimate is not guaranteed to fit; the change permits provider-authoritative decisions instead of inventing a larger window.
+See [CONTEXT_RECOVERY.md](CONTEXT_RECOVERY.md) for the research basis. Pydantic's current TypeSafe integration documentation describes Jev 1.13 as 32k state+longest-question / 64k aggregate and names `max_tokens_exceeded`; the official TypeSafe Python SDK still exposes generic HTTP error machinery rather than a dedicated public context-limit envelope. No authenticated oversized Jev request was made while building rc6, so the exact production error body that caused the user's rc5 HTTP 400 remains unobserved.
 
-No source-selection accuracy, false-positive/negative rate, live latency, or massive-repository peak-memory benchmark is claimed. Lexical dependency selection is not semantics-preserving program slicing or compiler-backed call resolution. Dynamic dispatch, aliases, hidden side effects and external contracts can be missed; omissions and source provenance remain explicit. One optional model relevance judgment can be wrong. Strict full-target coverage is retained rather than inferred from a smaller selected state.
-
-Syntax errors still stop evaluation of the affected file. Windows and the complete TypeScript repository were not tested. A pinned-model, fixed-source JSONL comparison remains necessary to evaluate semantic usefulness and any production response shape not covered by the compatibility contract. More compact source, fewer diagnostics, or additional auxiliary calls alone do not establish improved judgments.
+The next live acceptance run should use the same fixed `iyon-tui` revision and save JSONL. Success criteria are: known large contexts invoke preflight compaction rather than generic 400 failure; request-local 400/422 failures do not cancel unrelated files; any real `max_tokens_exceeded` envelope is recognized or yields enough safe machine metadata to add exact compatibility; compacted source remains relevant; and overall findings remain useful. Fewer omitted checks or more auxiliary calls alone are not semantic validation.
