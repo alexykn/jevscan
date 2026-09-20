@@ -161,10 +161,10 @@ def test_pair_preservation_emits_distinct_identity_and_packaged_choice_report() 
     assert preservation["report"] == packaged.report.model_dump(mode="json")
     assert preservation["question"]["instructions"] != joint["question"]["instructions"]
     for phrase in (
-        "callback, closure, or surrounding call does not by itself invalidate the pair",
-        "captured primitive `const`/immutable value that is never reassigned",
-        "changes, aliases, or can replace the checked value/state",
-        "callback that mutates the checked value or state remains invalidating",
+        "both checks test the same invariant for the same value or state",
+        "A callback, await, or call matters only if it can mutate, alias, or replace",
+        "A captured primitive immutable value that is never reassigned remains preserved",
+        "Choose insufficient_context only when a missing boundary fact decides",
     ):
         assert phrase in preservation["question"]["instructions"]
 

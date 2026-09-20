@@ -54,7 +54,7 @@ applicability and report policy.
 | `jev04-focused-joint` | `FOCUS_JEV04_JOINT` | The same Choice contract, with this task text: “Select exactly one outcome for repeated validation in the target. Choose demonstrably_redundant only when the same invariant is visibly established and checked again without a new boundary, mutation, or concurrency risk. An await, callback, external call, mutation, or possible aliasing boundary can invalidate an invariant; immutable captured values and sequential cohesive lifecycle phases do not create a boundary. Choose insufficient_context only when the repeated check is visible but the missing guarantee determines the result.” Criteria and report gates remain the packaged JEV04 criteria and gates. |
 | `jev04-focused-decomposed` | `FOCUS_JEV04_DECOMPOSED_GUARANTEE`, `FOCUS_JEV04_DECOMPOSED_PRESERVATION` | Two ordinary Noul children, both retaining JEV04 applicability. The guarantee child asks whether the same validation invariant is visibly established before the later validation. The preservation child asks whether the invariant remains preserved between checks without await, callback, external call, mutation, aliasing, or concurrency risk. The analysis composition is conservative AND: both child review signals are required; probabilities are never multiplied. |
 | `jev04-pair-joint` | `FOCUS_JEV04_PAIR_JOINT` | Round-2 ordinary Choice rule using the focused joint meanings and the packaged JEV04 report policy. The task is dynamically bound to exactly one bounded `ValidationPair` extracted from the original unit target. It explicitly asks the model to judge only that pair and the same value/state relation. |
-| `jev04-pair-preservation` | `FOCUS_JEV04_PAIR_PRESERVATION` | Round-3 final ordinary Choice rule using the packaged JEV04 Choice/report contract, the focused joint rule, and the exact same `ValidationPair` binding. In plain language, a callback, closure, or surrounding call does not by itself invalidate the pair when the later predicate reads a captured primitive `const`/immutable value that is never reassigned; classify it `demonstrably_redundant` unless the supplied code changes, aliases, or can replace the checked value/state. A callback that mutates the checked state remains invalidating. No filename- or language-specific exemption is introduced. |
+| `jev04-pair-preservation` | `FOCUS_JEV04_PAIR_PRESERVATION` | Round-3 final ordinary Choice rule using the packaged JEV04 Choice/report contract and the exact same `ValidationPair` binding. It asks whether both checks concern the same invariant and value/state, and whether the supplied code can invalidate that relationship. A callback, await, or call matters only when it can mutate, alias, or replace the checked value/state; a captured primitive immutable value that is never reassigned remains preserved across a callback. No filename- or language-specific exemption is introduced. |
 | `jev04-pair-decomposed` | `FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE`, `FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION` | Round-2 ordinary Noul children using the corrected guarantee and preservation criteria above. Both children receive the exact same pair binding and are composed only as a diagnostic conservative AND; probabilities are never combined. |
 
 Pair metadata is question/provenance metadata only. It contains the candidate
@@ -89,6 +89,11 @@ wording/question identity of `jev04-pair-preservation`; evidence, target
 identity, exact pair binding, extractor, report policy, and location metadata
 must remain unchanged. It must not alter packaged production rules or add
 language- or filename-specific exemptions.
+
+The complete round-3 task is concise rather than an appended addendum so the
+full pair-plus-fallback production decision remains within the predeclared
+input-overhead ceiling. This wording-only reduction does not change the
+criteria, answer labels, evidence, or acceptance target.
 
 The expected development success is: `summit.js` must become a production
 replay signal for the eligible positive, and all five eligible negatives must

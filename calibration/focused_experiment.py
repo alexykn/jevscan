@@ -127,12 +127,11 @@ _FOCUSED_JEV04_JOINT = (
     "insufficient_context only when the repeated check is visible but the missing guarantee determines the result."
 )
 _FOCUSED_JEV04_PAIR_PRESERVATION = (
-    f"{_FOCUSED_JEV04_JOINT} "
-    "A callback, closure, or surrounding call does not by itself invalidate the pair when the later predicate reads "
-    "a captured primitive `const`/immutable value that is never reassigned. Classify it demonstrably_redundant unless "
-    "the supplied code changes, aliases, or can replace the checked value/state. A callback that mutates the checked "
-    "value or state remains invalidating. Do not make filename- or language-specific exemptions; retain the exact "
-    "same-value/state binding and use only the supplied code."
+    "Classify only the bound validation pair. Choose demonstrably_redundant when both checks test the same invariant "
+    "for the same value or state and the supplied code cannot invalidate it between them. A callback, await, or call "
+    "matters only if it can mutate, alias, or replace that checked value or state. A captured primitive immutable "
+    "value that is never reassigned remains preserved across a callback. Choose justified_or_absent when there is no "
+    "repeat or invalidation is possible. Choose insufficient_context only when a missing boundary fact decides."
 )
 _FOCUSED_JEV04_GUARANTEE = (
     "Does the target visibly establish the same validation invariant before the later validation? Answer true only "
