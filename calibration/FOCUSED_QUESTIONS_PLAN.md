@@ -89,8 +89,10 @@ are never fresh held-out support and do not count toward the six fresh groups.
 
 The source snapshot is SHA-256 over sorted relative filenames, each followed
 by a NUL byte and its raw UTF-8 bytes. The focused manifest records the
-resulting digest. Split isolation is by manifest group, not by source file or
-case row: one group cannot occur in both phases.
+resulting digest. The split identity is the SHA-256 of the raw manifest bytes;
+the freeze record must match that digest before held-out planning. Split
+isolation is by manifest group, not by source file or case row: one group
+cannot occur in both phases.
 
 The fixture deliberately includes callback/await boundaries, immutable
 captured values, cohesive lifecycle orchestration, truly interleaved

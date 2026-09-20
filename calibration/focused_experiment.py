@@ -311,6 +311,7 @@ def plan_manifest(
     manifest = load_manifest(manifest_path)
     manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     freeze = _assert_frozen(freeze_path, manifest_sha256) if phase == "heldout" else None
+    allowed_candidates = set(freeze["candidates"]) if freeze else None
     entries = _entries(manifest, phase)
     planned: list[dict[str, Any]] = []
     all_items: list[tuple[Check, Evidence]] = []
@@ -328,6 +329,8 @@ def plan_manifest(
         planner = planners[source]
         expected_target = entry["target"]
         for candidate, rule_id in _candidate_rules_for(str(entry["rule"])):
+            if allowed_candidates is not None and candidate not in allowed_candidates:
+                continue
             matches = [
                 check
                 for check in planner.checks
@@ -363,6 +366,8 @@ def plan_manifest(
                 "actual_provider_input_tokens": None,
             })
 
+    if not all_items:
+        raise ValueError("freeze selects no candidates in the requested phase")
     requests = _pack_requests(next(iter(planners.values())), all_items)
     reserved_tokens = 0
     batch_documents = []
