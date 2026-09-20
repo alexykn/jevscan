@@ -448,6 +448,16 @@ class _CaptureItem:
     evidence: Evidence
     source: Path
     phase: str
+    context_complete: bool
+    target_complete: bool
+
+    @property
+    def parent_case_id(self) -> str:
+        return str(self.entry["id"])
+
+    @property
+    def opportunity_key(self) -> tuple[str, str, str]:
+        return (self.parent_case_id, self.check.target.id, str(self.entry["rule"]))
 
 
 def _capture_items(
@@ -490,8 +500,19 @@ def _capture_items(
                     f"{len(matches)} ({[check.target.metadata() for check in matches]})"
                 )
             check = matches[0]
+            _validate_declared_hashes(entry, source, check.target)
             evidence = planner.requested_evidence(check)
-            item = _CaptureItem(entry, candidate, check, evidence, source, phase)
+            description = planner.context.describe(check, evidence)
+            item = _CaptureItem(
+                entry,
+                candidate,
+                check,
+                evidence,
+                source,
+                phase,
+                bool(description["context_complete"]),
+                bool(description["target_complete"]),
+            )
             items.append(item)
             all_items.append((check, evidence))
     if not all_items:
@@ -500,7 +521,7 @@ def _capture_items(
     return items, requests, planners, manifest_sha256, manifest
 
 
-def _evidence_sources(evidence: Evidence) -> dict[str, str]:
+def _evidence_sources(evidence: Evidence, source: Path, expected_path: str) -> dict[str, str]:
     documents = evidence.state.get("documents")
     if not isinstance(documents, list) or not documents:
         raise ValueError("production evidence has no documents")
@@ -511,7 +532,9 @@ def _evidence_sources(evidence: Evidence) -> dict[str, str]:
         path, content = document.get("path"), document.get("content")
         if not isinstance(path, str) or not isinstance(content, str):
             raise TypeError("production evidence document path/content is invalid")
-        result[path] = content
+        if path != expected_path:
+            raise ValueError("focused capture does not support multi-file evidence")
+        result[path] = source.read_bytes().decode("utf-8")
     return result
 
 
@@ -521,6 +544,26 @@ def _body_reservation(body: bytes, budget: Any) -> int:
 
 def _sha256_text(value: str) -> str:
     return f"sha256:{hashlib.sha256(value.encode('utf-8')).hexdigest()}"
+
+
+def _sha256_bytes_hash(value: bytes) -> str:
+    return f"sha256:{hashlib.sha256(value).hexdigest()}"
+
+
+def _validate_declared_hashes(entry: Mapping[str, Any], source: Path, target: Target) -> None:
+    source_bytes = source.read_bytes()
+    expected = {
+        "source_sha256": _sha256_bytes_hash(source_bytes),
+        "target_sha256": _sha256_bytes_hash(source_bytes[target.start_byte : target.end_byte]),
+    }
+    for field, actual in expected.items():
+        declared = entry.get(field)
+        if declared is None:
+            continue
+        if not isinstance(declared, str) or not declared.startswith("sha256:") or len(declared) != 71:
+            raise ValueError(f"{entry['id']}: {field} must use canonical sha256:<hex> format")
+        if declared != actual:
+            raise ValueError(f"{entry['id']}: {field} does not match the current source")
 
 
 def _case_hashes(
@@ -560,19 +603,9 @@ def _capture_case(
     reserved_input_tokens: int,
 ) -> CalibrationCase:
     validate_answer(answer, item.check.rule.question, item.check.id)
-    evidence_sources = _evidence_sources(item.evidence)
-    target_complete = item.evidence.contains(
-        item.check.target.path,
-        item.check.target.start_byte,
-        item.check.target.end_byte,
-    )
-    coverage = item.evidence.state.get("coverage", {})
-    context_complete = bool(
-        target_complete
-        and isinstance(coverage, Mapping)
-        and coverage.get("file_complete") is True
-        and not coverage.get("omitted_ranges")
-    )
+    evidence_sources = _evidence_sources(item.evidence, item.source, item.check.target.path)
+    target_complete = item.target_complete
+    context_complete = item.context_complete
     entry = item.entry
     label_map = {"positive": "Agree", "negative": "Disagree", "Partial": "Partial"}
     try:
@@ -585,6 +618,7 @@ def _capture_case(
     provenance = {
         "source": "focused-live-capture",
         "candidate": item.candidate,
+        "parent_case_id": item.parent_case_id,
         "source_group": entry.get("group", entry.get("source_group")),
         "source_commit": entry.get("source_commit"),
         "source_path": _source_identity(entry, item.source),
@@ -594,14 +628,19 @@ def _capture_case(
         "validation_pair": entry.get("validation_pair"),
         "expected_score": entry.get("expected_score"),
         "usage": dict(usage),
+        "actual_provider_input_tokens": usage.get("reported_input_tokens"),
+        "reported_input_tokens": usage.get("reported_input_tokens"),
+        "reported_output_tokens": usage.get("reported_output_tokens"),
         "reserved_input_tokens": reserved_input_tokens,
+        "request_index": usage.get("request_index"),
+        "body_sha256": usage.get("body_sha256"),
         "source_documents": sorted(evidence_sources),
     }
     hashes = _case_hashes(item, evidence_sources, endpoint=endpoint, returned_model=returned_model)
     prompt = {"version": PROMPT_VERSION, "policy": QUESTION_POLICY}
     return CalibrationCase.model_validate({
         "version": 1,
-        "case_id": str(entry["id"]),
+        "case_id": f"{item.parent_case_id}::{item.candidate}::{item.check.rule_id}",
         "rule_id": item.check.rule_id,
         "rule": item.check.rule.model_dump(mode="json"),
         "target": item.check.target.metadata(),
@@ -611,7 +650,7 @@ def _capture_case(
         "question_wire": item.check.question(),
         "split": item.phase,
         "label": label,
-        "explanation": "Focused experiment provisional review label; provider answer is replayed through production assessment.",
+        "explanation": "Focused experiment manifest label; provider answer is replayed through production assessment.",
         "provenance": provenance,
         "evidence": {"state": item.evidence.state, "source_documents": evidence_sources},
         "prompt": prompt,
@@ -677,7 +716,7 @@ def _write_jsonl(path: Path, values: Iterable[Mapping[str, Any]]) -> None:
 def _capture_reservations(
     requests: list[Request],
     planner: Planner,
-    parent_counts: Mapping[tuple[str, str], int],
+    parent_counts: Mapping[tuple[str, str], set[tuple[str, str, str]]],
     retries: int,
 ) -> tuple[list[dict[str, Any]], int, int, float]:
     documents: list[dict[str, Any]] = []
@@ -690,15 +729,16 @@ def _capture_reservations(
         )
         body_reserved = _body_reservation(request.body, planner.budget.limits)
         attempts_reserved = body_reserved * (retries + 1)
-        margin_reserved = math.ceil(attempts_reserved * (1 + LOCALIZATION_OVERHEAD))
+        margin_reserved = math.ceil(attempts_reserved * LOCALIZATION_OVERHEAD)
+        total_reserved = attempts_reserved + margin_reserved
         planned_tokens += estimate.total_tokens
-        reserved_tokens += margin_reserved
+        reserved_tokens += total_reserved
         documents.append({
             "request_index": index,
             "question_ids": [check.id for check in request.checks],
             "question_count": len(request.checks),
-            "parent_opportunity_count": sum(
-                parent_counts[(request.evidence.key, check.id)] for check in request.checks
+            "parent_opportunity_count": len(
+                set().union(*(parent_counts[(request.evidence.key, check.id)] for check in request.checks))
             ),
             "evidence_sha256": f"sha256:{hashlib.sha256(request.evidence.encoded).hexdigest()}",
             "body_sha256": f"sha256:{hashlib.sha256(request.body).hexdigest()}",
@@ -706,8 +746,8 @@ def _capture_reservations(
             "request_body_reserved_input_tokens": body_reserved,
             "retry_count_reserved": retries,
             "attempts_reserved_input_tokens": attempts_reserved,
-            "margin_reserved_input_tokens": margin_reserved - attempts_reserved,
-            "reserved_input_tokens": margin_reserved,
+            "margin_reserved_input_tokens": margin_reserved,
+            "reserved_input_tokens": total_reserved,
         })
     return documents, planned_tokens, reserved_tokens, reserved_tokens * INPUT_PRICE_PER_MILLION / 1_000_000
 
@@ -740,6 +780,10 @@ def _cases_from_response(
         "attempts_reserved_input_tokens": reservation["attempts_reserved_input_tokens"],
         "margin_reserved_input_tokens": reservation["margin_reserved_input_tokens"],
         "reserved_input_tokens": reservation["reserved_input_tokens"],
+        "request_index": reservation["request_index"],
+        "body_sha256": reservation["body_sha256"],
+        "parent_opportunity_count": reservation["parent_opportunity_count"],
+        "purchased_question_count": reservation["question_count"],
     }
     cases: list[CalibrationCase] = []
     for check in request.checks:
@@ -847,8 +891,13 @@ async def _capture_live(
             receipt = _capture_receipt(reservation, response, error, before, after)
             receipts.append(receipt)
             if error is not None:
+                _write_jsonl(output, [case.model_dump(mode="json") for case in cases])
+                _write_jsonl(receipts_path, receipts)
                 ledger_invocation["status"] = "failed"
                 ledger_invocation["receipts"] = receipts
+                ledger_invocation["cases"] = len(cases)
+                ledger_invocation["output"] = str(output)
+                ledger_invocation["receipts_path"] = str(receipts_path)
                 failure_costs = [
                     receipt["reported_cost"] for receipt in receipts if receipt["reported_cost"] is not None
                 ]
@@ -936,9 +985,9 @@ def capture_manifest(
         freeze_path=freeze_path,
     )
     planner = next(iter(planners.values()))
-    parent_counts: dict[tuple[str, str], int] = defaultdict(int)
+    parent_counts: dict[tuple[str, str], set[tuple[str, str, str]]] = defaultdict(set)
     for item in items:
-        parent_counts[(item.evidence.key, item.check.id)] += 1
+        parent_counts[(item.evidence.key, item.check.id)].add(item.opportunity_key)
     reservation_documents, planned_tokens, reserved_tokens, reserved_cost = _capture_reservations(
         requests,
         planner,
@@ -959,7 +1008,7 @@ def capture_manifest(
         "planned_input_tokens": planned_tokens,
         "reserved_input_tokens": reserved_tokens,
         "reserved_cost": reserved_cost,
-        "parent_opportunities": len(items),
+        "parent_opportunities": len({item.opportunity_key for item in items}),
         "purchased_questions": sum(len(request.checks) for request in requests),
         "status": "reserved",
         "requests": reservation_documents,
@@ -1045,6 +1094,7 @@ def plan_manifest(
                     f"{len(matches)} ({[check.target.metadata() for check in matches]})"
                 )
             check = matches[0]
+            _validate_declared_hashes(entry, source, check.target)
             evidence = planner.requested_evidence(check)
             all_items.append((check, evidence))
             source_bytes = source.read_bytes()
@@ -1073,32 +1123,40 @@ def plan_manifest(
     if not all_items:
         raise ValueError("freeze selects no candidates in the requested phase")
     requests = _pack_requests(next(iter(planners.values())), all_items)
+    planned_tokens = 0
     reserved_tokens = 0
     batch_documents: list[dict[str, Any]] = []
-    parent_counts: dict[tuple[str, str], int] = defaultdict(int)
-    for check, evidence in all_items:
-        parent_counts[(evidence.key, check.id)] += 1
+    parent_counts: dict[tuple[str, str], set[tuple[str, str, str]]] = defaultdict(set)
+    for (check, evidence), record in zip(all_items, planned, strict=True):
+        parent_counts[(evidence.key, check.id)].add((
+            str(record["case_id"]),
+            check.target.id,
+            _RULE_BASES[record["rule_id"]],
+        ))
     for index, request in enumerate(requests):
         estimate = next(iter(planners.values())).budget.budget(
             request.evidence.encoded, {check.id: encode(check.question()) for check in request.checks}
         )
         body_reserved = _body_reservation(request.body, next(iter(planners.values())).budget.limits)
         attempts_reserved = body_reserved * (CAPTURE_RETRIES + 1)
-        reserved_tokens += estimate.total_tokens
+        margin_reserved = math.ceil(attempts_reserved * LOCALIZATION_OVERHEAD)
+        planned_tokens += estimate.total_tokens
+        reserved_tokens += attempts_reserved + margin_reserved
         batch_documents.append({
             "request_index": index,
             "evidence_sha256": f"sha256:{hashlib.sha256(request.evidence.encoded).hexdigest()}",
             "question_ids": [check.id for check in request.checks],
             "question_count": len(request.checks),
-            "parent_opportunity_count": sum(
-                parent_counts[(request.evidence.key, check.id)] for check in request.checks
+            "parent_opportunity_count": len(
+                set().union(*(parent_counts[(request.evidence.key, check.id)] for check in request.checks))
             ),
             "body_sha256": f"sha256:{hashlib.sha256(request.body).hexdigest()}",
-            "reserved_input_tokens": estimate.total_tokens,
+            "planned_input_tokens": estimate.total_tokens,
             "request_body_reserved_input_tokens": body_reserved,
             "retry_count_reserved": CAPTURE_RETRIES,
             "attempts_reserved_input_tokens": attempts_reserved,
-            "margin_reserved_input_tokens": math.ceil(attempts_reserved * (1 + LOCALIZATION_OVERHEAD)),
+            "margin_reserved_input_tokens": margin_reserved,
+            "reserved_input_tokens": attempts_reserved + margin_reserved,
             "actual_provider_input_tokens": None,
             "reported_input_tokens": None,
         })
@@ -1119,9 +1177,10 @@ def plan_manifest(
         "input_price_per_million": INPUT_PRICE_PER_MILLION,
         "localization_overhead": LOCALIZATION_OVERHEAD,
         "cumulative_cap": CUMULATIVE_CAP,
-        "planned_input_tokens": reserved_tokens,
+        "planned_input_tokens": planned_tokens,
         "reserved_input_tokens": reserved_tokens,
         "reserved_cost": reserved_tokens * INPUT_PRICE_PER_MILLION / 1_000_000,
+        "planned_cost": planned_tokens * INPUT_PRICE_PER_MILLION / 1_000_000,
         "retry_count_reserved": CAPTURE_RETRIES,
         "attempts_reserved_input_tokens": attempts_reserved_total,
         "margin_reserved_input_tokens": margin_reserved_total,
@@ -1131,12 +1190,12 @@ def plan_manifest(
         "cases": planned,
         "batches": batch_documents,
         "accounting": {
-            "parent_opportunities": len(planned),
+            "parent_opportunities": len({parent_key for values in parent_counts.values() for parent_key in values}),
             "purchased_questions": purchased_questions,
         },
     }
-    if result["reserved_cost"] * (1 + LOCALIZATION_OVERHEAD) > CUMULATIVE_CAP:
-        raise ValueError("offline reserved plan exceeds the experiment cap after localization overhead")
+    if result["reserved_cost"] > CUMULATIVE_CAP:
+        raise ValueError("offline reserved plan exceeds the experiment cap after retries and localization margin")
     return result
 
 
@@ -1206,7 +1265,8 @@ def _metric_records(
 def _record_signal(record: Any, signal_by_case: Mapping[str, bool] | None) -> bool:
     if signal_by_case is None:
         return _review_signal(record)
-    return signal_by_case[record.case.case_id]
+    key = str(record.case.provenance.get("parent_case_id", record.case.case_id))
+    return signal_by_case[key]
 
 
 def _metric_partition(records: list[Any]) -> tuple[list[Any], list[Any], list[Any]]:
@@ -1295,35 +1355,55 @@ def _composed_metrics(child_records: Mapping[str, list[Any]]) -> dict[str, Any]:
     by_case: dict[str, dict[str, Any]] = defaultdict(dict)
     for rule_id, records in child_records.items():
         for record in records:
-            by_case[record.case.case_id][rule_id] = record
+            parent_case_id = str(record.case.provenance.get("parent_case_id", record.case.case_id))
+            by_case[parent_case_id][rule_id] = record
     common = {case_id: children for case_id, children in by_case.items() if len(children) == len(child_records)}
     if not common:
         return {"aligned_cases": 0, "metrics": None}
     primary_rule = next(iter(child_records))
     primary = [children[primary_rule] for children in common.values()]
     labels = {
-        record.case.case_id: {child.case.label for child in children.values()}
+        parent_case_id: {child.case.label for child in children.values()}
         for record, children in zip(primary, common.values(), strict=True)
+        for parent_case_id in [str(record.case.provenance.get("parent_case_id", record.case.case_id))]
     }
     if any(len(values) != 1 for values in labels.values()):
         raise ValueError("composed candidate children disagree on a case label")
     targets = {
-        record.case.case_id: {child.case.target for child in children.values()}
+        parent_case_id: {child.case.target for child in children.values()}
         for record, children in zip(primary, common.values(), strict=True)
+        for parent_case_id in [str(record.case.provenance.get("parent_case_id", record.case.case_id))]
     }
     if any(len(values) != 1 for values in targets.values()):
         raise ValueError("composed candidate children disagree on a target identity")
-    signals = {case_id: all(record.signal for record in children.values()) for case_id, children in common.items()}
+    signals = {
+        parent_case_id: all(record.signal for record in children.values())
+        for parent_case_id, children in common.items()
+    }
     return {"aligned_cases": len(primary), "metrics": _metrics_for_records(primary, signals)}
 
 
 def _usage_metrics(cases: Iterable[CalibrationCase]) -> dict[str, Any]:
-    cases = list(cases)
+    unique_cases: list[tuple[CalibrationCase, Mapping[str, Any]]] = []
+    seen_requests: set[str] = set()
+    for case in cases:
+        raw_usage = case.provenance.get("usage")
+        usage = raw_usage if isinstance(raw_usage, Mapping) else {}
+        request_hash = usage.get("body_sha256")
+        if not isinstance(request_hash, str):
+            request_hash = case.provenance.get("body_sha256")
+        if isinstance(request_hash, str) and request_hash in seen_requests:
+            continue
+        if isinstance(request_hash, str):
+            seen_requests.add(request_hash)
+        unique_cases.append((case, usage))
 
     def token_values(key: str) -> list[int]:
         values = []
-        for case in cases:
-            value = case.provenance.get(key)
+        for case, usage in unique_cases:
+            value = usage.get(key)
+            if value is None:
+                value = case.provenance.get(key)
             if value is None:
                 continue
             if type(value) is not int or value < 0:
@@ -1331,13 +1411,27 @@ def _usage_metrics(cases: Iterable[CalibrationCase]) -> dict[str, Any]:
             values.append(value)
         return values
 
-    reported = token_values("actual_provider_input_tokens")
+    reported = token_values("reported_input_tokens")
+    reported_output = token_values("reported_output_tokens")
+    planned = token_values("planned_input_tokens")
+    request_reserved = token_values("request_body_reserved_input_tokens")
+    attempts_reserved = token_values("attempts_reserved_input_tokens")
+    margin_reserved = token_values("margin_reserved_input_tokens")
     reserved = token_values("reserved_input_tokens")
+    parent_opportunities = token_values("parent_opportunity_count")
+    purchased_questions = token_values("purchased_question_count")
     return {
         "reported_input_tokens": sum(reported) if reported else None,
+        "reported_output_tokens": sum(reported_output) if reported_output else None,
+        "planned_input_tokens": sum(planned) if planned else None,
+        "request_body_reserved_input_tokens": sum(request_reserved) if request_reserved else None,
+        "attempts_reserved_input_tokens": sum(attempts_reserved) if attempts_reserved else None,
+        "margin_reserved_input_tokens": sum(margin_reserved) if margin_reserved else None,
         "reserved_input_tokens": sum(reserved) if reserved else None,
         "reported_cost": sum(reported) * INPUT_PRICE_PER_MILLION / 1_000_000 if reported else None,
         "reserved_cost": sum(reserved) * INPUT_PRICE_PER_MILLION / 1_000_000 if reserved else None,
+        "parent_opportunities": sum(parent_opportunities) if parent_opportunities else None,
+        "purchased_questions": sum(purchased_questions) if purchased_questions else None,
         "actual_usage_available": bool(reported),
     }
 

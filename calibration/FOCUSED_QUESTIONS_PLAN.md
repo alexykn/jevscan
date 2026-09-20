@@ -76,9 +76,10 @@ The public fixture corpus is
 [`examples/calibration/focused`](../examples/calibration/focused/README.md).
 Only `examples/calibration/focused/sources/` is scanned. Its manifest and all
 labels are outside that root. There are six fresh independent groups for each
-affected rule: three provisional positive and three provisional negative
-groups. Related variants must stay in one group; no source filename or source
-text contains a label.
+affected rule. JEV01 and JEV04 have three provisional positive and three
+provisional negative groups; public JEV02 review has two positive and four
+negative groups. Related variants must stay in one group; no source filename or
+source text contains a label.
 
 Development uses references to reviewed public expanded cases rather than
 copying their source where possible. The references include `flint.ts`,
@@ -101,9 +102,13 @@ versus boundary-justified validation. These are controlled synthetic
 diagnostics, not a population sample.
 
 The focused JEV02 held-out annotations retain the reviewed expected levels:
-Hazel `3`, Juniper `2`, Maple `2`, Oak `0`, Pine `0`, and Spruce `0`. JEV02
-positive/negative coverage is defined by expected level `>= 2`, not by a
-generic label; the presence child is expected true only for those same levels.
+Hazel `3`, Juniper `1`, Maple `2`, Oak `0`, Pine `0`, and Spruce `0`. Public
+source review therefore supplies two positive groups (Hazel and Maple) and four
+negative groups; private held-out additions must supply any further
+independently reviewed positive support. JEV02 positive/negative coverage is
+defined by expected level `>= 2`, not by a generic label; the presence child is
+expected true only for those same levels. Juniper's explicit local branches
+were reviewed as level 1 and are not warning-worthy.
 
 ## Metrics
 

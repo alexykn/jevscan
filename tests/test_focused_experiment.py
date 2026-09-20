@@ -14,6 +14,7 @@ import yaml
 from calibration.focused_experiment import (
     FOCUSED_MANIFEST,
     MODEL,
+    PROJECT_ROOT,
     _metrics_for_records,
     candidate_documents,
     capture_manifest,
@@ -58,8 +59,10 @@ def test_focused_groups_have_isolated_split_and_required_support() -> None:
         assert len(rule_groups) == 6
         labels = {groups[(rule, group)][0]["label"] for group in rule_groups}
         assert labels == {"positive", "negative"}
-        assert sum(groups[(rule, group)][0]["label"] == "positive" for group in rule_groups) == 3
-        assert sum(groups[(rule, group)][0]["label"] == "negative" for group in rule_groups) == 3
+        expected_positive = 2 if rule == "JEV02" else 3
+        assert sum(groups[(rule, group)][0]["label"] == "positive" for group in rule_groups) == expected_positive
+        expected_negative = 4 if rule == "JEV02" else 3
+        assert sum(groups[(rule, group)][0]["label"] == "negative" for group in rule_groups) == expected_negative
     assert {entry["source_partition_in_expanded"] for entry in manifest["development_references"]} == {"heldout"}
     assert all(
         entry["development_only"] and not entry["counts_as_fresh_heldout"]
@@ -172,8 +175,14 @@ def test_production_planner_binds_exact_targets_and_batches_same_evidence_after_
         assert len({record["evidence_sha256"] for record in records}) == 1
         assert all(record["actual_provider_input_tokens"] is None for record in records)
     assert plan["actual_provider_input_tokens"] is None
-    assert plan["reserved_cost"] * (1 + plan["localization_overhead"]) <= plan["cumulative_cap"]
+    assert plan["reserved_cost"] <= plan["cumulative_cap"]
     assert any(batch["question_count"] > 1 for batch in plan["batches"])
+    assert all(
+        batch["reserved_input_tokens"]
+        == batch["attempts_reserved_input_tokens"] + batch["margin_reserved_input_tokens"]
+        for batch in plan["batches"]
+    )
+    assert plan["reserved_input_tokens"] == sum(batch["reserved_input_tokens"] for batch in plan["batches"])
 
 
 def test_development_references_preserve_score_and_optional_documents(tmp_path: Path) -> None:
@@ -264,13 +273,23 @@ def test_capture_batches_mixed_questions_and_deduplicates_shared_score(
     receipts = json.loads((tmp_path / "cases.receipts.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert summary["model"] == MODEL
     assert len(cases) == 18
+    assert len({case.case_id for case in cases}) == len(cases)
+    assert all(case.provenance["parent_case_id"].startswith("focused-jev02-") for case in cases)
+    assert all(case.context_complete and case.target_complete for case in cases)
+    for case in cases:
+        source_path = Path(case.provenance["source_path"])
+        assert case.evidence.source_documents[source_path.name] == source_path.read_bytes().decode("utf-8")
     assert metrics["jev02-baseline"]["cases"] == 6
+    assert metrics["usage"]["reported_input_tokens"] == 60
+    assert metrics["usage"]["reported_output_tokens"] == 18
+    assert metrics["usage"]["parent_opportunities"] == 6
+    assert metrics["usage"]["purchased_questions"] == 12
     assert len(requests) == 6
     assert all(
         {question["type"] for question in payload["questions"].values()} == {"score", "noul"} for payload in requests
     )
     assert receipts["question_count"] == 2
-    assert receipts["parent_opportunity_count"] == 3
+    assert receipts["parent_opportunity_count"] == 1
     assert {case.provenance["candidate"] for case in cases} == {
         "jev02-baseline",
         "jev02-presence-gated",
@@ -408,6 +427,55 @@ def test_capture_rejects_wrong_model_and_cumulative_ledger_cap(tmp_path: Path, m
         )
 
 
+def test_capture_persists_completed_cases_before_mid_capture_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    freeze_path = _write_freeze(tmp_path / "freeze.json", ["jev01-baseline"])
+    calls = 0
+
+    async def fail_after_one(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        payload = json.loads(request.content)
+        if calls > 1:
+            return httpx.Response(
+                200,
+                json={
+                    "model": "jev-latest",
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                    "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "model": MODEL,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+            },
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    output = tmp_path / "partial.jsonl"
+    ledger_path = tmp_path / "ledger.json"
+    with pytest.raises(RuntimeError, match="pinned"):
+        capture_manifest(
+            FOCUSED_MANIFEST,
+            phase="heldout",
+            config_path=config_path,
+            freeze_path=freeze_path,
+            output=output,
+            ledger_path=ledger_path,
+            transport=httpx.MockTransport(fail_after_one),
+        )
+    assert calls == 2
+    assert len(load_cases(output)) == 1
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert ledger["invocations"][0]["status"] == "failed"
+    assert ledger["invocations"][0]["cases"] == 1
+
+
 def test_missing_finding_is_not_exact_target_attribution() -> None:
     target = object()
     record = SimpleNamespace(
@@ -423,3 +491,19 @@ def test_missing_finding_is_not_exact_target_attribution() -> None:
     )
     metrics = _metrics_for_records([record])
     assert metrics["target_attribution"] == {"exact": 0, "signals": 1, "fraction": 0.0}
+
+
+def test_declared_source_hash_drift_is_rejected_before_planning(tmp_path: Path) -> None:
+    manifest = _manifest()
+    manifest["source_root"] = str(SOURCE_ROOT)
+    manifest["source_snapshot"]["digest"] = source_snapshot(SOURCE_ROOT)
+    manifest.pop("development_import", None)
+    entry = dict(manifest["development_references"][0])
+    entry["source"] = str(PROJECT_ROOT / entry["source"])
+    entry["source_sha256"] = "sha256:" + "0" * 64
+    manifest["development_references"] = [entry]
+    manifest_path = tmp_path / "private.yaml"
+    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    with pytest.raises(ValueError, match="source_sha256"):
+        plan_manifest(manifest_path, phase="development", config_path=config_path)

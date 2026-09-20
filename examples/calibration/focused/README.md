@@ -5,9 +5,11 @@ JEV02, and JEV04 question experiment. `sources/` is the only scanned evidence
 root. `MANIFEST.yaml` contains provisional mapping annotations outside that
 root; they are not human ground truth and are never provider input.
 
-Each affected rule has six fresh held-out groups: three provisional positive
-groups and three provisional negative groups. Related variants would share one
-group; this corpus uses one neutral source file per group. The fixtures cover
+Each affected rule has six fresh held-out groups. JEV01 and JEV04 have three
+provisional positive and three provisional negative groups; JEV02 has two
+reviewed positive groups (expected levels 3 and 2) and four negative groups
+(levels 1, 0, 0, and 0). Related variants would share one group; this corpus
+uses one neutral source file per group. The fixtures cover
 callback and `await` boundaries, immutable captured values, cohesive lifecycle
 orchestration, interleaved responsibilities, obscure and merely local control
 flow, and redundant versus boundary-justified validation.
