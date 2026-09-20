@@ -1,0 +1,94 @@
+{
+  "aggregate_scope": "Promotion-relevant candidate aggregates; diagnostic child results are documented in FOCUSED_QUESTIONS_RESULTS.md.",
+  "decision": {
+    "heldout_executed": false,
+    "packaged_rules_changed": false,
+    "reason": "No development candidate met the declared recall and false-review acceptance rules.",
+    "selected_candidate": null
+  },
+  "development": {
+    "jev01-baseline": {
+      "case_recall": 0.0,
+      "cases": 12,
+      "false_review_count": 0,
+      "group_hit_coverage": 0.0
+    },
+    "jev01-focused": {
+      "case_recall": 0.0,
+      "cases": 12,
+      "false_review_count": 0,
+      "group_hit_coverage": 0.0
+    },
+    "jev02-baseline": {
+      "case_recall": 0.8333333333333334,
+      "cases": 12,
+      "false_review_count": 0,
+      "group_hit_coverage": 0.8333333333333334
+    },
+    "jev02-presence-gated": {
+      "case_recall": 0.0,
+      "cases": 12,
+      "false_review_count": 0,
+      "group_hit_coverage": 0.0
+    },
+    "jev04-baseline": {
+      "case_recall": 0.75,
+      "cases": 12,
+      "false_review_count": 1,
+      "group_hit_coverage": 0.6666666666666666
+    },
+    "jev04-focused-joint": {
+      "case_recall": 0.5,
+      "cases": 12,
+      "false_review_count": 0,
+      "group_hit_coverage": 0.6666666666666666
+    },
+    "jev04-pair-joint": {
+      "case_recall": 0.75,
+      "cases": 12,
+      "eligible_pair_cases": 8,
+      "false_review_count": 0,
+      "group_hit_coverage": 0.6666666666666666,
+      "whole_target_fallback_cases": 4
+    },
+    "jev04-pair-preservation": {
+      "case_recall": 1.0,
+      "cases": 12,
+      "eligible_pair_cases": 8,
+      "false_review_count": 2,
+      "group_hit_coverage": 1.0,
+      "whole_target_fallback_cases": 4
+    }
+  },
+  "identity": {
+    "manifest_sha256": "dc578ab5d654bf0781e224cdfe41cc36b31879d23060d46156c6f91b0eb43e14",
+    "requested_model": "jev-1.13.0",
+    "returned_models": [
+      "jev-1.13.0"
+    ],
+    "starting_commit": "b13bb159c62d688b6248773b2e858fa3c02cf98a"
+  },
+  "planned_production_input": {
+    "jev04-baseline": {
+      "input_tokens": 14774
+    },
+    "jev04-pair-joint": {
+      "input_tokens": 17670,
+      "overhead_fraction": 0.19602003519696765
+    },
+    "jev04-pair-preservation": {
+      "input_tokens": 17734,
+      "overhead_fraction": 0.20035196967645863
+    }
+  },
+  "schema_version": 1,
+  "usage": {
+    "cumulative_cap_usd": 0.1,
+    "input_price_per_million_usd": 0.042,
+    "reported_input_cost_usd": 0.003020346,
+    "reported_input_tokens": 71913,
+    "reported_output_tokens": 4403,
+    "requests": 52,
+    "reserved_cost_usd": 0.010813866
+  }
+}

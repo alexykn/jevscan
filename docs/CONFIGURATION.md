@@ -14,7 +14,7 @@ Both existing YAML filenames are supported. If both occur in one directory, disc
 
 The packaged rules are **always loaded**. Project settings merge into them: mappings recursively merge, lists replace, and the `rules` array is merged by `name`, not by array position. `rules: []` adds nothing; it does not delete defaults. There is no `extends` field.
 
-Each rule's `name` is its stable unique identity. `title` is a human-readable description; `ruleset` names its group. Rule and ruleset names must start with an ASCII letter and contain at most 64 letters/digits/hyphens/underscores. They are case-sensitive and cannot overlap. `ALL` is a reserved selector. Names need not follow a numeric convention, but built-ins use JEV01–JEV09.
+Each rule's `name` is its stable unique identity. `title` is a human-readable description; `ruleset` names its group. Rule and ruleset names must start with an ASCII letter and contain at most 64 letters/digits/hyphens/underscores. They are case-sensitive and cannot overlap. `ALL` is a reserved selector. Names need not follow a numeric convention, but built-ins use JEV01–JEV10.
 
 | Name | Title |
 |---|---|
@@ -27,6 +27,7 @@ Each rule's `name` is its stable unique identity. `title` is a human-readable de
 | JEV07 | fragmented-ownership |
 | JEV08 | incohesive-owner |
 | JEV09 | duplicated-behavior |
+| JEV10 | unaccounted-partial-state-transition |
 
 The `JEV` ruleset contains built-ins. An initially empty `project` ruleset is available for custom rules that omit `ruleset`. Declare other sets using `rulesets.NAME`; `description` is optional and `enabled` defaults to true.
 

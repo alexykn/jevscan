@@ -506,6 +506,28 @@ _FALLBACK_NODES = _CALL_NODES | frozenset({
     "try_statement",
     "unless_statement",
 })
+_ASSIGNMENT_NODES = frozenset({
+    "assignment",
+    "assignment_expression",
+    "augmented_assignment",
+    "augmented_assignment_expression",
+})
+_STATE_UPDATE_NODES = frozenset({
+    "delete_statement",
+    "update_expression",
+})
+_STATE_MUTATION_NODES = _ASSIGNMENT_NODES | _STATE_UPDATE_NODES
+_STATEFUL_TARGET_NODES = frozenset({
+    "attribute",
+    "field_expression",
+    "index_expression",
+    "member_expression",
+    "subscript",
+    "subscript_expression",
+})
+_CALLABLE_NODE_TYPES = frozenset(
+    name for spec in SPECS.values() for name, kind in spec.nodes.items() if kind in CALLABLE_KINDS
+)
 _SENTINEL_NODES = frozenset({"none", "null", "undefined", "undef", "undef_expression"})
 _SENTINEL_NAMES = frozenset({"None", "null", "undefined", "undef"})
 
@@ -592,6 +614,38 @@ def _contains_sentinel(node: Any, source: bytes) -> bool:
     return False
 
 
+def _mutates_stateful_target(node: Any) -> bool:
+    target = node.child_by_field_name("left") or node.child_by_field_name("target")
+    if target is None and node.named_children:
+        target = node.named_children[0]
+    if target is None:
+        return False
+    pending = [target]
+    while pending:
+        current = pending.pop()
+        if current.type in _STATEFUL_TARGET_NODES:
+            return True
+        pending.extend(current.named_children)
+    return False
+
+
+def _effect_operation_count(body: Any, limit: int = 2) -> int:
+    """Count visible effect-shaped operations owned by one callable."""
+    pending = list(reversed(body.named_children))
+    count = 0
+    while pending:
+        current = pending.pop()
+        if current.type in _CALLABLE_NODE_TYPES:
+            continue
+        if current.type in _CALL_NODES or (current.type in _STATE_MUTATION_NODES and _mutates_stateful_target(current)):
+            count += 1
+            if count >= limit:
+                return count
+            continue
+        pending.extend(current.named_children)
+    return count
+
+
 def _syntax_facts(symbol: _Symbol, node_types: frozenset[str], source: bytes, language: str) -> tuple[SyntaxFact, ...]:
     """Record broad syntactic admission facts; semantic classification remains with Jev."""
     facts: set[SyntaxFact] = set()
@@ -601,6 +655,8 @@ def _syntax_facts(symbol: _Symbol, node_types: frozenset[str], source: bytes, la
         facts.add("fallback_candidate")
     if symbol.kind in CALLABLE_KINDS and _has_implementation(symbol, language):
         facts.add("executable_behavior")
+        if symbol.body is not None and _effect_operation_count(symbol.body) >= 2:
+            facts.add("state_transition_candidate")
     return tuple(sorted(facts))
 
 

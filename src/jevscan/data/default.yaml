@@ -334,3 +334,68 @@ rules:
           min_probability: 0.73
         error:
           min_probability: 0.93
+  - name: JEV10
+    title: unaccounted-partial-state-transition
+    ruleset: JEV
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    applicability:
+      requires_any: [state_transition_candidate]
+    targeted_enrichment:
+      when_choices: [insufficient_context]
+    question:
+      type: choice
+      instructions: >-
+        Select exactly one outcome for narrow temporal atomicity in the target.
+        Choose unaccounted_partial_transition only when two or more
+        semantically coupled externally observable state effects are visible,
+        a reachable failure, cancellation, early return, or retry can leave
+        only a subset visible or durable, and there is no atomic boundary,
+        rollback, compensation, reconciliation, or explicitly valid
+        intermediate or progressive contract. Exclude independent logging,
+        metrics, or caches, local temporary construction, and a complete build
+        followed by one publication. Choose accounted_transition when those
+        effects are covered by such a boundary or contract, or no qualifying
+        transition is visible. Choose insufficient_context when reachability or
+        the local transition contract is unresolved. Do not classify an
+        explicitly progressive or restartable workflow as
+        unaccounted_partial_transition, and do not classify independent
+        best-effort audit or telemetry as a coupled transition when their
+        failure cannot invalidate the primary transition; classify such cases
+        as accounted_transition.
+      criteria:
+        unaccounted_partial_transition: >-
+          Two or more semantically coupled externally observable state effects
+          are visible; a reachable failure, cancellation, early return, or
+          retry can leave only a subset visible or durable; and no atomic
+          boundary, rollback, compensation, reconciliation, or explicitly valid
+          intermediate or progressive contract covers that subset.
+        accounted_transition: >-
+          The effects are covered by an atomic boundary, rollback, compensation,
+          reconciliation, or explicitly valid intermediate or progressive
+          contract, or the target shows no qualifying transition. Independent
+          logging, metrics, caches, local temporary construction, and complete
+          build-then-one-publication patterns are excluded. Do not classify an
+          explicitly progressive or restartable workflow as
+          unaccounted_partial_transition, and do not classify independent
+          best-effort audit or telemetry as a coupled transition when their
+          failure cannot invalidate the primary transition; classify such cases
+          as accounted_transition.
+        insufficient_context: >-
+          A qualifying partial transition may exist, but reachability or the
+          local transition contract is unresolved.
+    report:
+      message: A partial state transition appears to be left unaccounted for.
+      choices: [unaccounted_partial_transition]
+      uncertain_choices: [insufficient_context]
+      levels:
+        warning:
+          min_probability: 0.6
+          min_confidence: 0.5
+        error:
+          min_probability: 0.92
+          min_confidence: 0.7

@@ -1,0 +1,107 @@
+schema_version: 1
+source_snapshot_sha256: 20810613ebdea6743a47417492743c45ad3a19893156e440eb5cf851ec41a837
+provenance: "Independent source-only Luna reviews; reviewers saw deployed rule meanings and source, not Jev answers, confidence, or intended labels."
+limitations:
+  - "Agent review is the working calibration reference, not human ground truth."
+  - "Controlled fixtures test declared distinctions and are not a population sample."
+corrections:
+  - case_id: focused-jev04-h01
+    superseded: "store_record was provisionally positive."
+    reason: "store.write(record) received the mutable checked alias, so its later check was justified. The replacement capture_version was independently re-reviewed as redundant."
+  - case_id: focused-jev01-h03
+    superseded: "The original linear sync_entry was provisionally positive."
+    reason: "The original was cohesive sequential delegation. The replacement directly implements access, billing, lifecycle, ledger, and notification policies and was independently re-reviewed as positive."
+  - case_id: focused-jev02-h02
+    superseded: "advance_state was provisionally treated as warning-worthy level 2."
+    reason: "Both source-only reviews assigned level 1: its nested transitions remain local and directly traceable. It is retained as a negative case."
+cases:
+  - case_id: focused-jev01-h01
+    label: Agree
+    decisive_lines: [3, 8]
+    reason: "The loop interleaves aggregation, ledger mutation, and notification in each item iteration."
+  - case_id: focused-jev01-h02
+    label: Agree
+    decisive_lines: [3, 9]
+    reason: "Snapshot construction, persistence, and publication are implemented and interleaved per entry."
+  - case_id: focused-jev01-h03
+    label: Agree
+    decisive_lines: [2, 17]
+    reason: "The target directly implements and interleaves access, expiry, billing, cancellation, ledger, and notification policies."
+  - case_id: focused-jev01-h04
+    label: Disagree
+    decisive_lines: [2, 4]
+    reason: "The direct read, prepare, and commit steps form one cohesive delegated lifecycle."
+  - case_id: focused-jev01-h05
+    label: Disagree
+    decisive_lines: [2, 5]
+    reason: "One guard controls one delegated delivery; its result belongs to that dispatch contract."
+  - case_id: focused-jev01-h06
+    label: Disagree
+    decisive_lines: [2, 7]
+    reason: "Capturing an immutable limit in a nested function adds no independent responsibility."
+  - case_id: focused-jev02-h01
+    label: Agree
+    expected_score: 3
+    decisive_lines: [4, 11]
+    reason: "Nested retry, urgency, backup, and fallthrough transitions make the main routing path difficult to reconstruct."
+  - case_id: focused-jev02-h02
+    label: Disagree
+    expected_score: 1
+    decisive_lines: [2, 23]
+    reason: "The nested open and close transitions remain explicit, local, and directly traceable."
+  - case_id: focused-jev02-h03
+    label: Agree
+    expected_score: 2
+    decisive_lines: [2, 14]
+    reason: "Nested ready, lookup, retry, continue, and termination transitions obscure part of the queue path."
+  - case_id: focused-jev02-h04
+    label: Disagree
+    expected_score: 0
+    decisive_lines: [2, 4]
+    reason: "One guard leads directly to either false or the readiness value."
+  - case_id: focused-jev02-h05
+    label: Disagree
+    expected_score: 0
+    decisive_lines: [2, 4]
+    reason: "Prepare, execute, and finish form a direct pipeline without an obscured branch."
+  - case_id: focused-jev02-h06
+    label: Disagree
+    expected_score: 0
+    decisive_lines: [2, 6]
+    reason: "The captured predicate and conditional call are directly visible in one short-circuit expression."
+  - case_id: focused-jev04-h01
+    label: Agree
+    earlier_lines: [2, 3]
+    intervening_lines: [4, 4]
+    later_lines: [5, 6]
+    reason: "A local read does not mutate record or cross a boundary, so the same version check is redundant."
+  - case_id: focused-jev04-h02
+    label: Agree
+    earlier_lines: [3, 4]
+    intervening_lines: [5, 5]
+    later_lines: [6, 7]
+    reason: "Assigning captured to snapshot cannot invalidate the established non-None invariant."
+  - case_id: focused-jev04-h03
+    label: Agree
+    earlier_lines: [2, 3]
+    intervening_lines: [4, 5]
+    later_lines: [6, 7]
+    reason: "The intervening range check does not mutate value or cross a boundary, so the repeated type check is redundant."
+  - case_id: focused-jev04-h04
+    label: Disagree
+    earlier_lines: [2, 3]
+    intervening_lines: [4, 4]
+    later_lines: [5, 6]
+    reason: "The awaited store call receives the mutable record and can invalidate its version."
+  - case_id: focused-jev04-h05
+    label: Disagree
+    earlier_lines: [2, 3]
+    intervening_lines: [4, 4]
+    later_lines: [5, 6]
+    reason: "The caller-supplied transform receives the same item and can mutate its state."
+  - case_id: focused-jev04-h06
+    label: Disagree
+    earlier_lines: [2, 3]
+    intervening_lines: [4, 4]
+    later_lines: [5, 6]
+    reason: "The caller-supplied commit receives the same record and can mutate its state."

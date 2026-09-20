@@ -60,9 +60,11 @@ adjudication is used when measuring that rule.
   from the same owner between development and held-out sets.
 - Compare candidates on identical evidence and record exact source, question,
   prompt, and model identities. Never put adjudicated labels in model input.
-- Pin live experiments to `jev-1.13.0`. The task-wide live spending ceiling is
-  USD 1.00, using USD 0.042 per million input tokens and free output tokens.
-  Account for all attempts, including unsuccessful requests and retries.
+- Pin live experiments to `jev-1.13.0`. The focused-question capture path is
+  capped cumulatively at USD 0.10, using USD 0.042 per million input tokens and
+  free output tokens; other historical utilities retain their own explicit
+  limits. Account for all attempts, including unsuccessful requests and
+  retries.
 - Keep private source, raw private responses, and private manifests outside
   committed artifacts. Public summaries may report aggregate results without
   disclosing private source.
@@ -75,3 +77,21 @@ The final selection procedure is fixed in [FINAL_EVALUATION_PLAN.md](FINAL_EVALU
 Completed supplementary evidence includes the
 [lookup-daemon evaluation](LOOKUP_RESULTS.md) and the
 [baseline-only real-project assembly](BASELINE_ASSEMBLY.md).
+
+## Focused-question experiment
+
+The predeclared plan is
+[FOCUSED_QUESTIONS_PLAN.md](FOCUSED_QUESTIONS_PLAN.md). It compared
+whole-target and pair-bound candidates without changing packaged production
+rules.
+
+The completed development results are in
+[FOCUSED_QUESTIONS_RESULTS.md](FOCUSED_QUESTIONS_RESULTS.md), with
+machine-readable aggregates in `FOCUSED_QUESTIONS_RESULTS.json`. No candidate
+met the predeclared acceptance rules, so packaged rules remain unchanged and
+the held-out split was not executed.
+
+The one-off live runner and candidate extractor were removed after the negative
+result rather than retained as a second calibration framework. The public
+fixtures, source-only adjudications, predeclared contracts, and aggregate
+results remain as evidence for future experiments.

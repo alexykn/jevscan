@@ -171,6 +171,99 @@ def test_direct_sentinel_returns_are_fallback_candidates(grammar: str, language:
 
 
 @pytest.mark.parametrize(
+    ("grammar", "language", "source"),
+    [
+        ("python", "python", "def publish(store):\n    store.write()\n    store.sync()\n"),
+        ("rust", "rust", "fn publish(store: &mut Store) { store.write(); store.sync(); }\n"),
+        ("javascript", "javascript", "function publish(store) { store.write(); store.sync(); }\n"),
+        ("typescript", "typescript", "function publish(store: Store) { store.write(); store.sync(); }\n"),
+        ("perl", "perl", "sub publish { my ($store) = @_; $store->write(); $store->sync(); }\n"),
+    ],
+)
+def test_multiple_effect_operations_are_state_transition_candidates(grammar: str, language: str, source: str) -> None:
+    parsed = parse_source(source.encode(), FileJob("sample", "sample", grammar, language))
+    assert not parsed.failed, parsed.diagnostics
+    facts = next(unit.syntax_facts for unit in parsed.units if unit.name == "publish")
+    assert "state_transition_candidate" in facts
+
+
+def test_one_effect_operation_is_not_a_state_transition_candidate() -> None:
+    source = b"def publish(store):\n    store.write()\n"
+    parsed = parse_source(source, FileJob("sample.py", "sample.py", "python", "python"))
+    assert not parsed.failed, parsed.diagnostics
+    facts = next(unit.syntax_facts for unit in parsed.units if unit.name == "publish")
+    assert "state_transition_candidate" not in facts
+
+
+def test_stateful_assignments_are_transition_effects_but_local_bindings_are_not() -> None:
+    source = (
+        b"def update(state):\n"
+        b"    state.value = 1\n"
+        b"    state.ready = True\n\n"
+        b"def prepare():\n"
+        b"    value = 1\n"
+        b"    ready = True\n"
+    )
+    parsed = parse_source(source, FileJob("sample.py", "sample.py", "python", "python"))
+    assert not parsed.failed, parsed.diagnostics
+    facts = {unit.name: set(unit.syntax_facts) for unit in parsed.units}
+    assert "state_transition_candidate" in facts["update"]
+    assert "state_transition_candidate" not in facts["prepare"]
+
+
+def test_perl_parameter_binding_is_not_a_state_transition_effect() -> None:
+    source = b"sub publish { my ($store) = @_; $store->write(); }\n"
+    parsed = parse_source(source, FileJob("sample.pl", "sample.pl", "perl", "perl"))
+    assert not parsed.failed, parsed.diagnostics
+    facts = next(unit.syntax_facts for unit in parsed.units if unit.name == "publish")
+    assert "state_transition_candidate" not in facts
+
+
+@pytest.mark.parametrize(
+    ("grammar", "language", "outer", "source"),
+    [
+        (
+            "python",
+            "python",
+            "outer",
+            "def outer():\n    def inner(store):\n        store.write()\n        store.sync()\n    return inner\n",
+        ),
+        (
+            "rust",
+            "rust",
+            "outer",
+            "fn outer() { fn inner(store: &mut Store) { store.write(); store.sync(); } }\n",
+        ),
+        (
+            "javascript",
+            "javascript",
+            "outer",
+            "function outer() { function inner(store) { store.write(); store.sync(); } return inner; }\n",
+        ),
+        (
+            "typescript",
+            "typescript",
+            "outer",
+            "function outer() { function inner(store: Store) { store.write(); store.sync(); } return inner; }\n",
+        ),
+        (
+            "perl",
+            "perl",
+            "outer",
+            "sub outer { sub inner { my ($store) = @_; $store->write(); $store->sync(); } return \\&inner; }\n",
+        ),
+    ],
+)
+def test_nested_callable_effects_do_not_admit_the_outer_callable(
+    grammar: str, language: str, outer: str, source: str
+) -> None:
+    parsed = parse_source(source.encode(), FileJob("sample", "sample", grammar, language))
+    assert not parsed.failed, parsed.diagnostics
+    facts = next(unit.syntax_facts for unit in parsed.units if unit.name == outer)
+    assert "state_transition_candidate" not in facts
+
+
+@pytest.mark.parametrize(
     ("grammar", "language", "owner", "source"),
     [
         (

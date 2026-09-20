@@ -76,7 +76,7 @@ missing syntax fact and rule are recorded separately in machine output.
 ## Configuration
 
 Configuration is YAML in `jevscan.yaml` or `jevscan.yml`. Version 4 is required. Project configuration is additive:
-the packaged JEV01–JEV09 rules remain active unless selected or ignored explicitly. Rules merge by `name`; mappings
+the packaged JEV01–JEV10 rules remain active unless selected or ignored explicitly. Rules merge by `name`; mappings
 merge recursively and lists replace. There is no `extends` setting.
 
 ```yaml
@@ -312,6 +312,7 @@ reassesses once only when useful evidence is admitted.
 | JEV07 | fragmented-ownership | file |
 | JEV08 | incohesive-owner | unit |
 | JEV09 | duplicated-behavior | file |
+| JEV10 | unaccounted-partial-state-transition | unit |
 
 Inspect the fully resolved catalogue with:
 

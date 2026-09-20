@@ -1,0 +1,303 @@
+schema_version: 1
+corpus: public-focused-questions
+corpus_revision: 1
+provenance: "synthetic fixture corpus with provisional review annotations; labels are not human ground truth"
+source_root: sources
+source_snapshot:
+  algorithm: sha256
+  canonicalization: "sorted relative source filenames, each followed by NUL and raw UTF-8 bytes"
+  digest: 20810613ebdea6743a47417492743c45ad3a19893156e440eb5cf851ec41a837
+source_contract:
+  evidence_files_are_neutral: true
+  labels_are_outside_source_root: true
+  validation: "real Tree-sitter parse_source followed by production ContextBuilder and Planner"
+  related_variants_share_group: true
+  fresh_heldout_only: "entries under heldout; development_references are not fresh heldout evidence"
+  live_model_calls: none
+  label_vocabulary: [positive, negative, Partial]
+  optional_case_fields:
+    - source_commit
+    - source_sha256
+    - target_sha256
+    - expected_score
+    - additional_sources
+coverage:
+  affected_rules: [JEV01, JEV02, JEV04]
+  heldout_groups_per_rule:
+    JEV01: {positive: 3, negative: 3, total: 6}
+    JEV02: {positive: 2, negative: 4, total: 6}
+    JEV04: {positive: 3, negative: 3, total: 6}
+  split_assignment: "all six fresh groups per rule are heldout; development imports every independently adjudicated JEV01/JEV02/JEV04 expanded case"
+  feature_coverage:
+    - callback and await boundary
+    - immutable captured values
+    - cohesive lifecycle orchestration
+    - truly interleaved responsibilities
+    - obscure control flow
+    - merely local control flow
+    - redundant validation
+    - justified validation after a boundary
+rules:
+  - name: JEV01
+    title: mixed-responsibilities
+    target: unit
+    candidate_support: [jev01-baseline, jev01-focused]
+  - name: JEV02
+    title: unclear-control-flow
+    target: unit
+    candidate_support: [jev02-baseline, jev02-presence-gated]
+  - name: JEV04
+    title: redundant-validation
+    target: unit
+    candidate_support:
+      - jev04-baseline
+      - jev04-focused-joint
+      - jev04-focused-decomposed
+      - jev04-pair-joint
+      - jev04-pair-preservation
+      - jev04-pair-decomposed
+
+development_references:
+  - id: expanded:e009
+    source: examples/calibration/expanded/sources/flint.ts
+    source_group: expanded:JEV01-G05
+    rule: JEV01
+    label: positive
+    target: {scope: unit, name: hydrateProfile, kind: function}
+    source_partition_in_expanded: heldout
+    development_only: true
+    counts_as_fresh_heldout: false
+  - id: expanded:e010
+    source: examples/calibration/expanded/sources/glacier.ts
+    source_group: expanded:JEV01-G05
+    rule: JEV01
+    label: negative
+    target: {scope: unit, name: hydrateProfile, kind: function}
+    source_partition_in_expanded: heldout
+    development_only: true
+    counts_as_fresh_heldout: false
+  - id: expanded:e021
+    source: examples/calibration/expanded/sources/raven.rs
+    source_group: expanded:JEV02-G05
+    rule: JEV02
+    label: positive
+    target: {scope: unit, name: choose_delivery, kind: function}
+    expected_score: 2
+    source_commit: b13bb159c62d688b6248773b2e858fa3c02cf98
+    source_partition_in_expanded: heldout
+    development_only: true
+    counts_as_fresh_heldout: false
+  - id: expanded:e022
+    source: examples/calibration/expanded/sources/spruce.rs
+    source_group: expanded:JEV02-G05
+    rule: JEV02
+    label: negative
+    target: {scope: unit, name: choose_delivery, kind: function}
+    expected_score: 0
+    source_commit: b13bb159c62d688b6248773b2e858fa3c02cf98
+    source_partition_in_expanded: heldout
+    development_only: true
+    counts_as_fresh_heldout: false
+  - id: expanded:e046
+    source: examples/calibration/expanded/sources/quarry.ts
+    source_group: expanded:JEV04-G05
+    rule: JEV04
+    label: negative
+    target: {scope: unit, name: RevisionWriter.write, kind: method}
+    source_partition_in_expanded: heldout
+    development_only: true
+    counts_as_fresh_heldout: false
+    note: "Known quarry case; development diagnostic only."
+    source_commit: b13bb159c62d688b6248773b2e858fa3c02cf98
+    additional_sources: []
+    validation_pair:
+      earlier: {start_line: 3, end_line: 5}
+      later: {start_line: 7, end_line: 9}
+      intervening: {start_line: 6, end_line: 6}
+  - id: expanded:e048
+    source: examples/calibration/expanded/sources/summit.js
+    source_group: expanded:JEV04-G06
+    rule: JEV04
+    label: positive
+    target: {scope: unit, name: acceptParcel, kind: function}
+    source_partition_in_expanded: heldout
+    development_only: true
+    counts_as_fresh_heldout: false
+    note: "Known summit case; development diagnostic only."
+    source_commit: b13bb159c62d688b6248773b2e858fa3c02cf98
+    additional_sources:
+      - {source: examples/calibration/expanded/sources/summit.js, role: local_context}
+    validation_pair:
+      earlier: {start_line: 17, end_line: 17}
+      later: {start_line: 23, end_line: 25}
+      intervening: {start_line: 21, end_line: 22}
+
+development_import:
+  source: calibration/expanded-cases.jsonl
+  source_root: examples/calibration/expanded/sources
+  source_commit: b13bb159c62d688b6248773b2e858fa3c02cf98
+  rules: [JEV01, JEV02, JEV04]
+  treat_all_as_development: true
+
+heldout:
+  - id: focused-jev01-h01
+    source: sources/alder.py
+    group: JEV01-H01
+    rule: JEV01
+    label: positive
+    target: {scope: unit, name: coordinate_batch, kind: function}
+    features: [callback_boundary, await_boundary, interleaved_responsibilities]
+  - id: focused-jev01-h02
+    source: sources/birch.py
+    group: JEV01-H02
+    rule: JEV01
+    label: positive
+    target: {scope: unit, name: record_snapshot, kind: function}
+    features: [interleaved_responsibilities]
+  - id: focused-jev01-h03
+    source: sources/cedar.py
+    group: JEV01-H03
+    rule: JEV01
+    label: positive
+    target: {scope: unit, name: sync_entry, kind: function}
+    features: [interleaved_responsibilities]
+    note: "Blind source review superseded the original linear synchronization annotation with this entangled access, billing, and lifecycle state case."
+  - id: focused-jev01-h04
+    source: sources/dogwood.py
+    group: JEV01-H04
+    rule: JEV01
+    label: negative
+    target: {scope: unit, name: run_cycle, kind: function}
+    features: [cohesive_lifecycle]
+  - id: focused-jev01-h05
+    source: sources/elm.py
+    group: JEV01-H05
+    rule: JEV01
+    label: negative
+    target: {scope: unit, name: dispatch_update, kind: function}
+    features: [callback_boundary, await_boundary, cohesive_lifecycle]
+  - id: focused-jev01-h06
+    source: sources/fir.py
+    group: JEV01-H06
+    rule: JEV01
+    label: negative
+    target: {scope: unit, name: seal_value, kind: function}
+    features: [immutable_captured_value]
+
+  - id: focused-jev02-h01
+    source: sources/hazel.py
+    group: JEV02-H01
+    rule: JEV02
+    label: positive
+    expected_score: 3
+    target: {scope: unit, name: route_message, kind: function}
+    features: [callback_boundary, await_boundary, obscure_control_flow]
+  - id: focused-jev02-h02
+    source: sources/juniper.py
+    group: JEV02-H02
+    rule: JEV02
+    label: negative
+    expected_score: 1
+    target: {scope: unit, name: advance_state, kind: function}
+    note: "Blind source review retained the original level-1 judgment; the explicit local branches are not warning-worthy."
+    features: [obscure_control_flow, interleaved_responsibilities]
+  - id: focused-jev02-h03
+    source: sources/maple.py
+    group: JEV02-H03
+    rule: JEV02
+    label: positive
+    expected_score: 2
+    target: {scope: unit, name: drain_queue, kind: function}
+    features: [obscure_control_flow]
+  - id: focused-jev02-h04
+    source: sources/oak.py
+    group: JEV02-H04
+    rule: JEV02
+    label: negative
+    expected_score: 0
+    target: {scope: unit, name: check_ready, kind: function}
+    features: [merely_local_control_flow]
+  - id: focused-jev02-h05
+    source: sources/pine.py
+    group: JEV02-H05
+    rule: JEV02
+    label: negative
+    expected_score: 0
+    target: {scope: unit, name: run_steps, kind: function}
+    features: [cohesive_lifecycle, merely_local_control_flow]
+  - id: focused-jev02-h06
+    source: sources/spruce.py
+    group: JEV02-H06
+    rule: JEV02
+    label: negative
+    expected_score: 0
+    target: {scope: unit, name: make_filter, kind: function}
+    features: [immutable_captured_value, merely_local_control_flow]
+
+  - id: focused-jev04-h01
+    source: sources/acorn.py
+    group: JEV04-H01
+    rule: JEV04
+    label: positive
+    target: {scope: unit, name: capture_version, kind: function}
+    features: [redundant_validation]
+    validation_pair:
+      earlier: {start_line: 2, end_line: 3}
+      later: {start_line: 5, end_line: 6}
+      intervening: {start_line: 4, end_line: 4}
+    note: "Blind source review rejected store_record because its opaque call could mutate the checked alias; this replacement was re-reviewed as redundant held-out evidence."
+  - id: focused-jev04-h02
+    source: sources/ash.py
+    group: JEV04-H02
+    rule: JEV04
+    label: positive
+    target: {scope: unit, name: verify_item, kind: function}
+    features: [redundant_validation, immutable_captured_value]
+    validation_pair:
+      earlier: {start_line: 2, end_line: 3}
+      later: {start_line: 5, end_line: 6}
+      intervening: {start_line: 4, end_line: 4}
+  - id: focused-jev04-h03
+    source: sources/beech.py
+    group: JEV04-H03
+    rule: JEV04
+    label: positive
+    target: {scope: unit, name: accept_value, kind: function}
+    features: [redundant_validation]
+    validation_pair:
+      earlier: {start_line: 2, end_line: 3}
+      later: {start_line: 6, end_line: 7}
+      intervening: {start_line: 4, end_line: 5}
+  - id: focused-jev04-h04
+    source: sources/cedar_red.py
+    group: JEV04-H04
+    rule: JEV04
+    label: negative
+    target: {scope: unit, name: write_record, kind: function}
+    features: [justified_validation, await_boundary]
+    validation_pair:
+      earlier: {start_line: 2, end_line: 3}
+      later: {start_line: 5, end_line: 6}
+      intervening: {start_line: 4, end_line: 4}
+  - id: focused-jev04-h05
+    source: sources/elm_red.py
+    group: JEV04-H05
+    rule: JEV04
+    label: negative
+    target: {scope: unit, name: apply_change, kind: function}
+    features: [justified_validation, callback_boundary]
+    validation_pair:
+      earlier: {start_line: 2, end_line: 3}
+      later: {start_line: 5, end_line: 6}
+      intervening: {start_line: 4, end_line: 4}
+  - id: focused-jev04-h06
+    source: sources/fir_red.py
+    group: JEV04-H06
+    rule: JEV04
+    label: negative
+    target: {scope: unit, name: finish_cycle, kind: function}
+    features: [justified_validation, callback_boundary, cohesive_lifecycle]
+    validation_pair:
+      earlier: {start_line: 2, end_line: 3}
+      later: {start_line: 5, end_line: 6}
+      intervening: {start_line: 4, end_line: 4}

@@ -19,14 +19,14 @@ def write_config(path: Path, document: dict) -> Path:
 def test_packaged_default_and_empty_project_are_additive(tmp_path: Path, text: str) -> None:
     original = load_config([tmp_path], cwd=tmp_path)
     assert original.source == "packaged default"
-    assert list(original.config.rules) == [f"JEV{i:02}" for i in range(1, 10)]
+    assert list(original.config.rules) == [f"JEV{i:02}" for i in range(1, 11)]
     (tmp_path / "jevscan.yaml").write_text(text)
     child = tmp_path / "src" / "nested"
     child.mkdir(parents=True)
     loaded = load_config([child], cwd=child)
     assert loaded.root == tmp_path
     assert loaded.config == original.config
-    assert len(loaded.config.selected_rules()) == 9
+    assert len(loaded.config.selected_rules()) == 10
 
 
 def test_rule_overrides_custom_sets_and_selection_are_independent(tmp_path, basic_rule):
@@ -46,10 +46,10 @@ def test_rule_overrides_custom_sets_and_selection_are_independent(tmp_path, basi
     }
     write_config(tmp_path, document)
     config = load_config([tmp_path], cwd=tmp_path).config
-    assert len(config.rules) == 11
+    assert len(config.rules) == 12
     assert config.rules["JEV02"].report.levels.warning.min_score == 1.2
     assert config.rules["JEV02"].report.levels.error.min_score == 2
-    assert set(config.selected_rules()) == ({f"JEV{i:02}" for i in range(1, 9)} | {"TEAM01"})
+    assert set(config.selected_rules()) == ({f"JEV{i:02}" for i in range(1, 11)} - {"JEV09"} | {"TEAM01"})
     # Ignore a whole built-in set, without deleting its definitions.
     document["lint"] = {"ignore": ["JEV"]}
     write_config(tmp_path, document)
@@ -228,6 +228,29 @@ def test_target_contracts_reject_unsupported_or_ambiguous_scopes(basic_rule, pat
 def test_packaged_file_rules(tmp_path):
     config = load_config([tmp_path], cwd=tmp_path).config
     assert {name for name, rule in config.rules.items() if rule.target == "file"} == {"JEV07", "JEV09"}
+
+
+def test_packaged_partial_transition_rule_uses_static_admission_and_uncertainty(tmp_path):
+    rule = load_config([tmp_path], cwd=tmp_path).config.rules["JEV10"]
+    assert isinstance(rule.question, ChoiceQuestion)
+    assert rule.applicability is not None
+    assert rule.applicability.requires_any == ["state_transition_candidate"]
+    assert rule.question.criteria.keys() == {
+        "unaccounted_partial_transition",
+        "accounted_transition",
+        "insufficient_context",
+    }
+    assert rule.report.choices == ["unaccounted_partial_transition"]
+    assert rule.report.uncertain_choices == ["insufficient_context"]
+    assert rule.targeted_enrichment is not None
+    assert rule.targeted_enrichment.when_choices == ["insufficient_context"]
+    assert rule.report.levels.warning.min_probability == 0.6
+    assert rule.report.levels.warning.min_confidence == 0.5
+    assert rule.report.levels.error.min_probability == 0.92
+    assert rule.report.levels.error.min_confidence == 0.7
+    exclusion = "Do not classify an explicitly progressive or restartable workflow as unaccounted_partial_transition"
+    assert exclusion in rule.question.instructions
+    assert exclusion in rule.question.criteria["accounted_transition"]
 
 
 @pytest.mark.parametrize(

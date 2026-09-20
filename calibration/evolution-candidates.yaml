@@ -1,0 +1,380 @@
+# EXPERIMENT ONLY. This file contains candidate definitions for a
+# parent-supplied development corpus. It is not a corpus or split seal, not
+# the packaged configuration, and its child rules are not production findings.
+version: 4
+
+rulesets:
+  JEV:
+    enabled: false
+  experiment-candidates:
+    enabled: true
+    description: "Non-production candidate definitions; no corpus or split seal"
+
+lint:
+  select: [experiment-candidates]
+
+rules:
+  # JEV01 is measured as one offline AND composition of these two questions.
+  # Neither child is an independently promotable finding.
+  - name: EXP_JEV01_RESPONSIBILITIES
+    title: independently-meaningful-responsibilities
+    ruleset: experiment-candidates
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    question:
+      type: noul
+      instructions: >-
+        Does the target itself implement two or more independently meaningful
+        responsibilities, each with its own policy, invariant, or state
+        transition? Treat a responsibility as meaningful only when it would
+        remain a coherent operation if named separately. Do not count a
+        cohesive lifecycle coordinator, sequential delegation, cleanup,
+        metrics, callback or await boundaries that belong to one operation, or
+        immutable captured values by themselves.
+      criteria:
+        "true": >-
+          The target contains at least two responsibilities that remain
+          meaningful when identified separately, with independent policy,
+          invariant, or state-transition obligations.
+        "false": >-
+          The target has one coherent responsibility or only coordinates
+          cohesive steps; callback or await boundaries and immutable captured
+          values alone do not establish another responsibility.
+    report:
+      message: "EXPERIMENT ONLY: independently meaningful responsibilities signal"
+      uncertain_range: [0.4, 0.6]
+      levels:
+        warning:
+          min_probability: 0.71
+        error:
+          min_probability: 0.9
+
+  - name: EXP_JEV01_INTERLEAVING
+    title: visible-interleaving
+    ruleset: experiment-candidates
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    question:
+      type: noul
+      instructions: >-
+        Does the target itself interleave two or more independently meaningful
+        policies or state transitions in a way that materially harms
+        understanding? Count truly interleaved responsibilities. Do not count
+        a cohesive lifecycle coordinator, sequential delegation, cleanup,
+        callback or await boundaries that belong to one operation, or immutable
+        captured values by themselves.
+      criteria:
+        "true": >-
+          The target visibly interleaves independently meaningful policy or
+          state-transition handling, and that interleaving materially harms
+          understanding.
+        "false": >-
+          The target is cohesive or delegates cohesive phases without
+          concrete interleaving; support boundaries and immutable captures
+          alone do not qualify.
+    report:
+      message: "EXPERIMENT ONLY: visible responsibility interleaving signal"
+      uncertain_range: [0.4, 0.6]
+      levels:
+        warning:
+          min_probability: 0.71
+        error:
+          min_probability: 0.9
+
+  - name: EXP_JEV03_CONCRETE_MECHANICS
+    title: concrete-mechanics
+    ruleset: experiment-candidates
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    question:
+      type: noul
+      instructions: >-
+        Does the target mix high-level orchestration with substantial inline
+        concrete mechanics that obscures its primary operation? Count
+        substantial inline byte or token scanning, decoding, AST traversal or
+        normalization, descriptor or selector ownership, nonblocking I/O,
+        retry or backoff, and rollback or resource ownership. Calls or helpers,
+        ordinary validation, metadata, cache or index bookkeeping, small
+        cleanup, and a single cohesive parser or resource boundary are
+        insufficient.
+      criteria:
+        "true": >-
+          The target interleaves high-level orchestration with substantial
+          inline byte/token, decoding, AST, descriptor/selector, I/O,
+          retry/backoff, rollback, or resource-ownership mechanics that
+          obscures the primary operation.
+        "false": >-
+          The target stays at one abstraction level, delegates the mechanics to
+          calls or helpers, or uses ordinary validation, metadata/cache/index
+          bookkeeping, small cleanup, or one cohesive parser/resource
+          boundary; none of those alone obscures the primary operation.
+    report:
+      message: High-level orchestration appears mixed with substantial low-level implementation detail.
+      uncertain_range: [0.4, 0.6]
+      levels:
+        warning:
+          min_probability: 0.56
+        error:
+          min_probability: 0.9
+
+  - name: EXP_JEV05_CORRECTED
+    title: corrected-hidden-invariant-failure
+    ruleset: experiment-candidates
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callers, callees, tests]
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    applicability:
+      requires_any: [fallback_candidate]
+    targeted_enrichment:
+      when_choices: [insufficient_context]
+    question:
+      type: choice
+      instructions: >-
+        Select exactly one outcome for a concrete failure or rejected state
+        visible in the target. Choose concealed_bug only when that failure or
+        rejected state is converted into an ordinary result, the target
+        visibly establishes a required postcondition that the result violates,
+        and no explicit non-success remains at that boundary. Choose
+        legitimate_behavior when explicit non-success is preserved or the
+        target shows that the fallback is allowed; an empty result, default,
+        cancellation, or exhaustion is not a defect by itself. Choose
+        insufficient_context when the supplied evidence does not establish the
+        postcondition, whether the path is a failure, or whether the fallback
+        is allowed. Do not infer the contract from names, comments, tests,
+        callers, types, data shape, or API convention.
+      criteria:
+        concealed_bug: >-
+          A concrete failure or rejected state is converted into an ordinary
+          result; the target visibly establishes a required postcondition that
+          the result violates, and no explicit non-success remains at that
+          boundary.
+        legitimate_behavior: >-
+          Explicit non-success is preserved or the target shows that the
+          fallback is allowed; an empty result, default, cancellation, or
+          exhaustion is not a defect by itself.
+        insufficient_context: >-
+          The supplied evidence does not establish the required postcondition,
+          whether the path is a failure, or whether the fallback is allowed;
+          do not infer any of those facts from names, comments, tests, callers,
+          types, data shape, or API convention.
+    report:
+      message: A fallback or swallowed failure appears to conceal a violation of an established internal invariant.
+      choices: [concealed_bug]
+      uncertain_choices: [insufficient_context]
+      levels:
+        warning:
+          min_probability: 0.6
+          min_confidence: 0.5
+        error:
+          min_probability: 0.92
+          min_confidence: 0.7
+
+  - name: EXP_JEV08_CHOICE
+    title: incohesive-owner-choice
+    ruleset: experiment-candidates
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
+    target: unit
+    context: owner
+    applies_to: [class, impl, package, module]
+    applicability:
+      requires_any: [executable_behavior]
+    targeted_enrichment:
+      when_choices: [insufficient_context]
+    question:
+      type: choice
+      instructions: >-
+        Select exactly one outcome for the supplied owner. Choose
+        unrelated_responsibilities only when at least two independently
+        meaningful behaviors serve different external purposes and no shared
+        lifecycle, domain invariant, store, resource, aggregate, facade, or
+        interface boundary explains their ownership. Choose cohesive_owner
+        when one such boundary exists, including a sequential workflow. Choose
+        insufficient_context when the enclosing or caller design determines
+        the classification; method count alone is not evidence.
+      criteria:
+        unrelated_responsibilities: >-
+          At least two independently meaningful behaviors serve different
+          external purposes, and no shared lifecycle, domain invariant, store,
+          resource, aggregate, facade, or interface boundary explains their
+          ownership.
+        cohesive_owner: >-
+          One shared lifecycle, domain invariant, store, resource, aggregate,
+          facade, or interface boundary explains the behavior, including a
+          sequential workflow.
+        insufficient_context: >-
+          The enclosing or caller design is required to determine whether the
+          behaviors serve different external purposes or share a cohesive
+          boundary.
+    report:
+      message: This owner appears to combine unrelated state and behavior.
+      choices: [unrelated_responsibilities]
+      uncertain_choices: [insufficient_context]
+      levels:
+        warning:
+          min_probability: 0.47
+        error:
+          min_probability: 0.9
+
+  - name: EXP_PARTIAL_STATE_TRANSITION
+    title: unaccounted-partial-state-transition
+    ruleset: experiment-candidates
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callees, enclosing_context]
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    question:
+      type: choice
+      instructions: >-
+        Select exactly one outcome for narrow temporal atomicity in the target.
+        Choose unaccounted_partial_transition only when two or more
+        semantically coupled externally observable state effects are visible,
+        a reachable failure, cancellation, early return, or retry can leave
+        only a subset visible or durable, and there is no atomic boundary,
+        rollback, compensation, reconciliation, or explicitly valid
+        intermediate or progressive contract. Exclude independent logging,
+        metrics, or caches, local temporary construction, and a complete build
+        followed by one publication. Choose accounted_transition when those
+        effects are covered by such a boundary or contract, or no qualifying
+        transition is visible. Choose insufficient_context when reachability or
+        the local transition contract is unresolved.
+      criteria:
+        unaccounted_partial_transition: >-
+          Two or more semantically coupled externally observable state effects
+          are visible; a reachable failure, cancellation, early return, or
+          retry can leave only a subset visible or durable; and no atomic
+          boundary, rollback, compensation, reconciliation, or explicitly valid
+          intermediate or progressive contract covers that subset.
+        accounted_transition: >-
+          The effects are covered by an atomic boundary, rollback,
+          compensation, reconciliation, or explicitly valid intermediate or
+          progressive contract, or the target shows no qualifying transition.
+          Independent logging, metrics, caches, local temporary construction,
+          and complete build-then-one-publication patterns are excluded.
+        insufficient_context: >-
+          A qualifying partial transition may exist, but reachability or the
+          local transition contract is unresolved.
+    report:
+      message: A partial state transition appears to be left unaccounted for.
+      choices: [unaccounted_partial_transition]
+      uncertain_choices: [insufficient_context]
+      levels:
+        warning:
+          min_probability: 0.6
+          min_confidence: 0.5
+        error:
+          min_probability: 0.92
+          min_confidence: 0.7
+
+  # JEV04 questions are bound to one exact pair by the existing experiment
+  # extractor. The pair children are composed offline; no third question is
+  # defined here.
+  - name: EXP_JEV04_PAIR_GUARANTEE
+    title: exact-pair-guarantee-identity
+    ruleset: experiment-candidates
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callers, callees]
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    applicability:
+      requires_any: [validation_candidate]
+    question:
+      type: noul
+      instructions: >-
+        Judge only the bound earlier and later operations. Does the target
+        visibly establish the same guarantee for the same checked value or
+        state before the later operation? Answer true only when both validation
+        operations and their equivalent guarantee or identity are present for
+        the same checked value or state; identical text alone is insufficient.
+        Answer false when that bound guarantee is not visible; do not infer it
+        from names or comments, and do not assess other checks.
+      criteria:
+        "true": >-
+          The bound earlier and later operations visibly establish the same
+          guarantee for the same checked value or state.
+        "false": >-
+          The bound operations do not visibly establish that same guarantee for
+          that checked value or state; identical text alone is insufficient.
+    report:
+      message: "EXPERIMENT ONLY: the bound pair visibly establishes a repeated validation invariant"
+      levels:
+        warning:
+          min_probability: 0.71
+        error:
+          min_probability: 0.9
+
+  - name: EXP_JEV04_PAIR_PRESERVATION
+    title: exact-pair-preservation
+    ruleset: experiment-candidates
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callers, callees]
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    applicability:
+      requires_any: [validation_candidate]
+    targeted_enrichment:
+      when_choices: [insufficient_context]
+    question:
+      type: choice
+      instructions: >-
+        Classify only the bound earlier and later operations. Choose preserved
+        when both operations concern the same guarantee and same checked value
+        or state, no mutation, reassignment, or alias is visible, and the
+        mutable or aliasable checked subject or visible alias is not passed as
+        an argument or receiver to an opaque or external call. Choose
+        possible_invalidation only when mutation, reassignment, or alias is
+        visible, or that mutable or aliasable subject or visible alias is passed
+        as an argument or receiver to an opaque or external call. Unrelated
+        opaque calls are not invalidation. Choose insufficient_context when a
+        plausibly relevant boundary exists but reachability or its effect on
+        mutable state is unresolved. An omitted body is not preservation when
+        reachability is unresolved. An immutable captured primitive read-only
+        remains preserved.
+      criteria:
+        preserved: >-
+          The bound operations concern the same guarantee and same checked value
+          or state; no mutation, reassignment, or alias is visible; and no
+          mutable or aliasable checked subject or visible alias is passed to an
+          opaque or external call. An unrelated opaque call does not invalidate
+          the guarantee, and an immutable captured primitive read-only remains
+          preserved.
+        possible_invalidation: >-
+          Mutation, reassignment, or alias is visible, or the mutable or
+          aliasable checked subject or visible alias is passed as an argument or
+          receiver to an opaque or external call before the later operation.
+        insufficient_context: >-
+          A plausibly relevant boundary exists, but reachability or its effect
+          on mutable state is unresolved. An omitted body is not preservation
+          when that reachability remains unresolved.
+    report:
+      message: "EXPERIMENT ONLY: the bound validation pair preserves an established invariant"
+      choices: [preserved]
+      uncertain_choices: [insufficient_context]
+      levels:
+        warning:
+          min_probability: 0.6
+          min_confidence: 0.45
+        error:
+          min_probability: 0.92
+          min_confidence: 0.7
