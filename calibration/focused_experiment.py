@@ -49,8 +49,10 @@ from jevscan.core.protocol import (
     PROMPT_VERSION,
     QUESTION_POLICY,
     Check,
+    ChoiceAnswer,
     JevError,
     JevResponse,
+    NoulAnswer,
     encode,
     validate_answer,
 )
@@ -64,12 +66,21 @@ LOCALIZATION_OVERHEAD = 0.25
 CAPTURE_RETRIES = 1
 DEFAULT_ENDPOINT = "https://api.typesafe.ai"
 FOCUSED_MANIFEST = PROJECT_ROOT / "examples" / "calibration" / "focused" / "MANIFEST.yaml"
+EVOLUTION_CANDIDATES_CONFIG = PROJECT_ROOT / "calibration" / "evolution-candidates.yaml"
 
 _CANDIDATE_RULES: dict[str, tuple[str, ...]] = {
     "jev01-baseline": ("FOCUS_JEV01_BASELINE",),
     "jev01-focused": ("FOCUS_JEV01_FOCUSED",),
+    "jev01-strict-and": (
+        "EXP_JEV01_RESPONSIBILITIES",
+        "EXP_JEV01_INTERLEAVING",
+    ),
     "jev02-baseline": ("FOCUS_JEV02_SCORE",),
     "jev02-presence-gated": ("FOCUS_JEV02_SCORE", "FOCUS_JEV02_PRESENCE"),
+    "jev03-concrete-mechanics": ("EXP_JEV03_CONCRETE_MECHANICS",),
+    "jev05-corrected": ("EXP_JEV05_CORRECTED",),
+    "jev08-choice": ("EXP_JEV08_CHOICE",),
+    "unaccounted-partial-state-transition": ("EXP_PARTIAL_STATE_TRANSITION",),
     "jev04-baseline": ("FOCUS_JEV04_BASELINE",),
     "jev04-focused-joint": ("FOCUS_JEV04_JOINT",),
     "jev04-focused-decomposed": (
@@ -82,13 +93,35 @@ _CANDIDATE_RULES: dict[str, tuple[str, ...]] = {
         "FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE",
         "FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION",
     ),
+    "jev04-pair-corrected": (
+        "EXP_JEV04_PAIR_GUARANTEE",
+        "EXP_JEV04_PAIR_PRESERVATION",
+    ),
 }
+_HISTORICAL_CANDIDATES = frozenset({
+    "jev01-baseline",
+    "jev01-focused",
+    "jev02-baseline",
+    "jev02-presence-gated",
+    "jev04-baseline",
+    "jev04-focused-joint",
+    "jev04-focused-decomposed",
+    "jev04-pair-joint",
+    "jev04-pair-preservation",
+    "jev04-pair-decomposed",
+})
 
 _RULE_BASES = {
     "FOCUS_JEV01_BASELINE": "JEV01",
     "FOCUS_JEV01_FOCUSED": "JEV01",
+    "EXP_JEV01_RESPONSIBILITIES": "JEV01",
+    "EXP_JEV01_INTERLEAVING": "JEV01",
     "FOCUS_JEV02_SCORE": "JEV02",
     "FOCUS_JEV02_PRESENCE": "JEV02",
+    "EXP_JEV03_CONCRETE_MECHANICS": "JEV03",
+    "EXP_JEV05_CORRECTED": "JEV05",
+    "EXP_JEV08_CHOICE": "JEV08",
+    "EXP_PARTIAL_STATE_TRANSITION": "EXP_PARTIAL_STATE_TRANSITION",
     "FOCUS_JEV04_BASELINE": "JEV04",
     "FOCUS_JEV04_JOINT": "JEV04",
     "FOCUS_JEV04_DECOMPOSED_GUARANTEE": "JEV04",
@@ -97,6 +130,8 @@ _RULE_BASES = {
     "FOCUS_JEV04_PAIR_PRESERVATION": "JEV04",
     "FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE": "JEV04",
     "FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION": "JEV04",
+    "EXP_JEV04_PAIR_GUARANTEE": "JEV04",
+    "EXP_JEV04_PAIR_PRESERVATION": "JEV04",
 }
 _METRIC_ALIASES = {
     "FOCUS_JEV01_BASELINE": {"FOCUS_JEV01_BASELINE", "JEV01"},
@@ -155,8 +190,17 @@ _PAIR_TASK_PREFIX = (
     "Judge only the bound earlier/later operations below as one same-value/state relationship. "
     "Their locations refer to the complete supplied target; do not assess other checks."
 )
-_PAIR_CANDIDATES = frozenset({"jev04-pair-joint", "jev04-pair-preservation", "jev04-pair-decomposed"})
-_PAIR_FALLBACK_CANDIDATES = frozenset({"jev04-pair-joint", "jev04-pair-preservation"})
+_PAIR_CANDIDATES = frozenset({
+    "jev04-pair-joint",
+    "jev04-pair-preservation",
+    "jev04-pair-decomposed",
+    "jev04-pair-corrected",
+})
+_PAIR_FALLBACK_CANDIDATES = frozenset({
+    "jev04-pair-joint",
+    "jev04-pair-preservation",
+    "jev04-pair-corrected",
+})
 
 
 def candidate_rule_ids(candidate: str) -> tuple[str, ...]:
@@ -168,6 +212,32 @@ def candidate_rule_ids(candidate: str) -> tuple[str, ...]:
 
 def candidate_names() -> tuple[str, ...]:
     return tuple(_CANDIDATE_RULES)
+
+
+def evolution_candidate_documents() -> dict[str, dict[str, Any]]:
+    """Load non-production candidate rules; corpus and split data stay external."""
+    loaded = load_config(
+        [EVOLUTION_CANDIDATES_CONFIG.parent],
+        explicit=EVOLUTION_CANDIDATES_CONFIG,
+        cwd=PROJECT_ROOT,
+    ).config
+    return {
+        name: rule.model_dump(mode="json")
+        for name, rule in loaded.rules.items()
+        if name
+        in {
+            rule_id
+            for candidate in (
+                "jev01-strict-and",
+                "jev03-concrete-mechanics",
+                "jev05-corrected",
+                "jev08-choice",
+                "unaccounted-partial-state-transition",
+                "jev04-pair-corrected",
+            )
+            for rule_id in candidate_rule_ids(candidate)
+        }
+    }
 
 
 def _json_hash(value: Any) -> str:
@@ -278,15 +348,21 @@ def candidate_documents() -> dict[str, dict[str, Any]]:
 
 
 def write_candidate_config(path: Path) -> Path:
-    """Write a config that enables only ordinary focused project rules."""
+    """Write historical focused and evolution candidate rules for experiments."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    documents = {**candidate_documents(), **evolution_candidate_documents()}
     document = {
         "version": 4,
+        "lint": {"select": ["ALL"]},
         "rulesets": {
             "JEV": {"enabled": False},
             "project": {"enabled": True},
+            "experiment-candidates": {
+                "enabled": True,
+                "description": "Non-production candidate definitions; no corpus or split seal",
+            },
         },
-        "rules": [{"name": name, **rule} for name, rule in candidate_documents().items()],
+        "rules": [{"name": name, **rule} for name, rule in documents.items()],
     }
     path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
     return path
@@ -438,9 +514,9 @@ def _parse_source(path: Path) -> tuple[Any, Any]:
 
 def _candidate_rules_for(base_rule: str) -> Iterable[tuple[str, str]]:
     for candidate, rule_ids in _CANDIDATE_RULES.items():
-        for rule_id in rule_ids:
-            if _RULE_BASES[rule_id] == base_rule:
-                yield candidate, rule_id
+        bases = {_RULE_BASES[rule_id] for rule_id in rule_ids}
+        if base_rule in {candidate, *bases, *rule_ids}:
+            yield from ((candidate, rule_id) for rule_id in rule_ids)
 
 
 def _additional_source_records(entry: Mapping[str, Any], primary_source: Path) -> list[dict[str, Any]]:
@@ -588,7 +664,11 @@ def _allowed_candidates(
         rejected = requested - frozen
         if rejected:
             raise ValueError(f"heldout candidates are not frozen: {sorted(rejected)}")
-    return requested if requested is not None else frozen
+    if requested is not None:
+        return requested
+    if frozen is not None:
+        return frozen
+    return set(_HISTORICAL_CANDIDATES)
 
 
 def _prepare_candidate(
@@ -694,6 +774,8 @@ def _capture_items(
         planner = planners[source]
         for candidate, rule_id in _candidate_rules_for(str(entry["rule"])):
             if allowed_candidates is not None and candidate not in allowed_candidates:
+                continue
+            if allowed_candidates is None and not any(check.rule_id == rule_id for check in planner.checks):
                 continue
             selected_count += 1
             check, evidence, pair_binding, eligible = _prepare_candidate(
@@ -1356,6 +1438,8 @@ def plan_manifest(
         for candidate, rule_id in _candidate_rules_for(str(entry["rule"])):
             if allowed_candidates is not None and candidate not in allowed_candidates:
                 continue
+            if allowed_candidates is None and not any(check.rule_id == rule_id for check in planner.checks):
+                continue
             selected_count += 1
             planned_check, evidence, pair_binding, eligible = _prepare_candidate(
                 planner, parsed, entry, source, candidate, rule_id
@@ -1512,6 +1596,134 @@ def _review_signal(record: Any) -> bool:
     return record.signal
 
 
+JEV01_AND_WARNING = 0.71
+JEV01_AND_ERROR = 0.90
+JEV04_PAIR_WARNING_GUARANTEE = 0.71
+JEV04_PAIR_WARNING_PRESERVATION = 0.60
+JEV04_PAIR_WARNING_CONFIDENCE = 0.45
+JEV04_PAIR_ERROR_GUARANTEE = 0.90
+JEV04_PAIR_ERROR_PRESERVATION = 0.92
+JEV04_PAIR_ERROR_CONFIDENCE = 0.70
+
+
+def _probability(value: Any, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{field} must be a finite probability")
+    if not 0 <= value <= 1:
+        raise ValueError(f"{field} must be between 0 and 1")
+    return float(value)
+
+
+def compose_noul_and(probabilities: Iterable[float]) -> str:
+    """Compose Noul child probabilities without multiplying them.
+
+    The returned status is the status of the offline experiment signal. Child
+    assessments are deliberately not consulted, so a child can never become a
+    separately promoted finding.
+    """
+    values = tuple(_probability(value, "Noul probability") for value in probabilities)
+    if not values:
+        raise ValueError("Noul composition requires at least one child probability")
+    if all(value >= JEV01_AND_ERROR for value in values):
+        return "error"
+    if all(value >= JEV01_AND_WARNING for value in values):
+        return "warning"
+    return "ok"
+
+
+def compose_jev04_pair(
+    guarantee_probability: float,
+    preservation_choice: str,
+    preservation_probability: float,
+    preservation_confidence: float,
+) -> str:
+    """Compose the exact-pair guarantee and preservation answers offline."""
+    guarantee = _probability(guarantee_probability, "guarantee probability")
+    preservation = _probability(preservation_probability, "preservation probability")
+    confidence = _probability(preservation_confidence, "preservation confidence")
+    if preservation_choice == "insufficient_context":
+        return "unknown"
+    if preservation_choice != "preserved":
+        return "ok"
+    if (
+        guarantee >= JEV04_PAIR_ERROR_GUARANTEE
+        and preservation >= JEV04_PAIR_ERROR_PRESERVATION
+        and confidence >= JEV04_PAIR_ERROR_CONFIDENCE
+    ):
+        return "error"
+    if (
+        guarantee >= JEV04_PAIR_WARNING_GUARANTEE
+        and preservation >= JEV04_PAIR_WARNING_PRESERVATION
+        and confidence >= JEV04_PAIR_WARNING_CONFIDENCE
+    ):
+        return "warning"
+    return "ok"
+
+
+def _bundle_identity(record: Any) -> bytes:
+    case = record.case
+    return encode({
+        "label": case.label,
+        "target": case.target.metadata(),
+        "evidence": case.hashes.evidence,
+        "requested_model": case.requested_model,
+        "returned_model": case.returned_model,
+        "prompt": case.prompt.model_dump(mode="json"),
+        "source_hashes": case.hashes.source_documents,
+    })
+
+
+def _children_by_parent(
+    child_records: Mapping[str, list[Any]],
+    *,
+    expected_rule_ids: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, Any]]:
+    expected = set(expected_rule_ids or child_records)
+    if expected != set(child_records):
+        raise ValueError(
+            f"composed candidate child registry mismatch: expected {sorted(expected)}, received {sorted(child_records)}"
+        )
+    by_case: dict[str, dict[str, Any]] = defaultdict(dict)
+    for rule_id, records in child_records.items():
+        for record in records:
+            parent_case_id = str(record.case.provenance.get("parent_case_id", record.case.case_id))
+            if rule_id in by_case[parent_case_id]:
+                raise ValueError(f"composed candidate has duplicate child records for {parent_case_id}/{rule_id}")
+            by_case[parent_case_id][rule_id] = record
+    for parent_case_id, children in by_case.items():
+        received = set(children)
+        if received != expected:
+            missing = sorted(expected - received)
+            extra = sorted(received - expected)
+            raise ValueError(
+                f"composed candidate has incomplete child bundle for {parent_case_id}: missing={missing}, extra={extra}"
+            )
+        identities = {_bundle_identity(record) for record in children.values()}
+        if len(identities) != 1:
+            raise ValueError(f"composed candidate child bundle metadata mismatch for {parent_case_id}")
+    return dict(by_case)
+
+
+def _jev01_strict_and_status(children: Mapping[str, Any]) -> str:
+    answers = [record.case.answer for record in children.values()]
+    if not all(isinstance(answer, NoulAnswer) for answer in answers):
+        raise TypeError("JEV01 strict composition requires Noul child answers")
+    return compose_noul_and(answer.noul for answer in answers if isinstance(answer, NoulAnswer))
+
+
+def _jev04_pair_status(children: Mapping[str, Any]) -> str:
+    guarantee = children["EXP_JEV04_PAIR_GUARANTEE"].case.answer
+    preservation = children["EXP_JEV04_PAIR_PRESERVATION"].case.answer
+    if not isinstance(guarantee, NoulAnswer) or not isinstance(preservation, ChoiceAnswer):
+        raise TypeError("JEV04 pair composition requires Noul guarantee and Choice preservation answers")
+    return compose_jev04_pair(
+        guarantee.noul,
+        preservation.choice,
+        preservation.probabilities[preservation.choice],
+        preservation.confidence,
+    )
+
+
 def _metric_label(record: Any) -> str:
     """Use reviewed JEV02 levels for class membership when capture preserves them."""
     expected_score = record.case.provenance.get("expected_score")
@@ -1524,17 +1736,33 @@ def _metric_label(record: Any) -> str:
     return record.case.label
 
 
+_MISSING_CANDIDATE = object()
+_HISTORICAL_CANDIDATE_ALIASES: dict[str, frozenset[str]] = {
+    "jev01-baseline": frozenset({"baseline"}),
+    "jev02-baseline": frozenset({"baseline"}),
+    "jev04-baseline": frozenset({"baseline", "fallback"}),
+}
+
+
+def _historical_baseline_compatible(candidate: str, declared: object) -> bool:
+    aliases = _HISTORICAL_CANDIDATE_ALIASES.get(candidate)
+    return aliases is not None and (declared is _MISSING_CANDIDATE or declared in aliases)
+
+
+def _candidate_matches(case: CalibrationCase, candidate: str) -> bool:
+    declared = case.provenance.get("candidate", _MISSING_CANDIDATE)
+    if declared == candidate:
+        return True
+    return _historical_baseline_compatible(candidate, declared)
+
+
 def _metric_records(
     cases: Iterable[CalibrationCase],
     rule_ids: tuple[str, ...],
-    candidate: str | None = None,
+    candidate: str,
 ) -> list[Any]:
     accepted = set().union(*(set(_METRIC_ALIASES.get(rule_id, {rule_id})) for rule_id in rule_ids))
-    return [
-        replay_case(case)
-        for case in cases
-        if case.rule_id in accepted and (candidate is None or case.provenance.get("candidate") in {None, candidate})
-    ]
+    return [replay_case(case) for case in cases if case.rule_id in accepted and _candidate_matches(case, candidate)]
 
 
 def _record_signal(record: Any, signal_by_case: Mapping[str, bool] | None) -> bool:
@@ -1649,19 +1877,24 @@ def _record_pair_metadata(record: Any) -> Mapping[str, Any]:
         raise ValueError(f"{record.case.case_id}: question and provenance pair IDs disagree")
     if encode(task_binding) != encode({"candidate": binding.get("candidate"), **pair}):
         raise ValueError(f"{record.case.case_id}: question and provenance pair metadata disagree")
+    if not {
+        "pair_id",
+        "source_path",
+        "earlier",
+        "later",
+        "intervening_span",
+    } <= set(pair):
+        raise ValueError(f"{record.case.case_id}: pair metadata is missing required spans")
+    if any(
+        not isinstance(pair.get(name), Mapping) or "operation_span" not in pair[name] for name in ("earlier", "later")
+    ):
+        raise ValueError(f"{record.case.case_id}: pair metadata is missing operation spans")
     return pair
 
 
 def _composed_metrics(child_records: Mapping[str, list[Any]], *, require_pair_binding: bool = False) -> dict[str, Any]:
     """Compose aligned child replay signals without changing production assessment."""
-    by_case: dict[str, dict[str, Any]] = defaultdict(dict)
-    for rule_id, records in child_records.items():
-        for record in records:
-            parent_case_id = str(record.case.provenance.get("parent_case_id", record.case.case_id))
-            if rule_id in by_case[parent_case_id]:
-                raise ValueError(f"composed candidate has duplicate child records for {parent_case_id}/{rule_id}")
-            by_case[parent_case_id][rule_id] = record
-    common = {case_id: children for case_id, children in by_case.items() if len(children) == len(child_records)}
+    common = _children_by_parent(child_records)
     if not common:
         return {"aligned_cases": 0, "metrics": None}
     pair_metadata: dict[str, Mapping[str, Any]] = {}
@@ -1676,20 +1909,6 @@ def _composed_metrics(child_records: Mapping[str, list[Any]], *, require_pair_bi
             pair_metadata[parent_case_id] = next(iter(child_pairs.values()))
     primary_rule = next(iter(child_records))
     primary = [children[primary_rule] for children in common.values()]
-    labels = {
-        parent_case_id: {child.case.label for child in children.values()}
-        for record, children in zip(primary, common.values(), strict=True)
-        for parent_case_id in [str(record.case.provenance.get("parent_case_id", record.case.case_id))]
-    }
-    if any(len(values) != 1 for values in labels.values()):
-        raise ValueError("composed candidate children disagree on a case label")
-    targets = {
-        parent_case_id: {child.case.target for child in children.values()}
-        for record, children in zip(primary, common.values(), strict=True)
-        for parent_case_id in [str(record.case.provenance.get("parent_case_id", record.case.case_id))]
-    }
-    if any(len(values) != 1 for values in targets.values()):
-        raise ValueError("composed candidate children disagree on a target identity")
     signals = {
         parent_case_id: all(record.signal for record in children.values())
         for parent_case_id, children in common.items()
@@ -1704,6 +1923,8 @@ def _combined_pair_metrics(
     pair_records: list[Any],
     fallback_records: list[Any],
     pair_signal_by_case: Mapping[str, bool] | None = None,
+    *,
+    suppress_pair_child_assessment: bool = False,
 ) -> dict[str, Any]:
     """Combine eligible pair signals with deployed whole-target fallbacks."""
     eligible: dict[str, Any] = {}
@@ -1733,19 +1954,46 @@ def _combined_pair_metrics(
         signals[parent_case_id] = baseline.signal
     for parent_case_id, pair_record in eligible.items():
         baseline = fallback.get(parent_case_id)
-        if baseline is not None:
-            if baseline.case.target != pair_record.case.target:
-                raise ValueError(f"pair and whole-target fallback targets disagree for {parent_case_id}")
-            if baseline.case.label != pair_record.case.label:
-                raise ValueError(f"pair and whole-target fallback labels disagree for {parent_case_id}")
+        if baseline is not None and _bundle_identity(baseline) != _bundle_identity(pair_record):
+            raise ValueError(f"pair and whole-target fallback identities disagree for {parent_case_id}")
+    metrics = _metrics_for_records(combined, signals) if combined else None
+    if metrics is not None and suppress_pair_child_assessment:
+        fallback_only = [fallback[parent_case_id] for parent_case_id in missing]
+        fallback_signals = {parent_case_id: fallback[parent_case_id].signal for parent_case_id in missing}
+        fallback_metrics = _metrics_for_records(fallback_only, fallback_signals) if fallback_only else None
+        metrics["severity"] = (
+            fallback_metrics["severity"]
+            if fallback_metrics
+            else {
+                "confirmed": {},
+                "tentative": {},
+            }
+        )
+        metrics["target_attribution"] = (
+            fallback_metrics["target_attribution"]
+            if fallback_metrics
+            else {
+                "exact": 0,
+                "signals": 0,
+                "fraction": None,
+            }
+        )
     return {
         "eligible_pair_cases": len(eligible),
         "whole_target_fallback_cases": len(missing),
         "fallback_records_available": bool(fallback_records),
         "missing_fallback_cases": sorted(set(eligible) - set(fallback)),
         "complete": not (set(eligible) - set(fallback)),
-        "metrics": _metrics_for_records(combined, signals) if combined else None,
+        "metrics": metrics,
     }
+
+
+def _offline_composed_metrics(records: list[Any], signals: Mapping[str, bool]) -> dict[str, Any]:
+    """Measure only the composed signal, never a child assessment."""
+    result = _metrics_for_records(records, signals)
+    result.pop("severity", None)
+    result.pop("target_attribution", None)
+    return result
 
 
 def _usage_metrics(cases: Iterable[CalibrationCase]) -> dict[str, Any]:
@@ -1806,7 +2054,7 @@ def replay_metrics(cases_path: Path) -> dict[str, Any]:
     cases = load_cases(cases_path)
     result: dict[str, Any] = {"usage": _usage_metrics(cases)}
     for candidate, rule_ids in _CANDIDATE_RULES.items():
-        if candidate in _PAIR_FALLBACK_CANDIDATES:
+        if candidate in _PAIR_FALLBACK_CANDIDATES and candidate != "jev04-pair-corrected":
             pair_records = _metric_records(cases, rule_ids, candidate)
             fallback_records = _metric_records(cases, ("FOCUS_JEV04_BASELINE",), "jev04-baseline")
             result[candidate] = {
@@ -1823,6 +2071,63 @@ def replay_metrics(cases_path: Path) -> dict[str, Any]:
             result[candidate] = _metrics_for_records(_metric_records(cases, rule_ids, candidate))
             continue
         child_records = {rule_id: _metric_records(cases, (rule_id,), candidate) for rule_id in rule_ids}
+        if candidate == "jev01-strict-and":
+            by_case = _children_by_parent(child_records, expected_rule_ids=rule_ids)
+            statuses = {
+                parent_case_id: _jev01_strict_and_status(children) for parent_case_id, children in by_case.items()
+            }
+            primary = [children[rule_ids[0]] for children in by_case.values()]
+            signals = {parent_case_id: status in {"warning", "error"} for parent_case_id, status in statuses.items()}
+            result[candidate] = {
+                "composition": "strict AND of independently meaningful responsibilities and visible interleaving",
+                "warning_probability": [JEV01_AND_WARNING, JEV01_AND_WARNING],
+                "error_probability": [JEV01_AND_ERROR, JEV01_AND_ERROR],
+                "child_findings_promoted": 0,
+                "composed": {
+                    "statuses": statuses,
+                    "metrics": _offline_composed_metrics(primary, signals) if primary else None,
+                },
+            }
+            continue
+        if candidate == "jev04-pair-corrected":
+            by_case = _children_by_parent(child_records, expected_rule_ids=rule_ids)
+            for children in by_case.values():
+                pairs = [_record_pair_metadata(record) for record in children.values()]
+                if len({str(pair["pair_id"]) for pair in pairs}) != 1 or len({encode(pair) for pair in pairs}) != 1:
+                    raise ValueError("composed JEV04 children disagree on pair metadata")
+            statuses = {parent_case_id: _jev04_pair_status(children) for parent_case_id, children in by_case.items()}
+            primary = [children[rule_ids[0]] for children in by_case.values()]
+            signals = {parent_case_id: status in {"warning", "error"} for parent_case_id, status in statuses.items()}
+            fallback_records = _metric_records(
+                cases,
+                ("FOCUS_JEV04_BASELINE", "JEV04"),
+                "jev04-baseline",
+            )
+            result[candidate] = {
+                "composition": "strict AND of exact-pair guarantee and preserved-value/state evidence",
+                "warning_gates": {
+                    "guarantee_probability": JEV04_PAIR_WARNING_GUARANTEE,
+                    "preservation_probability": JEV04_PAIR_WARNING_PRESERVATION,
+                    "preservation_confidence": JEV04_PAIR_WARNING_CONFIDENCE,
+                },
+                "error_gates": {
+                    "guarantee_probability": JEV04_PAIR_ERROR_GUARANTEE,
+                    "preservation_probability": JEV04_PAIR_ERROR_PRESERVATION,
+                    "preservation_confidence": JEV04_PAIR_ERROR_CONFIDENCE,
+                },
+                "child_findings_promoted": 0,
+                "eligible": {
+                    "statuses": statuses,
+                    "metrics": _offline_composed_metrics(primary, signals) if primary else None,
+                },
+                "combined": _combined_pair_metrics(
+                    primary,
+                    fallback_records,
+                    signals,
+                    suppress_pair_child_assessment=True,
+                ),
+            }
+            continue
         if candidate == "jev04-pair-decomposed":
             composed = _composed_metrics(child_records, require_pair_binding=True)
             by_child = {

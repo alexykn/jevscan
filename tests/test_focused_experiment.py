@@ -6,20 +6,27 @@ import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import httpx
 import pytest
 import yaml
 
 from calibration.focused_experiment import (
+    EVOLUTION_CANDIDATES_CONFIG,
     FOCUSED_MANIFEST,
     MODEL,
     PROJECT_ROOT,
+    _capture_items,
     _metrics_for_records,
+    _offline_composed_metrics,
     _pair_binding,
     candidate_documents,
     candidate_rule_ids,
     capture_manifest,
+    compose_jev04_pair,
+    compose_noul_and,
+    evolution_candidate_documents,
     freeze_candidates,
     load_manifest,
     plan_manifest,
@@ -49,6 +56,261 @@ def test_focused_source_snapshot_and_manifest_contract() -> None:
     assert manifest["source_contract"]["labels_are_outside_source_root"] is True
     assert manifest["source_contract"]["live_model_calls"] == "none"
     assert "Partial" in manifest["source_contract"]["label_vocabulary"]
+
+
+def test_evolution_candidate_config_is_nonproduction_and_exact() -> None:
+    loaded = load_config(
+        [EVOLUTION_CANDIDATES_CONFIG.parent],
+        explicit=EVOLUTION_CANDIDATES_CONFIG,
+        cwd=PROJECT_ROOT,
+    ).config
+    expected = {
+        "EXP_JEV01_RESPONSIBILITIES",
+        "EXP_JEV01_INTERLEAVING",
+        "EXP_JEV03_CONCRETE_MECHANICS",
+        "EXP_JEV05_CORRECTED",
+        "EXP_JEV08_CHOICE",
+        "EXP_PARTIAL_STATE_TRANSITION",
+        "EXP_JEV04_PAIR_GUARANTEE",
+        "EXP_JEV04_PAIR_PRESERVATION",
+    }
+    assert set(loaded.selected_rules()) == expected
+    assert not loaded.rulesets["JEV"].enabled
+    assert all(loaded.rules[name].ruleset == "experiment-candidates" for name in expected)
+    assert not expected & {"JEV02", "JEV06", "JEV07", "JEV09"}
+
+
+def test_evolution_candidate_questions_have_fresh_exact_contracts() -> None:
+    documents = evolution_candidate_documents()
+    assert set(documents) == {
+        "EXP_JEV01_RESPONSIBILITIES",
+        "EXP_JEV01_INTERLEAVING",
+        "EXP_JEV03_CONCRETE_MECHANICS",
+        "EXP_JEV05_CORRECTED",
+        "EXP_JEV08_CHOICE",
+        "EXP_PARTIAL_STATE_TRANSITION",
+        "EXP_JEV04_PAIR_GUARANTEE",
+        "EXP_JEV04_PAIR_PRESERVATION",
+    }
+    questions = {name: document["question"] for name, document in documents.items()}
+    assert len({json.dumps(question, sort_keys=True) for question in questions.values()}) == len(questions)
+    assert questions["EXP_JEV01_RESPONSIBILITIES"]["type"] == "noul"
+    assert questions["EXP_JEV01_INTERLEAVING"]["type"] == "noul"
+    assert "independently meaningful responsibilities" in questions["EXP_JEV01_RESPONSIBILITIES"]["instructions"]
+    assert (
+        "interleave two or more independently meaningful policies"
+        in questions["EXP_JEV01_INTERLEAVING"]["instructions"]
+    )
+    assert questions["EXP_JEV03_CONCRETE_MECHANICS"]["instructions"] == (
+        "Does the target mix high-level orchestration with substantial inline concrete mechanics that obscures its "
+        "primary operation? Count substantial inline byte or token scanning, decoding, AST traversal or normalization, "
+        "descriptor or selector ownership, nonblocking I/O, retry or backoff, and rollback or resource ownership. "
+        "Calls or helpers, ordinary validation, metadata, cache or index bookkeeping, small cleanup, and a single "
+        "cohesive parser or resource boundary are insufficient."
+    )
+    assert questions["EXP_JEV05_CORRECTED"]["instructions"] == (
+        "Select exactly one outcome for a concrete failure or rejected state visible in the target. Choose concealed_bug "
+        "only when that failure or rejected state is converted into an ordinary result, the target visibly establishes "
+        "a required postcondition that the result violates, and no explicit non-success remains at that boundary. "
+        "Choose legitimate_behavior when explicit non-success is preserved or the target shows that the fallback is "
+        "allowed; an empty result, default, cancellation, or exhaustion is not a defect by itself. Choose "
+        "insufficient_context when the supplied evidence does not establish the postcondition, whether the path is a "
+        "failure, or whether the fallback is allowed. Do not infer the contract from names, comments, tests, callers, "
+        "types, data shape, or API convention."
+    )
+    assert questions["EXP_JEV05_CORRECTED"]["criteria"] == {
+        "concealed_bug": "A concrete failure or rejected state is converted into an ordinary result; the target visibly "
+        "establishes a required postcondition that the result violates, and no explicit non-success remains at that "
+        "boundary.",
+        "legitimate_behavior": "Explicit non-success is preserved or the target shows that the fallback is allowed; an "
+        "empty result, default, cancellation, or exhaustion is not a defect by itself.",
+        "insufficient_context": "The supplied evidence does not establish the required postcondition, whether the path "
+        "is a failure, or whether the fallback is allowed; do not infer any of those facts from names, comments, tests, "
+        "callers, types, data shape, or API convention.",
+    }
+    assert questions["EXP_JEV08_CHOICE"]["instructions"] == (
+        "Select exactly one outcome for the supplied owner. Choose unrelated_responsibilities only when at least two "
+        "independently meaningful behaviors serve different external purposes and no shared lifecycle, domain invariant, "
+        "store, resource, aggregate, facade, or interface boundary explains their ownership. Choose cohesive_owner when "
+        "one such boundary exists, including a sequential workflow. Choose insufficient_context when the enclosing or "
+        "caller design determines the classification; method count alone is not evidence."
+    )
+    assert questions["EXP_JEV08_CHOICE"]["criteria"] == {
+        "unrelated_responsibilities": "At least two independently meaningful behaviors serve different external "
+        "purposes, and no shared lifecycle, domain invariant, store, resource, aggregate, facade, or interface boundary "
+        "explains their ownership.",
+        "cohesive_owner": "One shared lifecycle, domain invariant, store, resource, aggregate, facade, or interface "
+        "boundary explains the behavior, including a sequential workflow.",
+        "insufficient_context": "The enclosing or caller design is required to determine whether the behaviors serve "
+        "different external purposes or share a cohesive boundary.",
+    }
+    assert questions["EXP_PARTIAL_STATE_TRANSITION"]["instructions"] == (
+        "Select exactly one outcome for narrow temporal atomicity in the target. Choose unaccounted_partial_transition "
+        "only when two or more semantically coupled externally observable state effects are visible, a reachable "
+        "failure, cancellation, early return, or retry can leave only a subset visible or durable, and there is no "
+        "atomic boundary, rollback, compensation, reconciliation, or explicitly valid intermediate or progressive "
+        "contract. Exclude independent logging, metrics, or caches, local temporary construction, and a complete build "
+        "followed by one publication. Choose accounted_transition when those effects are covered by such a boundary or "
+        "contract, or no qualifying transition is visible. Choose insufficient_context when reachability or the local "
+        "transition contract is unresolved."
+    )
+    assert questions["EXP_PARTIAL_STATE_TRANSITION"]["criteria"] == {
+        "unaccounted_partial_transition": "Two or more semantically coupled externally observable state effects are "
+        "visible; a reachable failure, cancellation, early return, or retry can leave only a subset visible or durable; "
+        "and no atomic boundary, rollback, compensation, reconciliation, or explicitly valid intermediate or "
+        "progressive contract covers that subset.",
+        "accounted_transition": "The effects are covered by an atomic boundary, rollback, compensation, reconciliation, "
+        "or explicitly valid intermediate or progressive contract, or the target shows no qualifying transition. "
+        "Independent logging, metrics, caches, local temporary construction, and complete build-then-one-publication "
+        "patterns are excluded.",
+        "insufficient_context": "A qualifying partial transition may exist, but reachability or the local transition "
+        "contract is unresolved.",
+    }
+    assert documents["EXP_PARTIAL_STATE_TRANSITION"]["report"]["levels"] == {
+        "warning": {
+            "min_probability": 0.6,
+            "min_confidence": 0.5,
+            "min_score": None,
+            "max_score": None,
+            "score_levels": None,
+        },
+        "error": {
+            "min_probability": 0.92,
+            "min_confidence": 0.7,
+            "min_score": None,
+            "max_score": None,
+            "score_levels": None,
+        },
+    }
+    assert questions["EXP_JEV04_PAIR_GUARANTEE"]["instructions"] == (
+        "Judge only the bound earlier and later operations. Does the target visibly establish the same guarantee for the "
+        "same checked value or state before the later operation? Answer true only when both validation operations and "
+        "their equivalent guarantee or identity are present for the same checked value or state; identical text alone is "
+        "insufficient. Answer false when that bound guarantee is not visible; do not infer it from names or comments, "
+        "and do not assess other checks."
+    )
+    assert questions["EXP_JEV04_PAIR_PRESERVATION"]["instructions"] == (
+        "Classify only the bound earlier and later operations. Choose preserved when both operations concern the same "
+        "guarantee and same checked value or state, no mutation, reassignment, or alias is visible, and the mutable or "
+        "aliasable checked subject or visible alias is not passed as an argument or receiver to an opaque or external "
+        "call. Choose possible_invalidation only when mutation, reassignment, or alias is visible, or that mutable or "
+        "aliasable subject or visible alias is passed as an argument or receiver to an opaque or external call. "
+        "Unrelated opaque calls are not invalidation. Choose insufficient_context when a plausibly relevant boundary "
+        "exists but reachability or its effect on mutable state is unresolved. An omitted body is not preservation when "
+        "reachability is unresolved. An immutable captured primitive read-only remains preserved."
+    )
+    assert questions["EXP_JEV04_PAIR_PRESERVATION"]["criteria"] == {
+        "preserved": "The bound operations concern the same guarantee and same checked value or state; no mutation, "
+        "reassignment, or alias is visible; and no mutable or aliasable checked subject or visible alias is passed to an "
+        "opaque or external call. An unrelated opaque call does not invalidate the guarantee, and an immutable captured "
+        "primitive read-only remains preserved.",
+        "possible_invalidation": "Mutation, reassignment, or alias is visible, or the mutable or aliasable checked "
+        "subject or visible alias is passed as an argument or receiver to an opaque or external call before the later "
+        "operation.",
+        "insufficient_context": "A plausibly relevant boundary exists, but reachability or its effect on mutable state is "
+        "unresolved. An omitted body is not preservation when that reachability remains unresolved.",
+    }
+    assert documents["EXP_PARTIAL_STATE_TRANSITION"]["applicability"] is None
+    assert documents["EXP_JEV05_CORRECTED"]["applicability"] == {
+        "requires_any": ["fallback_candidate"],
+        "requires_all": [],
+    }
+    assert documents["EXP_JEV08_CHOICE"]["applicability"] == {
+        "requires_any": ["executable_behavior"],
+        "requires_all": [],
+    }
+    assert documents["EXP_JEV04_PAIR_GUARANTEE"]["applicability"] == {
+        "requires_any": ["validation_candidate"],
+        "requires_all": [],
+    }
+
+
+def test_evolution_static_children_share_evidence_and_do_not_send_labels() -> None:
+    items, requests, _, _, _, _ = _capture_items(
+        FOCUSED_MANIFEST,
+        phase="development",
+        config_path=EVOLUTION_CANDIDATES_CONFIG,
+        freeze_path=None,
+        candidates=["jev01-strict-and"],
+    )
+    assert len(items) == 24
+    assert len(requests) == 12
+    assert all(len(request.checks) == 2 for request in requests)
+    assert all(
+        {check.rule_id for check in request.checks}
+        == {
+            "EXP_JEV01_RESPONSIBILITIES",
+            "EXP_JEV01_INTERLEAVING",
+        }
+        for request in requests
+    )
+    by_case: dict[str, list[Any]] = {}
+    for item in items:
+        by_case.setdefault(item.parent_case_id, []).append(item)
+    assert all(
+        len(case_items) == 2 and len({item.evidence.key for item in case_items}) == 1 for case_items in by_case.values()
+    )
+    request_material = b"\n".join(request.body for request in requests).lower()
+    for label in (b"positive", b"negative", b"agree", b"disagree", b"partial"):
+        assert label not in request_material
+
+
+def test_evolution_composition_is_strict_and_deterministic() -> None:
+    assert compose_noul_and([0.71, 0.71]) == "warning"
+    assert compose_noul_and([0.9, 0.9]) == "error"
+    assert compose_noul_and([0.9, 0.71]) == "warning"
+    assert compose_noul_and([0.9, 0.70]) == "ok"
+    assert compose_jev04_pair(0.71, "preserved", 0.60, 0.45) == "warning"
+    assert compose_jev04_pair(0.90, "preserved", 0.92, 0.70) == "error"
+    assert compose_jev04_pair(0.90, "preserved", 0.92, 0.69) == "warning"
+    assert compose_jev04_pair(0.90, "possible_invalidation", 1.0, 1.0) == "ok"
+    assert compose_jev04_pair(0.90, "insufficient_context", 1.0, 1.0) == "unknown"
+
+
+def test_composed_metrics_do_not_promote_child_assessments() -> None:
+    target = object()
+    record = SimpleNamespace(
+        signal=True,
+        case=SimpleNamespace(
+            case_id="child",
+            rule_id="EXP_JEV01_RESPONSIBILITIES",
+            label="Agree",
+            target=target,
+            provenance={"source_group": "group"},
+        ),
+        assessment=SimpleNamespace(
+            finding=SimpleNamespace(severity="warning", target=target),
+            tentative_finding=None,
+        ),
+    )
+    metrics = _offline_composed_metrics([record], {"child": True})
+    assert "severity" not in metrics
+    assert "target_attribution" not in metrics
+
+
+def test_evolution_pair_plan_preserves_exact_metadata_and_fallback() -> None:
+    plan = plan_manifest(
+        FOCUSED_MANIFEST,
+        phase="development",
+        config_path=EVOLUTION_CANDIDATES_CONFIG,
+        candidates=["jev04-pair-corrected"],
+    )
+    assert plan["selected_candidates"] == ["jev04-pair-corrected"]
+    assert plan["accounting"]["whole_target_fallbacks"] == 8
+    assert {record["rule_id"] for record in plan["cases"]} == {
+        "EXP_JEV04_PAIR_GUARANTEE",
+        "EXP_JEV04_PAIR_PRESERVATION",
+    }
+    for record in plan["cases"]:
+        binding = record["pair_binding"]
+        assert binding["candidate"] == "jev04-pair-corrected"
+        if binding["status"] == "whole_target_fallback":
+            assert record["question_id"] is None
+            assert binding["reason"]
+        else:
+            assert record["question_id"] is not None
+            assert "intervening_bytes" not in json.dumps(binding)
+            assert binding["pair"]["source_path"] == record["target"]["path"]
 
 
 def test_focused_adjudications_match_the_frozen_source_and_manifest() -> None:
@@ -472,6 +734,270 @@ def _mock_answer(question: dict) -> dict:
         "confidence": 0.8,
         "probabilities": {label: 0.8 if index == 0 else 0.1 for index, label in enumerate(labels)},
     }
+
+
+def _evolution_manifest(tmp_path: Path) -> Path:
+    source_root = tmp_path / "sources"
+    source_root.mkdir()
+    source = source_root / "evolution.py"
+    source.write_text(
+        "class Owner:\n    def action(self):\n        return None\n\ndef recover(value):\n    return value or None\n",
+        encoding="utf-8",
+    )
+    entries = [
+        {
+            "id": "e03",
+            "source": str(source),
+            "source_group": "e03",
+            "rule": "EXP_JEV03_CONCRETE_MECHANICS",
+            "label": "negative",
+            "target": {"scope": "unit", "name": "recover", "kind": "function"},
+        },
+        {
+            "id": "e05",
+            "source": str(source),
+            "source_group": "e05",
+            "rule": "EXP_JEV05_CORRECTED",
+            "label": "negative",
+            "target": {"scope": "unit", "name": "recover", "kind": "function"},
+        },
+        {
+            "id": "e08",
+            "source": str(source),
+            "source_group": "e08",
+            "rule": "EXP_JEV08_CHOICE",
+            "label": "negative",
+            "target": {"scope": "unit", "name": "Owner", "kind": "class"},
+        },
+        {
+            "id": "partial",
+            "source": str(source),
+            "source_group": "partial",
+            "rule": "EXP_PARTIAL_STATE_TRANSITION",
+            "label": "negative",
+            "target": {"scope": "unit", "name": "recover", "kind": "function"},
+        },
+    ]
+    manifest = {
+        "schema_version": 1,
+        "corpus": "candidate-contracts",
+        "provenance": "test-only source for candidate contracts",
+        "source_root": str(source_root),
+        "source_snapshot": {"algorithm": "sha256", "digest": source_snapshot(source_root)},
+        "source_contract": {"labels_are_outside_source_root": True, "live_model_calls": "none"},
+        "development_references": entries,
+    }
+    path = tmp_path / "MANIFEST.yaml"
+    path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_generated_config_advertises_all_evolution_candidates(tmp_path: Path) -> None:
+    config_path = write_candidate_config(tmp_path / "generated.yaml")
+    loaded = load_config([config_path.parent], explicit=config_path, cwd=PROJECT_ROOT).config
+    evolution_rules = {
+        "EXP_JEV01_RESPONSIBILITIES",
+        "EXP_JEV01_INTERLEAVING",
+        "EXP_JEV03_CONCRETE_MECHANICS",
+        "EXP_JEV05_CORRECTED",
+        "EXP_JEV08_CHOICE",
+        "EXP_PARTIAL_STATE_TRANSITION",
+        "EXP_JEV04_PAIR_GUARANTEE",
+        "EXP_JEV04_PAIR_PRESERVATION",
+    }
+    assert evolution_rules <= loaded.selected_rules().keys()
+    assert loaded.rulesets["experiment-candidates"].enabled
+    for candidate in (
+        "jev01-strict-and",
+        "jev03-concrete-mechanics",
+        "jev05-corrected",
+        "jev08-choice",
+        "unaccounted-partial-state-transition",
+        "jev04-pair-corrected",
+    ):
+        assert set(candidate_rule_ids(candidate)) <= loaded.selected_rules().keys()
+    pair_plan = plan_manifest(
+        FOCUSED_MANIFEST,
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-pair-corrected"],
+    )
+    assert {record["rule_id"] for record in pair_plan["cases"]} == {
+        "EXP_JEV04_PAIR_GUARANTEE",
+        "EXP_JEV04_PAIR_PRESERVATION",
+    }
+
+
+def test_generated_config_plans_and_replays_each_single_evolution_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = _evolution_manifest(tmp_path)
+    config_path = write_candidate_config(tmp_path / "generated.yaml")
+    candidates = [
+        "jev03-concrete-mechanics",
+        "jev05-corrected",
+        "jev08-choice",
+        "unaccounted-partial-state-transition",
+    ]
+    for candidate in candidates:
+        plan = plan_manifest(manifest, phase="development", config_path=config_path, candidates=[candidate])
+        assert len(plan["cases"]) == 1
+        assert len(plan["batches"]) == 1
+        assert plan["batches"][0]["question_count"] == 1
+
+    requests: list[bytes] = []
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        requests.append(request.content)
+        payload = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": MODEL,
+                "usage": {"input_tokens": 10, "output_tokens": 3},
+                "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+            },
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    output = tmp_path / "evolution-cases.jsonl"
+    capture_manifest(
+        manifest,
+        phase="development",
+        config_path=config_path,
+        candidates=candidates,
+        output=output,
+        ledger_path=tmp_path / "ledger.json",
+        transport=httpx.MockTransport(transport),
+    )
+    replayed = replay_metrics(output)
+    assert all(replayed[candidate]["cases"] == 1 for candidate in candidates)
+    request_material = b"\n".join(requests).lower()
+    for label in (b"positive", b"negative", b"agree", b"disagree", b"ground truth"):
+        assert label not in request_material
+
+
+def _capture_mock_cases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidates: list[str],
+    *,
+    manifest: Path = FOCUSED_MANIFEST,
+) -> tuple[Path, list[dict]]:
+    config_path = write_candidate_config(tmp_path / "generated.yaml")
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        answers = {}
+        for name, question in payload["questions"].items():
+            if question["type"] == "choice" and "preserved" in question["criteria"]:
+                labels = list(question["criteria"])
+                answers[name] = {
+                    "type": "choice",
+                    "choice": "preserved",
+                    "confidence": 0.8,
+                    "probabilities": {label: 0.8 if label == "preserved" else 0.1 for label in labels},
+                }
+            else:
+                answers[name] = _mock_answer(question)
+        return httpx.Response(
+            200,
+            json={"model": MODEL, "usage": {"input_tokens": 10, "output_tokens": 3}, "answers": answers},
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    output = tmp_path / "mock-cases.jsonl"
+    capture_manifest(
+        manifest,
+        phase="development",
+        config_path=config_path,
+        candidates=candidates,
+        output=output,
+        ledger_path=tmp_path / "mock-ledger.json",
+        transport=httpx.MockTransport(transport),
+    )
+    return output, [case.model_dump(mode="json") for case in load_cases(output)]
+
+
+def test_replay_rejects_leaked_or_incomplete_jev01_child_bundles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, documents = _capture_mock_cases(tmp_path, monkeypatch, ["jev01-strict-and"])
+    victim = next(document for document in documents if document["rule_id"] == "EXP_JEV01_INTERLEAVING")
+    incomplete = tmp_path / "incomplete.jsonl"
+    incomplete.write_text(
+        "\n".join(json.dumps(document) for document in documents if document is not victim) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="incomplete child bundle"):
+        replay_metrics(incomplete)
+
+    leaked = [json.loads(json.dumps(document)) for document in documents]
+    next(document for document in leaked if document["case_id"] == victim["case_id"])["provenance"]["candidate"] = (
+        "other-candidate"
+    )
+    leaked_path = tmp_path / "leaked.jsonl"
+    leaked_path.write_text("\n".join(json.dumps(document) for document in leaked) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="incomplete child bundle"):
+        replay_metrics(leaked_path)
+
+    mismatched = [json.loads(json.dumps(document)) for document in documents]
+    next(document for document in mismatched if document["case_id"] == victim["case_id"])["label"] = "Agree"
+    mismatch_path = tmp_path / "mismatch.jsonl"
+    mismatch_path.write_text("\n".join(json.dumps(document) for document in mismatched) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="metadata mismatch"):
+        replay_metrics(mismatch_path)
+    assert output.is_file()
+
+
+def test_corrected_pair_replay_keeps_baseline_fallback_assessment_metrics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, documents = _capture_mock_cases(tmp_path, monkeypatch, ["jev04-baseline", "jev04-pair-corrected"])
+    metrics = replay_metrics(output)["jev04-pair-corrected"]
+    assert metrics["child_findings_promoted"] == 0
+    assert metrics["combined"]["complete"] is True
+    assert metrics["combined"]["eligible_pair_cases"] == 8
+    assert metrics["combined"]["whole_target_fallback_cases"] == 4
+    assert metrics["combined"]["metrics"]["severity"]["confirmed"] == {"warning": 4}
+    assert metrics["combined"]["metrics"]["target_attribution"] == {
+        "exact": 4,
+        "signals": 4,
+        "fraction": 1.0,
+    }
+    compatibility_documents = [json.loads(json.dumps(document)) for document in documents]
+    baseline = next(document for document in compatibility_documents if document["rule_id"] == "FOCUS_JEV04_BASELINE")
+    baseline["provenance"].pop("candidate")
+    compatibility_path = tmp_path / "baseline-compatibility.jsonl"
+    compatibility_path.write_text(
+        "\n".join(json.dumps(document) for document in compatibility_documents) + "\n",
+        encoding="utf-8",
+    )
+    assert replay_metrics(compatibility_path)["jev04-baseline"]["cases"] == 12
+
+
+def test_corrected_pair_replay_rejects_pair_metadata_mismatch_and_incomplete_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output, documents = _capture_mock_cases(tmp_path, monkeypatch, ["jev04-pair-corrected"])
+    pair_documents = [document for document in documents if document["rule_id"].startswith("EXP_JEV04_PAIR_")]
+    victim = pair_documents[0]
+    incomplete = tmp_path / "pair-incomplete.jsonl"
+    incomplete.write_text(
+        "\n".join(json.dumps(document) for document in documents if document is not victim) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="incomplete child bundle"):
+        replay_metrics(incomplete)
+
+    mismatched = [json.loads(json.dumps(document)) for document in documents]
+    changed = next(document for document in mismatched if document["case_id"] == victim["case_id"])
+    changed["provenance"]["pair_binding"]["pair"]["pair_id"] += "-mismatch"
+    mismatch_path = tmp_path / "pair-mismatch.jsonl"
+    mismatch_path.write_text("\n".join(json.dumps(document) for document in mismatched) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="question and provenance pair IDs disagree"):
+        replay_metrics(mismatch_path)
+    assert output.is_file()
 
 
 def test_capture_batches_mixed_questions_and_deduplicates_shared_score(
