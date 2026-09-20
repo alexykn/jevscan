@@ -17,6 +17,7 @@ from itertools import islice
 from pathlib import Path
 
 from jevscan.core.cache import AnswerCache
+from jevscan.core.capture import FinalJudgmentSink
 from jevscan.core.client import JevClient
 from jevscan.core.config import Config, LoadedConfig
 from jevscan.core.context import ContextBuilder
@@ -148,6 +149,7 @@ async def _evaluate_worker(
     summary: Summary,
     index: SourceIndex | None,
     calibration: TokenCalibration | None,
+    capture: FinalJudgmentSink | None,
 ) -> None:
     while (parsed := await queue.get()) is not None:
         planner = Planner(ContextBuilder(parsed), loaded.config, calibration)
@@ -168,7 +170,7 @@ async def _evaluate_worker(
         selected.update(item.check.target.id for item in planner.omissions if item.check.target.scope == "unit")
         selected.update(target_id for target_id in planner.applicability_skips if target_id != planner.context.file.id)
         summary.units_skipped += len(parsed.units) - len(selected)
-        await evaluate_file(planner, client, cache, sink, summary, index)
+        await evaluate_file(planner, client, cache, sink, summary, index, capture)
 
 
 async def pipeline(
@@ -181,6 +183,7 @@ async def pipeline(
     cache: AnswerCache | None = None,
     *,
     plan_only: bool = False,
+    capture: FinalJudgmentSink | None = None,
 ) -> None:
     config = loaded.config
     parsers = worker_count(config)
@@ -209,7 +212,7 @@ async def pipeline(
         if client:
             for _ in range(evaluators):
                 group.create_task(
-                    _evaluate_worker(work_queue, loaded, client, cache, sink, summary, index, calibration)
+                    _evaluate_worker(work_queue, loaded, client, cache, sink, summary, index, calibration, capture)
                 )
 
 
@@ -235,6 +238,7 @@ async def run_scan(
     no_cache: bool = False,
     api_key: str = "",
     base_url: str = "https://api.typesafe.ai",
+    capture: FinalJudgmentSink | None = None,
 ) -> Summary:
     summary = Summary(mode="offline" if offline else "plan" if plan_only else "live")
     started = time.monotonic()
@@ -272,7 +276,9 @@ async def run_scan(
                 )
 
             if client is None:
-                await pipeline(targets, loaded, parse, sink, summary, client, cache, plan_only=plan_only)
+                await pipeline(
+                    targets, loaded, parse, sink, summary, client, cache, plan_only=plan_only, capture=capture
+                )
             else:
 
                 async def progress() -> None:
@@ -291,7 +297,9 @@ async def run_scan(
 
                 progress_task = asyncio.create_task(progress())
                 try:
-                    await pipeline(targets, loaded, parse, sink, summary, client, cache, plan_only=plan_only)
+                    await pipeline(
+                        targets, loaded, parse, sink, summary, client, cache, plan_only=plan_only, capture=capture
+                    )
                 finally:
                     progress_task.cancel()
                     await asyncio.gather(progress_task, return_exceptions=True)

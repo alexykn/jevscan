@@ -8,3 +8,8 @@ dist/
 .ruff_cache/
 .ty_cache/
 .jevscan-cache/
+.jevscan-calibration/
+calibration/*.capture.json
+calibration/*.events.jsonl
+calibration/private-*.jsonl
+calibration/private-*.json

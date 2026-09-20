@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 from jevscan.core.models import Kind, SyntaxFact
 
@@ -102,6 +102,7 @@ class ReportThreshold(StrictModel):
     min_confidence: float | None = Field(default=None, ge=0, le=1)
     min_score: float | None = None
     max_score: float | None = None
+    score_levels: list[StrictInt] | None = None
 
 
 class ReportLevels(StrictModel):
@@ -185,7 +186,30 @@ class Rule(StrictModel):
             or not report.expected
         ):
             raise ValueError("score reports cannot use choices, uncertain_choices, or expected=false")
-        for level in (report.levels.warning, report.levels.error):
+        warning, error = report.levels.warning, report.levels.error
+        warning_mass = warning.score_levels is not None
+        error_mass = error.score_levels is not None
+        if warning_mass != error_mass:
+            raise ValueError("score warning and error levels must use the same threshold mode")
+        if warning_mass:
+            assert warning.score_levels is not None and error.score_levels is not None
+            for level in (warning, error):
+                if not level.score_levels:
+                    raise ValueError("score mass levels must be nonempty")
+                if len(level.score_levels) != len(set(level.score_levels)):
+                    raise ValueError("score mass levels must not contain duplicates")
+                if level.score_levels != sorted(level.score_levels):
+                    raise ValueError("score mass levels must be ordered")
+                if any(not 0 <= score < len(question.criteria) for score in level.score_levels):
+                    raise ValueError("score mass level is outside the rubric")
+                if level.min_probability is None:
+                    raise ValueError("score mass levels require min_probability")
+                if level.min_score is not None or level.max_score is not None:
+                    raise ValueError("score mass levels cannot use score thresholds")
+            if not set(error.score_levels) <= set(warning.score_levels):
+                raise ValueError("score error levels must be a subset of warning levels")
+            return
+        for level in (warning, error):
             if (level.min_score is None) == (level.max_score is None):
                 raise ValueError("score levels require exactly one of min_score or max_score")
             threshold = level.min_score if level.min_score is not None else level.max_score
@@ -194,6 +218,8 @@ class Rule(StrictModel):
                 raise ValueError("score threshold is outside the rubric")
             if level.min_probability is not None:
                 raise ValueError("score levels cannot use min_probability")
+            if level.score_levels is not None:
+                raise ValueError("score scalar levels cannot use score_levels")
 
     def _validate_choice(self) -> None:
         question, report = self.question, self.report
@@ -208,7 +234,12 @@ class Rule(StrictModel):
         if not report.expected:
             raise ValueError("choice reports cannot use expected=false")
         for level in (report.levels.warning, report.levels.error):
-            if level.min_probability is None or level.min_score is not None or level.max_score is not None:
+            if (
+                level.min_probability is None
+                or level.min_score is not None
+                or level.max_score is not None
+                or level.score_levels is not None
+            ):
                 raise ValueError("choice levels require min_probability and cannot use score thresholds")
 
     def _validate_noul(self) -> None:
@@ -222,7 +253,10 @@ class Rule(StrictModel):
         for level in (report.levels.warning, report.levels.error):
             if level.min_probability is None:
                 raise ValueError("noul levels require min_probability")
-            if any(value is not None for value in (level.min_confidence, level.min_score, level.max_score)):
+            if any(
+                value is not None
+                for value in (level.min_confidence, level.min_score, level.max_score, level.score_levels)
+            ):
                 raise ValueError("noul levels cannot use confidence or score thresholds")
 
     def _validate_targeted_enrichment(self) -> None:
@@ -243,6 +277,14 @@ class Rule(StrictModel):
 
 def _validate_level_order(levels: ReportLevels) -> None:
     warning, error = levels.warning, levels.error
+    if warning.score_levels is not None or error.score_levels is not None:
+        if warning.score_levels is None or error.score_levels is None:
+            raise ValueError("score warning and error levels must use the same threshold mode")
+        for field in ("min_probability", "min_confidence"):
+            lower, upper = getattr(warning, field), getattr(error, field)
+            if lower is not None and (upper is None or lower > upper):
+                raise ValueError(f"error {field} must be at least as strict as warning {field}")
+        return
     if (warning.min_score is None) != (error.min_score is None):
         raise ValueError("score levels must use the same threshold direction")
     for field in ("min_probability", "min_confidence", "min_score"):

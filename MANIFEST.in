@@ -3,3 +3,6 @@ recursive-include src/jevscan/data *.yaml
 recursive-include tests *.py *.rs *.ts *.tsx *.js *.jsx *.pl *.pm
 recursive-include docs *.md
 recursive-include examples *.yaml
+recursive-include examples/calibration *.md *.py *.rs *.ts *.tsx *.js *.jsx *.pl *.pm
+recursive-include skills *.md
+include calibration/FINAL_RESULTS.md calibration/FINAL_RESULTS.json calibration/agent-review-objective.yaml

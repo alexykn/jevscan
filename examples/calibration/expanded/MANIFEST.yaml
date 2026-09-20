@@ -1,0 +1,1425 @@
+schema_version: 1
+corpus: public-synthetic-jev-expanded
+corpus_revision: 2
+provenance: "synthetic, development corpus; provisional labels are not independent ground truth"
+source_root: sources
+source_snapshot:
+  algorithm: sha256
+  canonicalization: "sorted source filenames, each followed by NUL and raw UTF-8 bytes"
+  digest: 91f1e9e84c8149f2aa08b5150d8f7d7de4d5f58cb0d6eba9e3af0820a39294aa
+source_contract:
+  evidence_files_are_neutral: true
+  labels_are_outside_source_root: true
+  validation: "real Tree-sitter parse_source followed by the production Planner"
+  scenario_group_policy: "paired repairs and translations share one scenario group; independent semantic mechanisms count once"
+  live_model_calls: none
+  live_measurement_policy: "no model calls are authorized for this synthetic expansion before independent review"
+coverage:
+  total_independent_groups: 52
+  groups_per_rule:
+    JEV01: 4
+    JEV02: 6
+    JEV03: 6
+    JEV04: 6
+    JEV05: 6
+    JEV06: 6
+    JEV07: 6
+    JEV08: 6
+    JEV09: 6
+  split_assignment: "fixed before any model call; JEV01 uses G01-G02 for development and G05-G06 for heldout, while JEV02-JEV09 use G01-G04 for development and G05-G06 for heldout"
+  development_groups:
+    - JEV01-G01
+    - JEV01-G02
+    - JEV02-G01
+    - JEV02-G02
+    - JEV02-G03
+    - JEV02-G04
+    - JEV03-G01
+    - JEV03-G02
+    - JEV03-G03
+    - JEV03-G04
+    - JEV04-G01
+    - JEV04-G02
+    - JEV04-G03
+    - JEV04-G04
+    - JEV05-G01
+    - JEV05-G02
+    - JEV05-G03
+    - JEV05-G04
+    - JEV06-G01
+    - JEV06-G02
+    - JEV06-G03
+    - JEV06-G04
+    - JEV07-G01
+    - JEV07-G02
+    - JEV07-G03
+    - JEV07-G04
+    - JEV08-G01
+    - JEV08-G02
+    - JEV08-G03
+    - JEV08-G04
+    - JEV09-G01
+    - JEV09-G02
+    - JEV09-G03
+    - JEV09-G04
+  heldout_groups:
+    - JEV01-G05
+    - JEV01-G06
+    - JEV02-G05
+    - JEV02-G06
+    - JEV03-G05
+    - JEV03-G06
+    - JEV04-G05
+    - JEV04-G06
+    - JEV05-G05
+    - JEV05-G06
+    - JEV06-G05
+    - JEV06-G06
+    - JEV07-G05
+    - JEV07-G06
+    - JEV08-G05
+    - JEV08-G06
+    - JEV09-G05
+    - JEV09-G06
+rules:
+  - name: JEV01
+    title: mixed-responsibilities
+    target: unit
+    required_facts: []
+  - name: JEV02
+    title: unclear-control-flow
+    target: unit
+    required_facts: []
+  - name: JEV03
+    title: mixed-abstraction-levels
+    target: unit
+    required_facts: []
+  - name: JEV04
+    title: redundant-validation
+    target: unit
+    required_facts: [validation_candidate]
+  - name: JEV05
+    title: hidden-invariant-failure
+    target: unit
+    required_facts: [fallback_candidate]
+  - name: JEV06
+    title: unhelpful-decomposition
+    target: unit
+    required_facts: [helper_relationship]
+  - name: JEV07
+    title: fragmented-ownership
+    target: file
+    required_facts: []
+  - name: JEV08
+    title: incohesive-owner
+    target: unit
+    required_facts: [executable_behavior]
+  - name: JEV09
+    title: duplicated-behavior
+    target: file
+    required_facts: []
+scenarios:
+  - id: e001
+    scenario_group: JEV01-G01
+    partition: development
+    pair_role: positive
+    source: sources/acacia.js
+    language: javascript
+    rule: JEV01
+    target: {scope: unit, name: settleTicket, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The operation calculates an amount while changing persistence state, writing an audit record, and sending an owner notification."
+    context_requirements: [ticket lifecycle, audit ownership, notification transaction]
+  - id: e002
+    scenario_group: JEV01-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/aspen.js
+    language: javascript
+    rule: JEV01
+    target: {scope: unit, name: settleTicket, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The operation only coordinates named calculation and commit steps; each state change is delegated as one ticket settlement."
+    context_requirements: [ticket lifecycle, commit helper contract]
+  - id: e003
+    scenario_group: JEV01-G02
+    partition: development
+    pair_role: positive
+    source: sources/birchwood.py
+    language: python
+    rule: JEV01
+    target: {scope: unit, name: assemble_digest, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "One loop normalizes records, mutates a cache, emits callbacks, and assembles the returned aggregate."
+    context_requirements: [cache write contract, callback delivery, digest shape]
+  - id: e004
+    scenario_group: JEV01-G02
+    partition: development
+    pair_role: counterpart
+    source: sources/beaver.py
+    language: python
+    rule: JEV01
+    target: {scope: unit, name: assemble_digest, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The target maps input and then delegates storage and notification to separate cohesive operations."
+    context_requirements: [cache write contract, callback delivery]
+  - id: e005
+    scenario_group: JEV01-G02
+    partition: development
+    pair_role: positive
+    source: sources/cobalt.rs
+    language: rust
+    rule: JEV01
+    target: {scope: unit, name: refresh_inventory, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The ownership-sensitive loop computes values while writing every item, recording metrics, and flushing the store."
+    context_requirements: [store ownership, metric meaning, flush boundary]
+  - id: e006
+    scenario_group: JEV01-G02
+    partition: development
+    pair_role: counterpart
+    source: sources/coral.rs
+    language: rust
+    rule: JEV01
+    target: {scope: unit, name: refresh_inventory, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The target computes a value and delegates publication, leaving inventory transformation and publication as named steps."
+    context_requirements: [store ownership, publication contract]
+  - id: e007
+    scenario_group: JEV01-G01
+    partition: development
+    pair_role: positive
+    source: sources/dune.pl
+    language: perl
+    rule: JEV01
+    target: {scope: unit, name: Ledger::reconcile, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The package method parses line data, computes a total, persists it, records an audit event, and notifies an owner."
+    context_requirements: [ledger state, audit authority, notification semantics]
+  - id: e008
+    scenario_group: JEV01-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/elm.pl
+    language: perl
+    rule: JEV01
+    target: {scope: unit, name: Ledger::reconcile, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The package method coordinates amount calculation and publication through named helpers without interleaving their internals."
+    context_requirements: [ledger state, helper contracts]
+  - id: e009
+    scenario_group: JEV01-G05
+    partition: heldout
+    pair_role: positive
+    source: sources/flint.ts
+    language: typescript
+    rule: JEV01
+    target: {scope: unit, name: hydrateProfile, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The target interleaves transaction staging, audit bookkeeping, rollback, and commit with independent title and presentation encoding on both permission and exception paths."
+    context_requirements: [transaction rollback and commit contract, permission admission policy, presentation renderer contract]
+  - id: e010
+    scenario_group: JEV01-G05
+    partition: heldout
+    pair_role: counterpart
+    source: sources/glacier.ts
+    language: typescript
+    rule: JEV01
+    target: {scope: unit, name: hydrateProfile, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The target coordinates one persistence helper and one presentation helper in sequence; transaction failure handling stays within persistence rather than interleaving with encoding."
+    context_requirements: [transaction rollback and commit contract, presentation renderer contract]
+  - id: e011
+    scenario_group: JEV01-G06
+    partition: heldout
+    pair_role: positive
+    source: sources/harbor.py
+    language: python
+    rule: JEV01
+    target: {scope: unit, name: stream_events, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The coroutine combines send-driven stop and pause commands, policy admission, checkpoint state transitions, encoding, and generator-thrown error recovery."
+    context_requirements: [coroutine send and throw contract, policy admission semantics, checkpoint transition ownership]
+  - id: e012
+    scenario_group: JEV01-G06
+    partition: heldout
+    pair_role: counterpart
+    source: sources/island.py
+    language: python
+    rule: JEV01
+    target: {scope: unit, name: stream_events, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The target delegates recursive traversal to one helper that owns the event walk, policy check, checkpoint update, and yield boundary without mixing coroutine commands with state transitions."
+    context_requirements: [recursive traversal depth, policy admission semantics, checkpoint transition ownership]
+
+  - id: e013
+    scenario_group: JEV02-G01
+    partition: development
+    pair_role: positive
+    source: sources/jasper.pl
+    language: perl
+    rule: JEV02
+    target: {scope: unit, name: merge_route, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 3
+    rationale: "Retry state, reachability, version comparison, locking, and terminal states are nested across a mutable loop."
+    context_requirements: [remote reachability, retry policy, state transitions]
+  - id: e014
+    scenario_group: JEV02-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/koi.pl
+    language: perl
+    rule: JEV02
+    target: {scope: unit, name: merge_route, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 0
+    rationale: "Guard clauses expose cancellation, reachability, version, and send transitions in a direct sequence."
+    context_requirements: [remote reachability, state transitions]
+  - id: e015
+    scenario_group: JEV02-G02
+    partition: development
+    pair_role: positive
+    source: sources/lumen.js
+    language: javascript
+    rule: JEV02
+    target: {scope: unit, name: routePayload, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 3
+    rationale: "Nested callback retries duplicate send paths while success and failure resolution transitions are distributed through several closures."
+    context_requirements: [transport callback contract, retry policy, promise settlement]
+  - id: e016
+    scenario_group: JEV02-G02
+    partition: development
+    pair_role: counterpart
+    source: sources/marina.js
+    language: javascript
+    rule: JEV02
+    target: {scope: unit, name: routePayload, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 0
+    rationale: "The async path has one channel acquisition, one empty-body guard, and one send transition."
+    context_requirements: [transport promise contract]
+  - id: e017
+    scenario_group: JEV02-G03
+    partition: development
+    pair_role: positive
+    source: sources/nectar.py
+    language: python
+    rule: JEV02
+    target: {scope: unit, name: inspect_batches, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 3
+    rationale: "Nested batch and item loops combine state, kind, attempt count, recovery, and exception fallback transitions."
+    context_requirements: [batch shape, recovery contract, generator error policy]
+  - id: e018
+    scenario_group: JEV02-G03
+    partition: development
+    pair_role: counterpart
+    source: sources/opal.py
+    language: python
+    rule: JEV02
+    target: {scope: unit, name: inspect_batches, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 0
+    rationale: "The generator uses one readiness guard and one conditional expression inside explicit loops."
+    context_requirements: [batch shape, recovery contract]
+  - id: e019
+    scenario_group: JEV02-G04
+    partition: development
+    pair_role: positive
+    source: sources/prairie.ts
+    language: typescript
+    rule: JEV02
+    target: {scope: unit, name: Screen.advance, kind: method}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 3
+    rationale: "An opening subtree and a later phase switch distribute lifecycle transitions across overlapping condition structures."
+    context_requirements: [screen lifecycle, flush transition, phase contract]
+  - id: e020
+    scenario_group: JEV02-G04
+    partition: development
+    pair_role: counterpart
+    source: sources/quartz.ts
+    language: typescript
+    rule: JEV02
+    target: {scope: unit, name: Screen.advance, kind: method}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 0
+    rationale: "Early returns order closing, unknown, offline, and ready states without overlapping branches."
+    context_requirements: [screen lifecycle, phase contract]
+  - id: e021
+    scenario_group: JEV02-G05
+    partition: heldout
+    pair_role: positive
+    source: sources/raven.rs
+    language: rust
+    rule: JEV02
+    target: {scope: unit, name: choose_delivery, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 3
+    rationale: "A looped match mutates a selected state through nested online, prior-selection, and signal-specific transitions."
+    context_requirements: [signal precedence, mutable selection policy]
+  - id: e022
+    scenario_group: JEV02-G05
+    partition: heldout
+    pair_role: counterpart
+    source: sources/spruce.rs
+    language: rust
+    rule: JEV02
+    target: {scope: unit, name: choose_delivery, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 0
+    rationale: "One empty-input guard and one guarded match make each signal transition directly visible."
+    context_requirements: [signal precedence, empty-input policy]
+  - id: e023
+    scenario_group: JEV02-G06
+    partition: heldout
+    pair_role: positive
+    source: sources/thistle.js
+    language: javascript
+    rule: JEV02
+    target: {scope: unit, name: routePayload, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 3
+    rationale: "Nested try/finally blocks close a channel, emit competing status transitions, and return false from the outer finally, which can override both the inner return and delivery exception."
+    context_requirements: [channel close and send contract, exception propagation policy, status event ownership]
+  - id: e024
+    scenario_group: JEV02-G06
+    partition: heldout
+    pair_role: counterpart
+    source: sources/umberwood.js
+    language: javascript
+    rule: JEV02
+    target: {scope: unit, name: routePayload, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: 0
+    rationale: "One channel acquisition, one send, one status update, and one cleanup finally block make the resource transition direct."
+    context_requirements: [channel close and send contract, status event ownership]
+
+  - id: e025
+    scenario_group: JEV03-G01
+    partition: development
+    pair_role: positive
+    source: sources/vertex.js
+    language: javascript
+    rule: JEV03
+    target: {scope: unit, name: loadFrame, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The operation performs byte-offset arithmetic and JSON decoding before opening, writing, and closing an archive."
+    context_requirements: [frame byte format, archive lifecycle, decode contract]
+  - id: e026
+    scenario_group: JEV03-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/wave.js
+    language: javascript
+    rule: JEV03
+    target: {scope: unit, name: loadFrame, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The target orchestrates a decoder and a storage helper without embedding byte parsing or resource bookkeeping."
+    context_requirements: [decoder contract, archive lifecycle]
+  - id: e027
+    scenario_group: JEV03-G02
+    partition: development
+    pair_role: positive
+    source: sources/xenon.py
+    language: python
+    rule: JEV03
+    target: {scope: unit, name: process_archive, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The operation launches a worker, wires input, output, and error pipes, drains them through a selector, and closes descriptors around process completion."
+    context_requirements: [worker command contract, pipe ownership, process completion and error handling]
+  - id: e028
+    scenario_group: JEV03-G02
+    partition: development
+    pair_role: counterpart
+    source: sources/yew.py
+    language: python
+    rule: JEV03
+    target: {scope: unit, name: process_archive, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The target coordinates named worker-launch and result-persistence helpers without embedding descriptor or process-resource bookkeeping."
+    context_requirements: [worker-launch helper contract, result-persistence helper contract]
+  - id: e029
+    scenario_group: JEV03-G03
+    partition: development
+    pair_role: positive
+    source: sources/zephyr.rs
+    language: rust
+    rule: JEV03
+    target: {scope: unit, name: load_frame, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The operation reserves and commits a domain ledger transaction while manually evicting the oldest cache entry and rewiring linked-list pointers for each order."
+    context_requirements: [ledger commit and rollback, cache entry links, eviction capacity]
+  - id: e030
+    scenario_group: JEV03-G03
+    partition: development
+    pair_role: counterpart
+    source: sources/atlas.rs
+    language: rust
+    rule: JEV03
+    target: {scope: unit, name: load_frame, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The target coordinates named order-application and receipt-storage helpers; transaction calculation and cache persistence remain separate operations."
+    context_requirements: [order-application helper contract, receipt-storage helper contract]
+  - id: e031
+    scenario_group: JEV03-G04
+    partition: development
+    pair_role: positive
+    source: sources/breeze.ts
+    language: typescript
+    rule: JEV03
+    target: {scope: unit, name: readEnvelope, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The operation matches a request route while calculating columns, gaps, spans, rectangles, clipping, and viewport coordinates before dispatch."
+    context_requirements: [route matching, viewport geometry, dispatch contract]
+  - id: e032
+    scenario_group: JEV03-G04
+    partition: development
+    pair_role: counterpart
+    source: sources/cedarfall.ts
+    language: typescript
+    rule: JEV03
+    target: {scope: unit, name: readEnvelope, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The target obtains a route, delegates layout arithmetic, and delegates dispatch through helpers with visible contracts."
+    context_requirements: [route matching, layout helper contract, dispatch helper contract]
+  - id: e033
+    scenario_group: JEV03-G05
+    partition: heldout
+    pair_role: positive
+    source: sources/delta.pl
+    language: perl
+    rule: JEV03
+    target: {scope: unit, name: Parcel::receive, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The operation schedules a job and runs attempts while manually maintaining timer registration, backoff deadlines, active-job state, and cancellation cleanup."
+    context_requirements: [runner outcome contract, timer registry, job cancellation lifecycle]
+  - id: e034
+    scenario_group: JEV03-G05
+    partition: heldout
+    pair_role: counterpart
+    source: sources/ember.pl
+    language: perl
+    rule: JEV03
+    target: {scope: unit, name: Parcel::receive, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The target coordinates visible enqueue, timer, execution, and cancellation helpers without interleaving their resource-state implementations."
+    context_requirements: [enqueue helper contract, retry execution helper contract, cancellation helper contract]
+  - id: e035
+    scenario_group: JEV03-G06
+    partition: heldout
+    pair_role: positive
+    source: sources/fjord.py
+    language: python
+    rule: JEV03
+    target: {scope: unit, name: stream_rows, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The generator manually tokenizes CSV rows, maps columns, writes each row, and flushes the sink."
+    context_requirements: [CSV quoting contract, sink lifecycle, generator consumption]
+  - id: e036
+    scenario_group: JEV03-G06
+    partition: heldout
+    pair_role: counterpart
+    source: sources/grove.py
+    language: python
+    rule: JEV03
+    target: {scope: unit, name: stream_rows, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The generator relies on the CSV reader for parsing and only coordinates sink writes and final flush."
+    context_requirements: [CSV reader contract, sink lifecycle]
+
+  - id: e037
+    scenario_group: JEV04-G01
+    partition: development
+    pair_role: ambiguous
+    source: sources/helium.js
+    language: javascript
+    rule: JEV04
+    target: {scope: unit, name: makeValidator.validate, kind: closure}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: insufficient_context
+    rationale: "The same schema predicate appears before and after normalize, but the supplied code does not establish whether normalize crosses a boundary or can invalidate the invariant."
+    context_requirements: [schema.normalize contract, mutation and boundary guarantees]
+  - id: e038
+    scenario_group: JEV04-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/ivory.js
+    language: javascript
+    rule: JEV04
+    target: {scope: unit, name: validateParcel, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: justified_or_absent
+    rationale: "One validation precedes normalization and no repeated validation operation is visible."
+    context_requirements: [schema.normalize contract]
+  - id: e039
+    scenario_group: JEV04-G02
+    partition: development
+    pair_role: positive
+    source: sources/jigsaw.py
+    language: python
+    rule: JEV04
+    target: {scope: unit, name: write_report, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: demonstrably_redundant
+    rationale: "The same handle readiness invariant is checked before and after prepare with no visible boundary or mutation risk."
+    context_requirements: [handle readiness guarantee, prepare mutation contract]
+  - id: e040
+    scenario_group: JEV04-G02
+    partition: development
+    pair_role: counterpart
+    source: sources/keystone.py
+    language: python
+    rule: JEV04
+    target: {scope: unit, name: write_report, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: justified_or_absent
+    rationale: "The outer resource check and inner handle check concern distinct lifecycle objects across an opening boundary."
+    context_requirements: [resource and handle ownership, open boundary]
+  - id: e041
+    scenario_group: JEV04-G03
+    partition: development
+    pair_role: positive
+    source: sources/lantern.rs
+    language: rust
+    rule: JEV04
+    target: {scope: unit, name: save_record, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: demonstrably_redundant
+    rationale: "The same record readiness predicate is checked twice without mutation or an intervening boundary."
+    context_requirements: [Record readiness invariant]
+  - id: e042
+    scenario_group: JEV04-G03
+    partition: development
+    pair_role: counterpart
+    source: sources/meadow.rs
+    language: rust
+    rule: JEV04
+    target: {scope: unit, name: save_record, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: justified_or_absent
+    rationale: "The second readiness check follows a mutable refresh call that can change the record state."
+    context_requirements: [Record refresh mutation contract]
+  - id: e043
+    scenario_group: JEV04-G04
+    partition: development
+    pair_role: positive
+    source: sources/nebula.pl
+    language: perl
+    rule: JEV04
+    target: {scope: unit, name: Permit::store, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: demonstrably_redundant
+    rationale: "Permit::new validates the token and captures the id and token in a blessed closure with no mutator. Permit::store checks the same token before and after its local write operation, with no boundary or mutation that can invalidate it."
+    context_requirements: [Permit::new constructor invariant, blessed closure immutability, Permit::write non-mutating contract]
+  - id: e044
+    scenario_group: JEV04-G04
+    partition: development
+    pair_role: counterpart
+    source: sources/orbit.pl
+    language: perl
+    rule: JEV04
+    target: {scope: unit, name: Permit::store, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: justified_or_absent
+    rationale: "The target validates the wire representation, loads a newly deserialized mutable hash, and then validates the loaded token before writing it. The second check follows an external-object boundary rather than repeating an unchanged local guarantee."
+    context_requirements: [serialized wire format, Permit::load deserialization boundary, loaded permit token contract]
+  - id: e045
+    scenario_group: JEV04-G05
+    partition: heldout
+    pair_role: counterpart
+    source: sources/plume.ts
+    language: typescript
+    rule: JEV04
+    target: {scope: unit, name: RevisionWriter.write, kind: method}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: justified_or_absent
+    rationale: "The version check repeats after an await, where concurrent store activity is a possible invalidation boundary."
+    context_requirements: [store refresh concurrency, version invariant]
+  - id: e046
+    scenario_group: JEV04-G05
+    partition: heldout
+    pair_role: positive
+    source: sources/quarry.ts
+    language: typescript
+    rule: JEV04
+    target: {scope: unit, name: RevisionWriter.write, kind: method}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: demonstrably_redundant
+    rationale: "The same version check appears before and after a store write without evidence that the record changed."
+    context_requirements: [store write mutation contract, version invariant]
+  - id: e047
+    scenario_group: JEV04-G06
+    partition: heldout
+    pair_role: counterpart
+    source: sources/ripple.js
+    language: javascript
+    rule: JEV04
+    target: {scope: unit, name: acceptParcel, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: justified_or_absent
+    rationale: "acceptParcel validates shared state.current, then ParcelSink runs a callback that clears that mutable state before the second acceptance check. The callback creates a visible invalidation boundary for the repeat."
+    context_requirements: [ParcelSink callback execution, shared state mutation, accepts predicate]
+  - id: e048
+    scenario_group: JEV04-G06
+    partition: heldout
+    pair_role: positive
+    source: sources/summit.js
+    language: javascript
+    rule: JEV04
+    target: {scope: unit, name: acceptParcel, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_label: demonstrably_redundant
+    rationale: "acceptParcel stores one acceptance result in a const local and checks that unchanged guard before delivery and again inside the sink callback. No callback or write can mutate the captured value."
+    context_requirements: [const acceptance guard, ParcelSink callback execution, absence of mutation to accepted]
+
+  - id: e049
+    scenario_group: JEV05-G01
+    partition: development
+    pair_role: positive
+    source: sources/tulip.js
+    language: javascript
+    rule: JEV05
+    target: {scope: unit, name: loadPalette, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: concealed_bug
+    rationale: "The decoder establishes a non-empty palette requirement, but catch returns an apparently successful empty palette."
+    context_requirements: [palette invariant, decoder failure contract, caller success interpretation]
+  - id: e050
+    scenario_group: JEV05-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/upland.js
+    language: javascript
+    rule: JEV05
+    target: {scope: unit, name: loadPalette, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: legitimate_behavior
+    rationale: "The catch returns an explicit failed result rather than fabricating a palette value."
+    context_requirements: [palette invariant, result contract]
+  - id: e051
+    scenario_group: JEV05-G02
+    partition: development
+    pair_role: positive
+    source: sources/velvet.py
+    language: python
+    rule: JEV05
+    target: {scope: unit, name: read_catalog, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: concealed_bug
+    rationale: "A non-empty catalog is required on the successful path, while an operating-system failure is converted to an empty successful-looking catalog."
+    context_requirements: [catalog invariant, optional source policy, caller outcome contract]
+  - id: e052
+    scenario_group: JEV05-G02
+    partition: development
+    pair_role: ambiguous
+    source: sources/willow.py
+    language: python
+    rule: JEV05
+    target: {scope: unit, name: read_catalog, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: insufficient_context
+    rationale: "The failure branch returns a sentinel members value, but the supplied code does not state whether unavailable catalogs are a supported result."
+    context_requirements: [catalog optionality, caller handling of sentinel]
+  - id: e053
+    scenario_group: JEV05-G03
+    partition: development
+    pair_role: positive
+    source: sources/xylem.rs
+    language: rust
+    rule: JEV05
+    target: {scope: unit, name: read_labels, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: concealed_bug
+    rationale: "A parse failure is collapsed into an empty vector even though the function visibly treats an empty result as invalid."
+    context_requirements: [label non-empty invariant, source read error contract]
+  - id: e054
+    scenario_group: JEV05-G03
+    partition: development
+    pair_role: counterpart
+    source: sources/yellow.rs
+    language: rust
+    rule: JEV05
+    target: {scope: unit, name: read_labels, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: legitimate_behavior
+    rationale: "Read and empty-input failures remain explicit errors, so no invalid label collection is fabricated."
+    context_requirements: [label non-empty invariant, Result error contract]
+  - id: e055
+    scenario_group: JEV05-G04
+    partition: development
+    pair_role: positive
+    source: sources/zeal.pl
+    language: perl
+    rule: JEV05
+    target: {scope: unit, name: Settings::load, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: concealed_bug
+    rationale: "decode stores values under numeric indexes while load requests the named primary key, so the expected lookup is absent. The eval catches that programming mismatch and returns a ready-looking default whose primary value is undef, violating the visible consumer contract."
+    context_requirements: [numeric index storage, named primary lookup, Settings::consume primary requirement]
+  - id: e056
+    scenario_group: JEV05-G04
+    partition: development
+    pair_role: counterpart
+    source: sources/acorn.pl
+    language: perl
+    rule: JEV05
+    target: {scope: unit, name: Settings::load, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: legitimate_behavior
+    rationale: "The decoder preserves explicit key/value names, and an absent primary key returns a status-missing result naming the requested key. The consumer propagates that result instead of presenting it as loaded settings."
+    context_requirements: [named key decoding, explicit missing-result variant, Settings::consume missing-result handling]
+  - id: e057
+    scenario_group: JEV05-G05
+    partition: heldout
+    pair_role: positive
+    source: sources/bramble.ts
+    language: typescript
+    rule: JEV05
+    target: {scope: unit, name: RosterReader.loadRoster, kind: method}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: concealed_bug
+    rationale: "A cancelled source closes the reader lifecycle in catch but returns a loaded result with an empty roster. The consumer receives the success-shaped variant and only discovers the violated non-empty roster contract afterward."
+    context_requirements: [Source cancellation, reader lifecycle closure, LoadResult loaded contract and consumer]
+  - id: e058
+    scenario_group: JEV05-G05
+    partition: heldout
+    pair_role: counterpart
+    source: sources/canyon.ts
+    language: typescript
+    rule: JEV05
+    target: {scope: unit, name: RosterReader.loadRoster, kind: method}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: legitimate_behavior
+    rationale: "The lifecycle closes on every path, while cancellation and other failures become distinct result variants. The consumer propagates both variants and only uses members after the loaded branch is selected."
+    context_requirements: [Source cancellation and failure outcomes, closed lifecycle transition, discriminated LoadResult consumer contract]
+  - id: e059
+    scenario_group: JEV05-G06
+    partition: heldout
+    pair_role: ambiguous
+    source: sources/drift.py
+    language: python
+    rule: JEV05
+    target: {scope: unit, name: stream_updates, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: insufficient_context
+    rationale: "A generator yields a sentinel after exhaustion, but no consumer contract says whether that sentinel is data or a swallowed failure."
+    context_requirements: [generator exhaustion semantics, sentinel contract]
+  - id: e060
+    scenario_group: JEV05-G06
+    partition: heldout
+    pair_role: counterpart
+    source: sources/estuary.py
+    language: python
+    rule: JEV05
+    target: {scope: unit, name: stream_updates, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_label: legitimate_behavior
+    rationale: "Read failures are raised as an explicit runtime error rather than replaced with a fabricated update."
+    context_requirements: [generator failure contract, caller error handling]
+
+  - id: e061
+    scenario_group: JEV06-G01
+    partition: development
+    pair_role: positive
+    source: sources/fable.js
+    language: javascript
+    rule: JEV06
+    target: {scope: unit, name: FrameCodec, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: meaningful
+    rationale: "encode coordinates two named operations that separately hide header formatting and payload encoding."
+    context_requirements: [codec format, helper ownership]
+  - id: e062
+    scenario_group: JEV06-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/grovebox.js
+    language: javascript
+    rule: JEV06
+    target: {scope: unit, name: JobQueue, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: needless_indirection
+    rationale: "run only forwards its argument to step, while step only forwards it to a worker; the visible split hides no meaningful operation."
+    context_requirements: [queue interface requirement, worker lifecycle]
+  - id: e063
+    scenario_group: JEV06-G02
+    partition: development
+    pair_role: positive
+    source: sources/harvest.ts
+    language: typescript
+    rule: JEV06
+    target: {scope: unit, name: Lifecycle, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: meaningful
+    rationale: "Lifecycle start and stop delegate distinct resource opening, runtime configuration, and cleanup operations."
+    context_requirements: [resource lifecycle, runtime configuration, interface requirements]
+  - id: e064
+    scenario_group: JEV06-G02
+    partition: development
+    pair_role: counterpart
+    source: sources/indigolet.ts
+    language: typescript
+    rule: JEV06
+    target: {scope: unit, name: Saver, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: needless_indirection
+    rationale: "save fragments one indexed write loop across count, index, increment, write, and finish helpers without hiding a stable operation."
+    context_requirements: [record iteration contract, sink completion contract]
+  - id: e065
+    scenario_group: JEV06-G03
+    partition: development
+    pair_role: positive
+    source: sources/jasmine.pl
+    language: perl
+    rule: JEV06
+    target: {scope: unit, name: Config::Reader, kind: package}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: meaningful
+    rationale: "The package method separates source reading, manifest decoding, and settings installation behind operations with distinct contracts."
+    context_requirements: [config source contract, decoder contract, settings ownership]
+  - id: e066
+    scenario_group: JEV06-G03
+    partition: development
+    pair_role: counterpart
+    source: sources/krypton.pl
+    language: perl
+    rule: JEV06
+    target: {scope: unit, name: Api, kind: package}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: needless_indirection
+    rationale: "set_name reshapes one name into two intermediate request objects before submitting the same value; the helpers add forwarding noise rather than a distinct operation."
+    context_requirements: [request field contract, store write boundary]
+  - id: e067
+    scenario_group: JEV06-G04
+    partition: development
+    pair_role: positive
+    source: sources/lattice.rs
+    language: rust
+    rule: JEV06
+    target: {scope: unit, name: impl Window, kind: impl}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: meaningful
+    rationale: "The impl separates allocation from configuration while open remains a readable lifecycle operation."
+    context_requirements: [Window ownership, allocation contract, configuration contract]
+  - id: e068
+    scenario_group: JEV06-G04
+    partition: development
+    pair_role: counterpart
+    source: sources/monsoon.rs
+    language: rust
+    rule: JEV06
+    target: {scope: unit, name: impl Relay, kind: impl}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: needless_indirection
+    rationale: "execute stages a packet and then completes it through a second helper before sending; the split hides ordering and lifetime without separating a coherent operation."
+    context_requirements: [packet staging lifetime, transport send contract]
+  - id: e069
+    scenario_group: JEV06-G05
+    partition: heldout
+    pair_role: positive
+    source: sources/nimbus.py
+    language: python
+    rule: JEV06
+    target: {scope: unit, name: Archive, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: meaningful
+    rationale: "Archive.read delegates decoding and offset recording, each of which hides a coherent operation."
+    context_requirements: [archive format, offset ownership]
+  - id: e070
+    scenario_group: JEV06-G05
+    partition: heldout
+    pair_role: counterpart
+    source: sources/oasis.py
+    language: python
+    rule: JEV06
+    target: {scope: unit, name: Echo, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: needless_indirection
+    rationale: "send captures value and callback state in a closure, then passes it through scheduling and invocation helpers before delivery; the indirection does not define a meaningful boundary."
+    context_requirements: [callback completion contract, channel delivery contract]
+  - id: e071
+    scenario_group: JEV06-G06
+    partition: heldout
+    pair_role: ambiguous
+    source: sources/pollen.ts
+    language: typescript
+    rule: JEV06
+    target: {scope: unit, name: Bridge, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: insufficient_context
+    rationale: "execute, start, dispatch, and complete form a callback-driven dispatch cycle, but the missing transport retry contract determines whether the cycle is an interface protocol or needless indirection."
+    context_requirements: [transport callback contract, retry lifecycle requirements]
+  - id: e072
+    scenario_group: JEV06-G06
+    partition: heldout
+    pair_role: counterpart
+    source: sources/quartzite.ts
+    language: typescript
+    rule: JEV06
+    target: {scope: unit, name: Bridge, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_label: meaningful
+    rationale: "dispatch adds an envelope and records metrics before transport, so execute delegates a coherent boundary operation."
+    context_requirements: [transport interface, metrics ownership]
+
+  - id: e073
+    scenario_group: JEV07-G01
+    partition: development
+    pair_role: positive
+    source: sources/redwood.js
+    language: javascript
+    rule: JEV07
+    target: {scope: file, name: redwood.js, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "SessionRegistry mutates module-level session state while expire independently deletes the same lifecycle records."
+    context_requirements: [module state authority, registry lifecycle API]
+  - id: e074
+    scenario_group: JEV07-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/saffron.js
+    language: javascript
+    rule: JEV07
+    target: {scope: file, name: saffron.js, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "All session lifecycle mutations are methods on one instance-owned registry."
+    context_requirements: [registry lifecycle API]
+  - id: e075
+    scenario_group: JEV07-G02
+    partition: development
+    pair_role: positive
+    source: sources/tundra.py
+    language: python
+    rule: JEV07
+    target: {scope: file, name: tundra.py, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "RecordOwner and RecordReaper each maintain their own records and open counts for the same open/close lifecycle, so adoption, stopping, and expiration can diverge."
+    context_requirements: [record registry authority, count synchronization, reaper handoff]
+  - id: e076
+    scenario_group: JEV07-G02
+    partition: development
+    pair_role: counterpart
+    source: sources/uplink.py
+    language: python
+    rule: JEV07
+    target: {scope: file, name: uplink.py, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "The owner instance contains start, stop, and remove operations over its own record table."
+    context_requirements: [record owner lifecycle]
+  - id: e077
+    scenario_group: JEV07-G03
+    partition: development
+    pair_role: positive
+    source: sources/vermilion.ts
+    language: typescript
+    rule: JEV07
+    target: {scope: file, name: vermilion.ts, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "LeaseBook and LeaseScheduler each maintain an active lease registry and independently assign terminal states, creating a handoff synchronization obligation."
+    context_requirements: [lease ownership handoff, scheduler authority, terminal state policy]
+  - id: e078
+    scenario_group: JEV07-G03
+    partition: development
+    pair_role: counterpart
+    source: sources/wavelength.ts
+    language: typescript
+    rule: JEV07
+    target: {scope: file, name: wavelength.ts, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "Lease claim, release, and expiration all operate through one instance-owned map."
+    context_requirements: [lease owner lifecycle]
+  - id: e079
+    scenario_group: JEV07-G04
+    partition: development
+    pair_role: positive
+    source: sources/xenial.pl
+    language: perl
+    rule: JEV07
+    target: {scope: file, name: xenial.pl, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "LeaseBook release and LeaseReaper expire both mark and close the same package-level handle, so either owner can perform the terminal cleanup first."
+    context_requirements: [handle ownership, release-versus-expire ordering, close idempotence]
+  - id: e080
+    scenario_group: JEV07-G04
+    partition: development
+    pair_role: counterpart
+    source: sources/yonder.pl
+    language: perl
+    rule: JEV07
+    target: {scope: file, name: yonder.pl, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "The package stores and transitions lease state only through one object-owned table."
+    context_requirements: [package lifecycle ownership]
+  - id: e081
+    scenario_group: JEV07-G05
+    partition: heldout
+    pair_role: positive
+    source: sources/zircon.rs
+    language: rust
+    rule: JEV07
+    target: {scope: file, name: zircon.rs, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "LeaseLedger and LeaseRuntime each expose claim and terminal-state mutations over separate stores representing the same lease, with no visible handoff or synchronization."
+    context_requirements: [ledger/runtime authority, ownership transfer, state synchronization]
+  - id: e082
+    scenario_group: JEV07-G05
+    partition: heldout
+    pair_role: counterpart
+    source: sources/alpine.rs
+    language: rust
+    rule: JEV07
+    target: {scope: file, name: alpine.rs, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "All lease transitions mutate the LeaseManager field through its impl methods."
+    context_requirements: [LeaseManager ownership]
+  - id: e083
+    scenario_group: JEV07-G06
+    partition: heldout
+    pair_role: positive
+    source: sources/brook.js
+    language: javascript
+    rule: JEV07
+    target: {scope: file, name: brook.js, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "TaskBook and CancellationRegistry each retain running and completed task state and can independently complete or cancel the same task."
+    context_requirements: [task lifecycle authority, completion-versus-cancellation ordering, registry synchronization]
+  - id: e084
+    scenario_group: JEV07-G06
+    partition: heldout
+    pair_role: counterpart
+    source: sources/cairn.js
+    language: javascript
+    rule: JEV07
+    target: {scope: file, name: cairn.js, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "Task lifecycle methods share one instance-owned map and no external state owner is visible."
+    context_requirements: [task owner lifecycle]
+
+  - id: e085
+    scenario_group: JEV08-G01
+    partition: development
+    pair_role: positive
+    source: sources/delphinium.js
+    language: javascript
+    rule: JEV08
+    target: {scope: unit, name: Workbench, kind: class}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "Workbench combines mail delivery, CSV parsing, and key rotation with unrelated collaborators."
+    context_requirements: [facade intent, domain boundaries]
+  - id: e086
+    scenario_group: JEV08-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/eucalyptus.js
+    language: javascript
+    rule: JEV08
+    target: {scope: unit, name: Mailbox, kind: class}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "Mailbox owns one pending-message lifecycle and its delivery operations."
+    context_requirements: [mailbox lifecycle]
+  - id: e087
+    scenario_group: JEV08-G02
+    partition: development
+    pair_role: positive
+    source: sources/falcon.py
+    language: python
+    rule: JEV08
+    target: {scope: unit, name: Service, kind: class}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "Service combines context-managed resource opening, cache writes, and metrics reporting rather than one cohesive owner."
+    context_requirements: [resource lifecycle, cache ownership, metrics boundary]
+  - id: e088
+    scenario_group: JEV08-G02
+    partition: development
+    pair_role: counterpart
+    source: sources/garnet.py
+    language: python
+    rule: JEV08
+    target: {scope: unit, name: Transaction, kind: class}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "Transaction consistently owns begin, commit, and rollback over one connection lifecycle."
+    context_requirements: [transaction lifecycle]
+  - id: e089
+    scenario_group: JEV08-G03
+    partition: development
+    pair_role: positive
+    source: sources/hazelnut.ts
+    language: typescript
+    rule: JEV08
+    target: {scope: unit, name: UserHub, kind: class}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "UserHub combines account storage, avatar rendering, and preference persistence behind weakly related collaborators."
+    context_requirements: [service boundary, user domain ownership]
+  - id: e090
+    scenario_group: JEV08-G03
+    partition: development
+    pair_role: counterpart
+    source: sources/iris.ts
+    language: typescript
+    rule: JEV08
+    target: {scope: unit, name: UserDirectory, kind: class}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "UserDirectory's add, find, and remove operations share one user-store boundary."
+    context_requirements: [directory interface]
+  - id: e091
+    scenario_group: JEV08-G04
+    partition: development
+    pair_role: positive
+    source: sources/jacaranda.pl
+    language: perl
+    rule: JEV08
+    target: {scope: unit, name: Service, kind: package}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The package combines database loading, filesystem snapshots, and key rotation."
+    context_requirements: [service facade intent, database boundary, filesystem ownership]
+  - id: e092
+    scenario_group: JEV08-G04
+    partition: development
+    pair_role: counterpart
+    source: sources/koala.pl
+    language: perl
+    rule: JEV08
+    target: {scope: unit, name: Service, kind: package}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The package owns one mail delivery lifecycle, including send, retry, and status."
+    context_requirements: [mailer lifecycle]
+  - id: e093
+    scenario_group: JEV08-G05
+    partition: heldout
+    pair_role: positive
+    source: sources/lilac.rs
+    language: rust
+    rule: JEV08
+    target: {scope: unit, name: impl Runtime, kind: impl}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "The impl combines network reads, filesystem snapshots, and secret rotation with unrelated resource owners."
+    context_requirements: [Runtime boundary, network ownership, secret lifecycle]
+  - id: e094
+    scenario_group: JEV08-G05
+    partition: heldout
+    pair_role: counterpart
+    source: sources/magnolia.rs
+    language: rust
+    rule: JEV08
+    target: {scope: unit, name: impl Settings, kind: impl}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "The impl parses and queries one Settings value, keeping construction and lookup cohesive."
+    context_requirements: [Settings interface]
+  - id: e095
+    scenario_group: JEV08-G06
+    partition: heldout
+    pair_role: positive
+    source: sources/nectarine.py
+    language: python
+    rule: JEV08
+    target: {scope: unit, name: Coordinator, kind: class}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: true
+    rationale: "Coordinator mixes account charging, report export, and ledger reconciliation."
+    context_requirements: [billing boundary, export ownership, ledger authority]
+  - id: e096
+    scenario_group: JEV08-G06
+    partition: heldout
+    pair_role: counterpart
+    source: sources/olivebranch.py
+    language: python
+    rule: JEV08
+    target: {scope: unit, name: Ledger, kind: class}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_label: false
+    rationale: "Ledger's credit, debit, and balance methods all operate on one account-store responsibility."
+    context_requirements: [ledger ownership]
+
+  - id: e097
+    scenario_group: JEV09-G01
+    partition: development
+    pair_role: positive
+    source: sources/papyrus.js
+    language: javascript
+    rule: JEV09
+    target: {scope: file, name: papyrus.js, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "formatLabel and formatTitle contain the same normalization implementation, so future changes must keep both copies aligned."
+    context_requirements: [whether names are separate public APIs]
+  - id: e098
+    scenario_group: JEV09-G01
+    partition: development
+    pair_role: counterpart
+    source: sources/quartzleaf.js
+    language: javascript
+    rule: JEV09
+    target: {scope: file, name: quartzleaf.js, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "One formatter owns normalization and the second function delegates to it."
+    context_requirements: [formatter API boundary]
+  - id: e099
+    scenario_group: JEV09-G02
+    partition: development
+    pair_role: positive
+    source: sources/rhubarb.py
+    language: python
+    rule: JEV09
+    target: {scope: file, name: rhubarb.py, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "validate_row and check_row duplicate the same type, presence, and range checks."
+    context_requirements: [whether the names serve distinct callers]
+  - id: e100
+    scenario_group: JEV09-G02
+    partition: development
+    pair_role: counterpart
+    source: sources/sorrel.py
+    language: python
+    rule: JEV09
+    target: {scope: file, name: sorrel.py, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "Validation and serialization are distinct operations with different outputs and boundaries."
+    context_requirements: [row lifecycle, serializer boundary]
+  - id: e101
+    scenario_group: JEV09-G03
+    partition: development
+    pair_role: positive
+    source: sources/tamarack.pl
+    language: perl
+    rule: JEV09
+    target: {scope: file, name: tamarack.pl, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "format_date and display_date repeat the same date parsing and presentation code."
+    context_requirements: [date API ownership]
+  - id: e102
+    scenario_group: JEV09-G03
+    partition: development
+    pair_role: counterpart
+    source: sources/uranium.pl
+    language: perl
+    rule: JEV09
+    target: {scope: file, name: uranium.pl, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "Wire formatting and log formatting serve distinct output boundaries despite sharing date inputs."
+    context_requirements: [wire format, log format]
+  - id: e103
+    scenario_group: JEV09-G04
+    partition: development
+    pair_role: positive
+    source: sources/valerian.rs
+    language: rust
+    rule: JEV09
+    target: {scope: file, name: valerian.rs, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "encode_record and encode_copy duplicate the same owned record formatting implementation."
+    context_requirements: [record encoder ownership]
+  - id: e104
+    scenario_group: JEV09-G04
+    partition: development
+    pair_role: counterpart
+    source: sources/walnut.rs
+    language: rust
+    rule: JEV09
+    target: {scope: file, name: walnut.rs, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "JSON and binary encoders implement distinct serialization boundaries rather than duplicate one behavior."
+    context_requirements: [JSON boundary, binary boundary]
+  - id: e105
+    scenario_group: JEV09-G05
+    partition: heldout
+    pair_role: positive
+    source: sources/xanadu.ts
+    language: typescript
+    rule: JEV09
+    target: {scope: file, name: xanadu.ts, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "retryRead and retryFetch duplicate the same asynchronous retry loop and terminal error behavior."
+    context_requirements: [retry policy ownership]
+  - id: e106
+    scenario_group: JEV09-G05
+    partition: heldout
+    pair_role: counterpart
+    source: sources/yarrow.ts
+    language: typescript
+    rule: JEV09
+    target: {scope: file, name: yarrow.ts, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "retryFetch delegates to the single retryRead implementation."
+    context_requirements: [retry policy ownership]
+  - id: e107
+    scenario_group: JEV09-G06
+    partition: heldout
+    pair_role: positive
+    source: sources/zebra.py
+    language: python
+    rule: JEV09
+    target: {scope: file, name: zebra.py, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: true
+    rationale: "open_reader and open_second_reader duplicate handle acquisition, decode, and cleanup behavior."
+    context_requirements: [reader lifecycle ownership]
+  - id: e108
+    scenario_group: JEV09-G06
+    partition: heldout
+    pair_role: counterpart
+    source: sources/acornwood.py
+    language: python
+    rule: JEV09
+    target: {scope: file, name: acornwood.py, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_label: false
+    rationale: "Reader and writer are separate boundary operations with different modes and effects."
+    context_requirements: [reader boundary, writer boundary]

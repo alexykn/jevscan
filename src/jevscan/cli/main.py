@@ -16,6 +16,7 @@ from jevscan import __version__
 from jevscan.cli.args import parser
 from jevscan.cli.render import Reporter
 from jevscan.cli.terminal import safe_text
+from jevscan.core.capture import FinalJudgmentRecorder
 from jevscan.core.config import (
     Config,
     ConfigError,
@@ -89,6 +90,26 @@ def _validate_output(output: Path | None, paths: list[Path], config_source: str)
             raise ConfigError("output path overlaps source being scanned; choose a .json, .jsonl, or .txt report path")
 
 
+def _validate_calibration_output(
+    output: Path | None, report: Path | None, paths: list[Path], config_source: str
+) -> None:
+    if output is None:
+        return
+    capture = output.resolve()
+    sidecar = output.with_suffix(".meta.json").resolve()
+    aliases = {capture, sidecar}
+    if report is not None and report.resolve() in aliases:
+        raise ConfigError("--calibration-output collides with the normal report output or its sidecar")
+    if config_source != "packaged default" and Path(config_source).resolve() in aliases:
+        raise ConfigError("--calibration-output collides with the active configuration")
+    for target in paths:
+        resolved = target.resolve()
+        if any(alias == resolved or (resolved.is_dir() and alias.is_relative_to(resolved)) for alias in aliases):
+            raise ConfigError("--calibration-output collides with a scanned source")
+    if capture.exists() or sidecar.exists():
+        raise ConfigError("--calibration-output or its metadata sidecar already exists; choose a new path")
+
+
 def _validate_scan_options(config: Config, args: Any) -> None:
     if args.max_display < 0:
         raise ConfigError("--max-display must be nonnegative")
@@ -96,6 +117,8 @@ def _validate_scan_options(config: Config, args: Any) -> None:
         raise ConfigError("--plan and --offline are separate modes; choose one")
     if not args.offline and not config.selected_rules():
         raise ConfigError("there are no enabled rules; use --offline for an inventory or enable a rule")
+    if args.calibration_output is not None and (args.offline or args.plan):
+        raise ConfigError("--calibration-output requires a live scan")
 
 
 def _git_selected_paths(root: Path, requested: list[Path], *, staged: bool) -> list[Path]:
@@ -151,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             paths = _git_selected_paths(loaded.root, paths, staged=args.staged)
         _validate_scan_options(loaded.config, args)
         _validate_output(args.output, paths, loaded.source)
+        _validate_calibration_output(args.calibration_output, args.output, paths, loaded.source)
         metadata = {
             "version": __version__,
             "root": str(loaded.root),
@@ -161,21 +185,36 @@ def main(argv: list[str] | None = None) -> int:
             "concurrency": 0 if args.offline else loaded.config.jev.concurrency,
             "targets": [str(path) for path in paths],
         }
-        context = args.output.open("w", encoding="utf-8") if args.output else nullcontext(sys.stdout)
-        with context as output:
-            reporter = Reporter(output, args.format, metadata, max_display=args.max_display, verbose=args.verbose)
-            summary = asyncio.run(
-                run_scan(
-                    paths,
-                    loaded,
-                    reporter,
-                    offline=args.offline,
-                    plan_only=args.plan,
-                    no_cache=args.no_cache,
-                    api_key=os.environ.get("TYPESAFE_API_KEY", ""),
-                    base_url=os.environ.get("TYPESAFE_BASE_URL", "").strip() or "https://api.typesafe.ai",
+        base_url = os.environ.get("TYPESAFE_BASE_URL", "").strip() or "https://api.typesafe.ai"
+        recorder = (
+            FinalJudgmentRecorder(args.calibration_output, loaded.config.jev.model, base_url, metadata)
+            if args.calibration_output is not None
+            else None
+        )
+        try:
+            context = args.output.open("w", encoding="utf-8") if args.output else nullcontext(sys.stdout)
+            with context as output:
+                reporter = Reporter(output, args.format, metadata, max_display=args.max_display, verbose=args.verbose)
+                summary = asyncio.run(
+                    run_scan(
+                        paths,
+                        loaded,
+                        reporter,
+                        offline=args.offline,
+                        plan_only=args.plan,
+                        no_cache=args.no_cache,
+                        api_key=os.environ.get("TYPESAFE_API_KEY", ""),
+                        base_url=base_url,
+                        capture=recorder,
+                    )
                 )
-            )
+                if recorder is not None:
+                    recorder.mark_complete(
+                        not summary.incomplete, "complete" if not summary.incomplete else "incomplete"
+                    )
+        finally:
+            if recorder is not None:
+                recorder.close()
         return summary.exit_code(args.fail_on)
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)

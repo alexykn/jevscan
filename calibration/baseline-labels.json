@@ -1,0 +1,4098 @@
+[
+  {
+    "display_id": 1,
+    "target": {
+      "id": "src/jevscan/cli/terminal.py:1848:method",
+      "scope": "unit",
+      "path": "src/jevscan/cli/terminal.py",
+      "language": "python",
+      "qualified_name": "Terminal._write_styled",
+      "start_byte": 1848,
+      "end_byte": 2373,
+      "start_line": 53,
+      "end_line": 61,
+      "kind": "method",
+      "display_name": "Terminal._write_styled"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Paragraph and wrapped-line loops are nested, but paragraph → wrap → write remains explicit; level 1 overstates a defect. Evidence: `_write_styled` (src/jevscan/cli/terminal.py#L53-L61) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/cli/terminal.py",
+      "line_range": [
+        53,
+        61
+      ],
+      "symbol": "Terminal._write_styled"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.010/3 conf=0.720"
+  },
+  {
+    "display_id": 2,
+    "target": {
+      "id": "src/jevscan/cli/render.py:361:method",
+      "scope": "unit",
+      "path": "src/jevscan/cli/render.py",
+      "language": "python",
+      "qualified_name": "Reporter.__init__",
+      "start_byte": 361,
+      "end_byte": 1785,
+      "start_line": 24,
+      "end_line": 59,
+      "kind": "method",
+      "display_name": "Reporter.__init__"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Initialization has one cohesive responsibility: establish reporter state and open the selected output format. The format branches are alternatives, not interleaved independent operations. Evidence: `Reporter.__init__` (src/jevscan/cli/render.py#L24-L59) initializes counters and terminal state, then emits exactly one of the JSON, JSONL, or text headers. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/cli/render.py",
+      "line_range": [
+        24,
+        59
+      ],
+      "symbol": "Reporter.__init__"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.550"
+  },
+  {
+    "display_id": 3,
+    "target": {
+      "id": "src/jevscan/cli/render.py:2686:method",
+      "scope": "unit",
+      "path": "src/jevscan/cli/render.py",
+      "language": "python",
+      "qualified_name": "Reporter.emit",
+      "start_byte": 2686,
+      "end_byte": 3455,
+      "start_line": 82,
+      "end_line": 102,
+      "kind": "method",
+      "display_name": "Reporter.emit"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `emit` is a cohesive event/format dispatcher. It delegates rendering and finalization rather than implementing unrelated responsibilities itself. Evidence: `Reporter.emit` (src/jevscan/cli/render.py#L82-L102) handles progress specially, clears text progress, and dispatches to `_finish`, `_line`, JSON serialization, or `_text_event`. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/cli/render.py",
+      "line_range": [
+        82,
+        102
+      ],
+      "symbol": "Reporter.emit"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.650"
+  },
+  {
+    "display_id": 4,
+    "target": {
+      "id": "src/jevscan/cli/render.py:2686:method",
+      "scope": "unit",
+      "path": "src/jevscan/cli/render.py",
+      "language": "python",
+      "qualified_name": "Reporter.emit",
+      "start_byte": 2686,
+      "end_byte": 3455,
+      "start_line": 82,
+      "end_line": 102,
+      "kind": "method",
+      "display_name": "Reporter.emit"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): The control flow is direct: closed guard, progress special case, optional progress clearing, then one output dispatch. No important transition is difficult to trace. Evidence: The mutually exclusive dispatch in `Reporter.emit` (src/jevscan/cli/render.py#L82-L102) makes the destination for each event and format explicit. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/cli/render.py",
+      "line_range": [
+        82,
+        102
+      ],
+      "symbol": "Reporter.emit"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.380/3 conf=0.370"
+  },
+  {
+    "display_id": 5,
+    "target": {
+      "id": "src/jevscan/cli/render.py:4945:method",
+      "scope": "unit",
+      "path": "src/jevscan/cli/render.py",
+      "language": "python",
+      "qualified_name": "Reporter._evaluation",
+      "start_byte": 4945,
+      "end_byte": 6264,
+      "start_line": 137,
+      "end_line": 160,
+      "kind": "method",
+      "display_name": "Reporter._evaluation"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): There is one local complication in constructing and rendering the selected rows, but the target/header/row sequence remains easy to trace. This fits JEV02 level 1, whose report wording overstates the effect as obscuring the main path. Evidence: `Reporter._evaluation` (src/jevscan/cli/render.py#L137-L160) combines a conditional row filter, an admission guard, and per-row tentative/finding branches; the rendering transition itself remains linear. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/cli/render.py",
+      "line_range": [
+        137,
+        160
+      ],
+      "symbol": "Reporter._evaluation"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.400/3 conf=0.390"
+  },
+  {
+    "display_id": 6,
+    "target": {
+      "id": "src/jevscan/cli/render.py:6955:method",
+      "scope": "unit",
+      "path": "src/jevscan/cli/render.py",
+      "language": "python",
+      "qualified_name": "Reporter._text_event",
+      "start_byte": 6955,
+      "end_byte": 9263,
+      "start_line": 176,
+      "end_line": 221,
+      "kind": "method",
+      "display_name": "Reporter._text_event"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): This is one text-event rendering responsibility. Event-specific formatting is organized as an explicit dispatch and does not interleave independent stateful operations. Evidence: `Reporter._text_event` (src/jevscan/cli/render.py#L176-L221) selects a rendering path by `event[\"event\"]`; shared file-header and terminal abstractions own the output mechanics. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/cli/render.py",
+      "line_range": [
+        176,
+        221
+      ],
+      "symbol": "Reporter._text_event"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.530"
+  },
+  {
+    "display_id": 7,
+    "target": {
+      "id": "src/jevscan/cli/render.py:6955:method",
+      "scope": "unit",
+      "path": "src/jevscan/cli/render.py",
+      "language": "python",
+      "qualified_name": "Reporter._text_event",
+      "start_byte": 6955,
+      "end_byte": 9263,
+      "start_line": 176,
+      "end_line": 221,
+      "kind": "method",
+      "display_name": "Reporter._text_event"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The inline coverage formatting introduces one local branch complication, but all event transitions remain explicit and easy to trace. It is level 1, not evidence that the main path is obscured. Evidence: In `Reporter._text_event` (src/jevscan/cli/render.py#L176-L221), the coverage arm chooses among aborted, compacted, and ordinary messages and optionally appends rejection data; the outer event dispatch remains direct. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/cli/render.py",
+      "line_range": [
+        176,
+        221
+      ],
+      "symbol": "Reporter._text_event"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.180/3 conf=0.460"
+  },
+  {
+    "display_id": 8,
+    "target": {
+      "id": "src/jevscan/cli/render.py:9706:method",
+      "scope": "unit",
+      "path": "src/jevscan/cli/render.py",
+      "language": "python",
+      "qualified_name": "Reporter._summary",
+      "start_byte": 9706,
+      "end_byte": 13612,
+      "start_line": 234,
+      "end_line": 301,
+      "kind": "method",
+      "display_name": "Reporter._summary"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Numerous conditional summary sections create a local scanning burden, but they are sequential and independent; no important transition is obscured. This is at most JEV02 level 1. Evidence: `Reporter._summary` (src/jevscan/cli/render.py#L234-L301) selects plan versus live metrics and then conditionally emits context, enrichment, applicability, hidden-target, and verbosity lines. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/cli/render.py",
+      "line_range": [
+        234,
+        301
+      ],
+      "symbol": "Reporter._summary"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.070/3 conf=0.450"
+  },
+  {
+    "display_id": 9,
+    "target": {
+      "id": "src/jevscan/cli/main.py:3792:function",
+      "scope": "unit",
+      "path": "src/jevscan/cli/main.py",
+      "language": "python",
+      "qualified_name": "_git_selected_paths",
+      "start_byte": 3792,
+      "end_byte": 5267,
+      "start_line": 101,
+      "end_line": 130,
+      "kind": "function",
+      "display_name": "_git_selected_paths"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The helper has one local complication from combining Git command execution with changed-path filtering, but its transitions remain direct. The warning message overstates a level-1 concern. Evidence: `_git_selected_paths` (src/jevscan/cli/main.py#L101-L130) runs one or two fixed Git commands, deduplicates names, rejects unsafe paths, and retains requested descendants in a linear sequence. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/cli/main.py",
+      "line_range": [
+        101,
+        130
+      ],
+      "symbol": "_git_selected_paths"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.270/3 conf=0.570"
+  },
+  {
+    "display_id": 10,
+    "target": {
+      "id": "src/jevscan/cli/main.py:5270:function",
+      "scope": "unit",
+      "path": "src/jevscan/cli/main.py",
+      "language": "python",
+      "qualified_name": "main",
+      "start_byte": 5270,
+      "end_byte": 7663,
+      "start_line": 133,
+      "end_line": 185,
+      "kind": "function",
+      "display_name": "main"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `main` primarily orchestrates cohesive CLI steps. Its early-return command modes and scan setup are related entry-point responsibilities, with substantive work delegated to focused owners. Evidence: `main` (src/jevscan/cli/main.py#L133-L185) delegates config loading, rule listing, Git selection, validation, reporting, and scanning; the inline metadata construction supports that orchestration. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/cli/main.py",
+      "line_range": [
+        133,
+        185
+      ],
+      "symbol": "main"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.630"
+  },
+  {
+    "display_id": 11,
+    "target": {
+      "id": "src/jevscan/cli/main.py:5270:function",
+      "scope": "unit",
+      "path": "src/jevscan/cli/main.py",
+      "language": "python",
+      "qualified_name": "main",
+      "start_byte": 5270,
+      "end_byte": 7663,
+      "start_line": 133,
+      "end_line": 185,
+      "kind": "function",
+      "display_name": "main"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): The major transitions are explicit guard-style modes followed by a linear scan pipeline and one error boundary. Branch count does not make the path unclear. Evidence: In `main` (src/jevscan/cli/main.py#L133-L185), init, show-config, and list-rules return immediately; the remaining path validates, constructs a reporter, runs the scan, and returns its exit code. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/cli/main.py",
+      "line_range": [
+        133,
+        185
+      ],
+      "symbol": "main"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.280/3 conf=0.420"
+  },
+  {
+    "display_id": 12,
+    "target": {
+      "id": "src/jevscan/cli/main.py:5270:function",
+      "scope": "unit",
+      "path": "src/jevscan/cli/main.py",
+      "language": "python",
+      "qualified_name": "main",
+      "start_byte": 5270,
+      "end_byte": 7663,
+      "start_line": 133,
+      "end_line": 185,
+      "kind": "function",
+      "display_name": "main"
+    },
+    "rule_id": "JEV03",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): The function stays at CLI orchestration level. Opening the selected output and assembling metadata are small necessary entry-point details, not a substantial low-level implementation concern. Evidence: `main` (src/jevscan/cli/main.py#L154-L179) builds scan metadata, chooses an output context, and delegates execution to `Reporter` and `run_scan`. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/cli/main.py",
+      "line_range": [
+        133,
+        185
+      ],
+      "symbol": "main"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.540"
+  },
+  {
+    "display_id": 13,
+    "target": {
+      "id": "src/jevscan/core/compaction.py:3111:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/compaction.py",
+      "language": "python",
+      "qualified_name": "LocalContext._dependencies",
+      "start_byte": 3111,
+      "end_byte": 4199,
+      "start_line": 79,
+      "end_line": 98,
+      "kind": "method",
+      "display_name": "LocalContext._dependencies"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): The two-level dependency expansion has multiple nested exclusion and expansion decisions that obscure how a reference moves from the frontier into the next frontier. This reaches JEV02 level 2. Evidence: `LocalContext._dependencies` (src/jevscan/core/compaction.py#L79-L98) nests rounds, names, and definitions, excludes enclosing and enclosed targets, conditionally expands names by the current result count, then subtracts `visited`. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/compaction.py",
+      "line_range": [
+        79,
+        98
+      ],
+      "symbol": "LocalContext._dependencies"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.650/3 conf=0.620"
+  },
+  {
+    "display_id": 14,
+    "target": {
+      "id": "src/jevscan/core/compaction.py:4205:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/compaction.py",
+      "language": "python",
+      "qualified_name": "LocalContext._owner_state",
+      "start_byte": 4205,
+      "end_byte": 5472,
+      "start_line": 100,
+      "end_line": 128,
+      "kind": "method",
+      "display_name": "LocalContext._owner_state"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): Candidate admission depends on a dense mixed `or`/`and` expression, followed by a separate constructor-admission path. Those branches obscure the transition from declarations and owners to the final owner-state set. Evidence: `LocalContext._owner_state` (src/jevscan/core/compaction.py#L100-L128) combines import/use membership, field membership plus owner containment, and constructor discovery under different predicates. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/compaction.py",
+      "line_range": [
+        100,
+        128
+      ],
+      "symbol": "LocalContext._owner_state"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.450/3 conf=0.430"
+  },
+  {
+    "display_id": 15,
+    "target": {
+      "id": "src/jevscan/core/compaction.py:6062:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/compaction.py",
+      "language": "python",
+      "qualified_name": "LocalContext.recipe",
+      "start_byte": 6062,
+      "end_byte": 7407,
+      "start_line": 143,
+      "end_line": 174,
+      "kind": "method",
+      "display_name": "LocalContext.recipe"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Recipe construction is linear: identify parents and scaffold, collect dependencies and owner state, remove contained items, sort, and return. Important transitions are directly reconstructable. Evidence: `LocalContext.recipe` (src/jevscan/core/compaction.py#L143-L174) has one straightforward filtering comprehension and a deterministic sort before constructing `ContextRecipe`. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/compaction.py",
+      "line_range": [
+        143,
+        174
+      ],
+      "symbol": "LocalContext.recipe"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.260/3 conf=0.230"
+  },
+  {
+    "display_id": 16,
+    "target": {
+      "id": "src/jevscan/core/compaction.py:8599:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/compaction.py",
+      "language": "python",
+      "qualified_name": "Compactor._predict",
+      "start_byte": 8599,
+      "end_byte": 9644,
+      "start_line": 199,
+      "end_line": 222,
+      "kind": "method",
+      "display_name": "Compactor._predict"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `_predict` is a cohesive prediction adapter. Call-limit enforcement, trace recording, inference, and result recording are all parts of one request lifecycle rather than independent responsibilities. Evidence: `Compactor._predict` (src/jevscan/core/compaction.py#L199-L222) performs one bounded call and records its request and response in the supplied trace. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/compaction.py",
+      "line_range": [
+        199,
+        222
+      ],
+      "symbol": "Compactor._predict"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.510"
+  },
+  {
+    "display_id": 17,
+    "target": {
+      "id": "src/jevscan/core/compaction.py:10368:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/compaction.py",
+      "language": "python",
+      "qualified_name": "Compactor._prioritize",
+      "start_byte": 10368,
+      "end_byte": 11468,
+      "start_line": 240,
+      "end_line": 257,
+      "kind": "method",
+      "display_name": "Compactor._prioritize"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Recovery from stopped or rejected semantic selection is one local control-flow complication, but the fallback and final ordering remain explicit. This fits level 1 rather than an obscured main path. Evidence: `Compactor._prioritize` (src/jevscan/core/compaction.py#L240-L257) reconstructs rankings from trace data on two exceptions, falls back to syntax order when empty, and otherwise appends unscored candidates. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/compaction.py",
+      "line_range": [
+        240,
+        257
+      ],
+      "symbol": "Compactor._prioritize"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.410/3 conf=0.390"
+  },
+  {
+    "display_id": 18,
+    "target": {
+      "id": "src/jevscan/core/compaction.py:11474:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/compaction.py",
+      "language": "python",
+      "qualified_name": "Compactor.compact",
+      "start_byte": 11474,
+      "end_byte": 13685,
+      "start_line": 259,
+      "end_line": 302,
+      "kind": "method",
+      "display_name": "Compactor.compact"
+    },
+    "rule_id": "JEV03",
+    "label": "Agree",
+    "explanation": "Original review (Agree): The method mixes high-level compaction orchestration with substantial budget fitting, candidate-packing, omission bookkeeping, and trace-state construction. Those low-level details occupy the primary operation rather than being delegated. Evidence: `Compactor.compact` (src/jevscan/core/compaction.py#L259-L302) constructs detailed trace metadata, probes multiple encoded evidence variants, optionally invokes semantic prioritization, and packs candidates one at a time. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/compaction.py",
+      "line_range": [
+        259,
+        302
+      ],
+      "symbol": "Compactor.compact"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.610"
+  },
+  {
+    "display_id": 19,
+    "target": {
+      "id": "src/jevscan/core/compaction.py:11474:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/compaction.py",
+      "language": "python",
+      "qualified_name": "Compactor.compact",
+      "start_byte": 11474,
+      "end_byte": 13685,
+      "start_line": 259,
+      "end_line": 302,
+      "kind": "method",
+      "display_name": "Compactor.compact"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Despite its detail, the method has one cohesive responsibility: produce budget-fitting compacted evidence. Trace entries and omission records support that operation and are not independently meaningful responsibilities. Evidence: Every branch in `Compactor.compact` (src/jevscan/core/compaction.py#L259-L302) determines eligibility, evidence composition, candidate ordering, or budget admission for the same result. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/compaction.py",
+      "line_range": [
+        259,
+        302
+      ],
+      "symbol": "Compactor.compact"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.560"
+  },
+  {
+    "display_id": 20,
+    "target": {
+      "id": "src/jevscan/core/compaction.py:11474:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/compaction.py",
+      "language": "python",
+      "qualified_name": "Compactor.compact",
+      "start_byte": 11474,
+      "end_byte": 13685,
+      "start_line": 259,
+      "end_line": 302,
+      "kind": "method",
+      "display_name": "Compactor.compact"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): Multiple budget-dependent branches affect important evidence transitions: whether compaction proceeds, whether scaffold is retained, whether semantic prioritization runs, and which candidates survive. The resulting evidence path is level 2. Evidence: `Compactor.compact` (src/jevscan/core/compaction.py#L262-L300) repeatedly composes and tests different evidence states before and during candidate selection. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/compaction.py",
+      "line_range": [
+        259,
+        302
+      ],
+      "symbol": "Compactor.compact"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.580/3 conf=0.560"
+  },
+  {
+    "display_id": 21,
+    "target": {
+      "id": "src/jevscan/core/planning.py:4080:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/planning.py",
+      "language": "python",
+      "qualified_name": "Planner.__init__",
+      "start_byte": 4080,
+      "end_byte": 5816,
+      "start_line": 106,
+      "end_line": 136,
+      "kind": "method",
+      "display_name": "Planner.__init__"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The initializer has a real cohesion concern because it both establishes planner state and implements the full-file omission policy, but these are sequential construction responsibilities rather than concretely interleaved independent operations. Evidence: `Planner.__init__` (src/jevscan/core/planning.py#L106-L136) creates targets/checks, then performs an inline policy-driven partition into kept checks and omissions before encoding questions. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/planning.py",
+      "line_range": [
+        106,
+        136
+      ],
+      "symbol": "Planner.__init__"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.630"
+  },
+  {
+    "display_id": 22,
+    "target": {
+      "id": "src/jevscan/core/planning.py:4080:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/planning.py",
+      "language": "python",
+      "qualified_name": "Planner.__init__",
+      "start_byte": 4080,
+      "end_byte": 5816,
+      "start_line": 106,
+      "end_line": 136,
+      "kind": "method",
+      "display_name": "Planner.__init__"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The full-file-limit partition is one local branch complication, while all important initialization transitions remain easy to trace. That matches score 1, but the configured warning/message treats it as obscured control flow. Evidence: In `Planner.__init__` (src/jevscan/core/planning.py#L115-L135), only the limited-file case introduces a loop and scope/context branch; construction before and after it is linear. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/planning.py",
+      "line_range": [
+        106,
+        136
+      ],
+      "symbol": "Planner.__init__"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.080/3 conf=0.710"
+  },
+  {
+    "display_id": 23,
+    "target": {
+      "id": "src/jevscan/core/planning.py:4080:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/planning.py",
+      "language": "python",
+      "qualified_name": "Planner.__init__",
+      "start_byte": 4080,
+      "end_byte": 5816,
+      "start_line": 106,
+      "end_line": 136,
+      "kind": "method",
+      "display_name": "Planner.__init__"
+    },
+    "rule_id": "JEV03",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Planner construction does not mix orchestration with a substantial low-level concern. The inline omission partition operates at the same planning-policy level as target and check construction. Evidence: `Planner.__init__` (src/jevscan/core/planning.py#L106-L136) manipulates typed `Check` and `Omission` objects without parsing, resource bookkeeping, or low-level encoding logic beyond a final question map. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/planning.py",
+      "line_range": [
+        106,
+        136
+      ],
+      "symbol": "Planner.__init__"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.530"
+  },
+  {
+    "display_id": 24,
+    "target": {
+      "id": "src/jevscan/core/planning.py:6086:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/planning.py",
+      "language": "python",
+      "qualified_name": "Planner._applicability_reason",
+      "start_byte": 6086,
+      "end_byte": 6725,
+      "start_line": 143,
+      "end_line": 154,
+      "kind": "method",
+      "display_name": "Planner._applicability_reason"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Applicability is evaluated through a short, direct sequence with one success guard and one missing-facts result. There is no meaningful transition ambiguity. Evidence: `Planner._applicability_reason` (src/jevscan/core/planning.py#L143-L154) computes required facts, returns for applicability, and otherwise formats the absent prerequisites. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/planning.py",
+      "line_range": [
+        143,
+        154
+      ],
+      "symbol": "Planner._applicability_reason"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.070/3 conf=0.560"
+  },
+  {
+    "display_id": 25,
+    "target": {
+      "id": "src/jevscan/core/planning.py:6731:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/planning.py",
+      "language": "python",
+      "qualified_name": "Planner._checks",
+      "start_byte": 6731,
+      "end_byte": 7985,
+      "start_line": 156,
+      "end_line": 180,
+      "kind": "method",
+      "display_name": "Planner._checks"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): Check admission is governed by multiple nested target/rule, unit-property, member, and applicability branches. These obscure the important transition from a target/rule pair to an admitted check, reaching level 2. Evidence: `Planner._checks` (src/jevscan/core/planning.py#L156-L180) nests two loops and several independent `continue` conditions, with applicability skips also mutating a separate map. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/planning.py",
+      "line_range": [
+        156,
+        180
+      ],
+      "symbol": "Planner._checks"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.550/3 conf=0.530"
+  },
+  {
+    "display_id": 26,
+    "target": {
+      "id": "src/jevscan/core/planning.py:9901:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/planning.py",
+      "language": "python",
+      "qualified_name": "Planner._pack_group",
+      "start_byte": 9901,
+      "end_byte": 10901,
+      "start_line": 222,
+      "end_line": 241,
+      "kind": "method",
+      "display_name": "Planner._pack_group"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Packing has one local complication because oversized singleton evidence follows a separate batching path from ordinary incremental fitting. Both paths remain explicit, so this is level 1. Evidence: `Planner._pack_group` (src/jevscan/core/planning.py#L222-L241) first handles context/byte violations in fixed chunks, otherwise flushes a pending tuple when adding a check would exceed the budget. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/planning.py",
+      "line_range": [
+        222,
+        241
+      ],
+      "symbol": "Planner._pack_group"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.270/3 conf=0.580"
+  },
+  {
+    "display_id": 27,
+    "target": {
+      "id": "src/jevscan/core/syntax.py:845:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/syntax.py",
+      "language": "python",
+      "qualified_name": "callback_label",
+      "start_byte": 845,
+      "end_byte": 2091,
+      "start_line": 32,
+      "end_line": 51,
+      "kind": "function",
+      "display_name": "callback_label"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Wrapper removal, callee fallback, and argument labeling are local guards with explicit returns; no important transition is obscured. Evidence: `callback_label` (src/jevscan/core/syntax.py#L32-L51) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/syntax.py",
+      "line_range": [
+        32,
+        51
+      ],
+      "symbol": "callback_label"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.510/3 conf=0.490"
+  },
+  {
+    "display_id": 28,
+    "target": {
+      "id": "src/jevscan/core/inference.py:898:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/inference.py",
+      "language": "python",
+      "qualified_name": "Inference.cached_judgments",
+      "start_byte": 898,
+      "end_byte": 2399,
+      "start_line": 30,
+      "end_line": 60,
+      "kind": "method",
+      "display_name": "Inference.cached_judgments"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Cache decoding and validation add one local failure/skip complication, but the lookup-to-result transition remains straightforward. This is level 1 rather than obscured control flow. Evidence: `Inference.cached_judgments` (src/jevscan/core/inference.py#L30-L60) guards absent caching, derives keys, skips misses, validates each hit under one exception boundary, and records the hit count. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/inference.py",
+      "line_range": [
+        30,
+        60
+      ],
+      "symbol": "Inference.cached_judgments"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.200/3 conf=0.490"
+  },
+  {
+    "display_id": 29,
+    "target": {
+      "id": "src/jevscan/core/inference.py:3322:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/inference.py",
+      "language": "python",
+      "qualified_name": "Inference.predict",
+      "start_byte": 3322,
+      "end_byte": 5628,
+      "start_line": 85,
+      "end_line": 134,
+      "kind": "method",
+      "display_name": "Inference.predict"
+    },
+    "rule_id": "JEV01",
+    "label": "Agree",
+    "explanation": "Original review (Agree): The method interleaves several independently meaningful operational concerns: cache lookup/storage, provider evaluation, reservation accounting, token calibration, phase-specific summary mutation, and metrics. Evidence: `Inference.predict` (src/jevscan/core/inference.py#L85-L134) duplicates accounting across cache and provider paths and updates multiple global summary counters around the transport call. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/inference.py",
+      "line_range": [
+        85,
+        134
+      ],
+      "symbol": "Inference.predict"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.730"
+  },
+  {
+    "display_id": 30,
+    "target": {
+      "id": "src/jevscan/core/inference.py:3322:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/inference.py",
+      "language": "python",
+      "qualified_name": "Inference.predict",
+      "start_byte": 3322,
+      "end_byte": 5628,
+      "start_line": 85,
+      "end_line": 134,
+      "kind": "method",
+      "display_name": "Inference.predict"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): Cache and network paths have different accounting transitions, while provider execution adds exception and `finally` behavior before converging on further usage, calibration, and cache updates. Multiple branches obscure the complete prediction-state transition. Evidence: `Inference.predict` (src/jevscan/core/inference.py#L96-L134) has an early cached return and a network path with context-limit handling, unconditional reservation accounting, and several phase-dependent mutations. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/inference.py",
+      "line_range": [
+        85,
+        134
+      ],
+      "symbol": "Inference.predict"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.350/3 conf=0.440"
+  },
+  {
+    "display_id": 31,
+    "target": {
+      "id": "src/jevscan/core/inference.py:3322:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/inference.py",
+      "language": "python",
+      "qualified_name": "Inference.predict",
+      "start_byte": 3322,
+      "end_byte": 5628,
+      "start_line": 85,
+      "end_line": 134,
+      "kind": "method",
+      "display_name": "Inference.predict"
+    },
+    "rule_id": "JEV03",
+    "label": "Agree",
+    "explanation": "Original review (Agree): High-level “predict or retrieve” orchestration is mixed with substantial low-level usage and reservation bookkeeping. The repeated dynamic `setattr`/`getattr` phase accounting materially obscures the primary operation. Evidence: In `Inference.predict` (src/jevscan/core/inference.py#L112-L133), provider evaluation is surrounded by reservation fields, calibration, token normalization, summary counters, cache serialization, and metric updates. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/inference.py",
+      "line_range": [
+        85,
+        134
+      ],
+      "symbol": "Inference.predict"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.580"
+  },
+  {
+    "display_id": 32,
+    "target": {
+      "id": "src/jevscan/core/selection.py:1697:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/selection.py",
+      "language": "python",
+      "qualified_name": "rank_candidates",
+      "start_byte": 1697,
+      "end_byte": 3210,
+      "start_line": 39,
+      "end_line": 72,
+      "kind": "function",
+      "display_name": "rank_candidates"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Candidate batching, prediction, trace recording, and ranking all serve one selection responsibility. The nested `flush` is a cohesive batching operation, not an independent concern. Evidence: `rank_candidates` (src/jevscan/core/selection.py#L39-L72) accumulates candidates, flushes fitting batches, records omitted candidates, and returns one deterministic ranking. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/selection.py",
+      "line_range": [
+        39,
+        72
+      ],
+      "symbol": "rank_candidates"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.520"
+  },
+  {
+    "display_id": 33,
+    "target": {
+      "id": "src/jevscan/core/selection.py:1697:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/selection.py",
+      "language": "python",
+      "qualified_name": "rank_candidates",
+      "start_byte": 1697,
+      "end_byte": 3210,
+      "start_line": 39,
+      "end_line": 72,
+      "kind": "function",
+      "display_name": "rank_candidates"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Incremental batch fitting has one local complication: a candidate can trigger a flush and is then separately tested as a singleton. The transitions remain easy to follow, so this is level 1. Evidence: `rank_candidates` (src/jevscan/core/selection.py#L59-L71) performs the batch-fit branch, resets `pending`, then either appends or records a budget omission. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/selection.py",
+      "line_range": [
+        39,
+        72
+      ],
+      "symbol": "rank_candidates"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.550/3 conf=0.530"
+  },
+  {
+    "display_id": 34,
+    "target": {
+      "id": "src/jevscan/core/assessment.py:1788:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/assessment.py",
+      "language": "python",
+      "qualified_name": "_uncertainty",
+      "start_byte": 1788,
+      "end_byte": 2388,
+      "start_line": 53,
+      "end_line": 63,
+      "kind": "function",
+      "display_name": "_uncertainty"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): The function contains two direct uncertainty checks and no obscured transition. Choice-specific probability handling is explicit and sequential. Evidence: `_uncertainty` (src/jevscan/core/assessment.py#L53-L63) returns for low confidence, then checks choice probability and eligibility, otherwise returns an empty reason. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/assessment.py",
+      "line_range": [
+        53,
+        63
+      ],
+      "symbol": "_uncertainty"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.020/3 conf=0.480"
+  },
+  {
+    "display_id": 35,
+    "target": {
+      "id": "src/jevscan/core/assessment.py:3130:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/assessment.py",
+      "language": "python",
+      "qualified_name": "assess",
+      "start_byte": 3130,
+      "end_byte": 4449,
+      "start_line": 88,
+      "end_line": 109,
+      "kind": "function",
+      "display_name": "assess"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `assess` has one responsibility: apply the ordered assessment policy. Its branches represent the policy’s precedence rather than interleaved independent operations. Evidence: `assess` (src/jevscan/core/assessment.py#L88-L109) derives one reading and returns one `Assessment` after ordered uncertainty, severity, reduced-context, applicability, and success checks. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/assessment.py",
+      "line_range": [
+        88,
+        109
+      ],
+      "symbol": "assess"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.510"
+  },
+  {
+    "display_id": 36,
+    "target": {
+      "id": "src/jevscan/core/assessment.py:3130:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/assessment.py",
+      "language": "python",
+      "qualified_name": "assess",
+      "start_byte": 3130,
+      "end_byte": 4449,
+      "start_line": 88,
+      "end_line": 109,
+      "kind": "function",
+      "display_name": "assess"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): Several interacting branches determine precedence among missing evidence, ambiguity, severity, confidence, reduced context, not-applicable, and OK. That obscures the important answer-to-status transition and reaches level 2. Evidence: `assess` (src/jevscan/core/assessment.py#L88-L109) changes the outcome through both an ordered severity loop and post-loop uncertainty/applicability branches. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/assessment.py",
+      "line_range": [
+        88,
+        109
+      ],
+      "symbol": "assess"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.530/3 conf=0.520"
+  },
+  {
+    "display_id": 37,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:3171:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "_augment",
+      "start_byte": 3171,
+      "end_byte": 5375,
+      "start_line": 77,
+      "end_line": 123,
+      "kind": "function",
+      "display_name": "_augment"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Interval merging is one local nested-control complication inside an otherwise linear augmentation pipeline. Important transitions remain traceable, so this is level 1 and the warning message overstates it. Evidence: `_augment` (src/jevscan/core/enrichment.py#L77-L123) gathers ranges, merges overlaps with a local branch, materializes documents, then constructs and encodes the final state. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        77,
+        123
+      ],
+      "symbol": "_augment"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.050/3 conf=0.580"
+  },
+  {
+    "display_id": 38,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:3171:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "_augment",
+      "start_byte": 3171,
+      "end_byte": 5375,
+      "start_line": 77,
+      "end_line": 123,
+      "kind": "function",
+      "display_name": "_augment"
+    },
+    "rule_id": "JEV03",
+    "label": "Agree",
+    "explanation": "Original review (Agree): The function mixes high-level evidence augmentation with substantial low-level span merging, byte slicing, UTF-8 decoding, line counting, and hashing. Those details dominate and obscure the primary evidence operation. Evidence: `_augment` (src/jevscan/core/enrichment.py#L93-L123) performs manual interval and source-byte bookkeeping before assembling coverage and supplemental evidence. Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        77,
+        123
+      ],
+      "symbol": "_augment"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.540"
+  },
+  {
+    "display_id": 39,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:5973:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "Enricher._predict",
+      "start_byte": 5973,
+      "end_byte": 7132,
+      "start_line": 144,
+      "end_line": 169,
+      "kind": "method",
+      "display_name": "Enricher._predict"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `_predict` is a cohesive bounded-request adapter. Budget checks, trace recording, inference, and response recording are all phases of one enrichment prediction. Evidence: `Enricher._predict` (src/jevscan/core/enrichment.py#L144-L169) validates call/request budgets, sends one prediction, and attaches its result to the trace. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        144,
+        169
+      ],
+      "symbol": "Enricher._predict"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.530"
+  },
+  {
+    "display_id": 40,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:9210:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "Enricher._routing_answers",
+      "start_byte": 9210,
+      "end_byte": 10336,
+      "start_line": 211,
+      "end_line": 231,
+      "kind": "method",
+      "display_name": "Enricher._routing_answers"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Incrementally splitting routing questions into fitting batches is one local control-flow complication, but the flush and final flush transitions are explicit. This is level 1. Evidence: `Enricher._routing_answers` (src/jevscan/core/enrichment.py#L211-L231) flushes `pending` when a proposed batch does not fit, then predicts any remainder. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        211,
+        231
+      ],
+      "symbol": "Enricher._routing_answers"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.340/3 conf=0.510"
+  },
+  {
+    "display_id": 41,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:10342:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "Enricher._route",
+      "start_byte": 10342,
+      "end_byte": 11420,
+      "start_line": 233,
+      "end_line": 255,
+      "kind": "method",
+      "display_name": "Enricher._route"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Routing interpretation is direct: reject uncertain disposition, return non-local dispositions, or threshold and return evidence families. No important transition is obscured. Evidence: `Enricher._route` (src/jevscan/core/enrichment.py#L233-L255) uses three explicit stages: extract scores, validate disposition certainty, and select qualifying families. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        233,
+        255
+      ],
+      "symbol": "Enricher._route"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.040/3 conf=0.500"
+  },
+  {
+    "display_id": 42,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:11426:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "Enricher._candidates",
+      "start_byte": 11426,
+      "end_byte": 12666,
+      "start_line": 257,
+      "end_line": 280,
+      "kind": "method",
+      "display_name": "Enricher._candidates"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Fair pooling and deduplication introduce one local algorithmic complication, but the transition from family pools to admitted candidates remains reconstructable. This is level 1. Evidence: `Enricher._candidates` (src/jevscan/core/enrichment.py#L257-L280) records membership separately, uses `zip_longest` for round-robin ordering, deduplicates, applies one limit, and records coverage. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        257,
+        280
+      ],
+      "symbol": "Enricher._candidates"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.230/3 conf=0.440"
+  },
+  {
+    "display_id": 43,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:12672:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "Enricher._select",
+      "start_byte": 12672,
+      "end_byte": 13854,
+      "start_line": 282,
+      "end_line": 302,
+      "kind": "method",
+      "display_name": "Enricher._select"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `_select` has one cohesive responsibility: retrieve, rank, threshold, and budget-admit evidence candidates. Its error outcome is part of that selection contract. Evidence: `Enricher._select` (src/jevscan/core/enrichment.py#L282-L302) delegates retrieval/ranking and performs the final evidence-count and request-budget admission loop. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        282,
+        302
+      ],
+      "symbol": "Enricher._select"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.550"
+  },
+  {
+    "display_id": 44,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:12672:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "Enricher._select",
+      "start_byte": 12672,
+      "end_byte": 13854,
+      "start_line": 282,
+      "end_line": 302,
+      "kind": "method",
+      "display_name": "Enricher._select"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Candidate admission has one local complication because count and encoded-budget checks jointly decide selection versus omission, followed by a special all-omitted failure. The main path remains easy to trace. Evidence: `Enricher._select` (src/jevscan/core/enrichment.py#L289-L302) filters relevance, incrementally tests augmented evidence, records omissions, and raises only when every candidate was omitted. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        282,
+        302
+      ],
+      "symbol": "Enricher._select"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.500/3 conf=0.480"
+  },
+  {
+    "display_id": 45,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:13860:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "Enricher.refine",
+      "start_byte": 13860,
+      "end_byte": 16901,
+      "start_line": 304,
+      "end_line": 368,
+      "kind": "method",
+      "display_name": "Enricher.refine"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `refine` is a cohesive refinement state machine: admit a review, route it, select evidence, and reassess. The outcome trace records those phases rather than introducing an independent responsibility. Evidence: `Enricher.refine` (src/jevscan/core/enrichment.py#L304-L368) delegates routing, selection, augmentation, and prediction while assigning an outcome at each terminal state. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        304,
+        368
+      ],
+      "symbol": "Enricher.refine"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.670"
+  },
+  {
+    "display_id": 46,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:13860:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "Enricher.refine",
+      "start_byte": 13860,
+      "end_byte": 16901,
+      "start_line": 304,
+      "end_line": 368,
+      "kind": "method",
+      "display_name": "Enricher.refine"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): There are many exits, but they are ordered guard clauses and the successful route remains directly reconstructable. The declared-policy versus model-routing choice is a local complication, making this level 1 rather than level 2. Evidence: `Enricher.refine` (src/jevscan/core/enrichment.py#L315-L363) proceeds through review budget, family availability, routing, family selection, candidate selection, augmentation, and reassessment with explicit returns. Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        304,
+        368
+      ],
+      "symbol": "Enricher.refine"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.640/3 conf=0.580"
+  },
+  {
+    "display_id": 47,
+    "target": {
+      "id": "src/jevscan/core/enrichment.py:13860:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/enrichment.py",
+      "language": "python",
+      "qualified_name": "Enricher.refine",
+      "start_byte": 13860,
+      "end_byte": 16901,
+      "start_line": 304,
+      "end_line": 368,
+      "kind": "method",
+      "display_name": "Enricher.refine"
+    },
+    "rule_id": "JEV03",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): The method stays at the orchestration level; low-level retrieval, ranking, source augmentation, budgeting, and inference are delegated. Trace updates are state-machine observability, not a substantial lower-level implementation concern. Evidence: `Enricher.refine` (src/jevscan/core/enrichment.py#L304-L368) composes `_allowed_families`, `_route`, `_select`, `_augment`, and `_predict` without implementing their internals. Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-cli.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/enrichment.py",
+      "line_range": [
+        304,
+        368
+      ],
+      "symbol": "Enricher.refine"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.520"
+  },
+  {
+    "display_id": 48,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:1677:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "_produce",
+      "start_byte": 1677,
+      "end_byte": 2925,
+      "start_line": 48,
+      "end_line": 81,
+      "kind": "function",
+      "display_name": "_produce"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Partial): `_produce` combines discovery batching, diagnostic accounting, cancellation cleanup, and queue termination, but these are cohesive producer-lifecycle responsibilities rather than clearly interleaved domain responsibilities. Evidence: `_produce` (src/jevscan/core/scanner.py#L56-L81) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        48,
+        81
+      ],
+      "symbol": "_produce"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.520"
+  },
+  {
+    "display_id": 49,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:1677:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "_produce",
+      "start_byte": 1677,
+      "end_byte": 2925,
+      "start_line": 48,
+      "end_line": 81,
+      "kind": "function",
+      "display_name": "_produce"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Cancellation cleanup and per-item diagnostic/job handling add a local complication, but batch fetch, enqueue, and sentinel delivery remain easy to trace; the higher JEV02 interpretation is overstated. Evidence: `_produce` (src/jevscan/core/scanner.py#L58-L81) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        48,
+        81
+      ],
+      "symbol": "_produce"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.570/3 conf=0.550"
+  },
+  {
+    "display_id": 50,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:2928:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "_parse_worker",
+      "start_byte": 2928,
+      "end_byte": 5571,
+      "start_line": 84,
+      "end_line": 139,
+      "kind": "function",
+      "display_name": "_parse_worker"
+    },
+    "rule_id": "JEV01",
+    "label": "Agree",
+    "explanation": "Original review (Agree): `_parse_worker` interleaves parse-failure accounting, diagnostic and file events, plan-only request/token accounting, offline unit emission, and live queue dispatch. Evidence: `_parse_worker` (src/jevscan/core/scanner.py#L94-L139) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        84,
+        139
+      ],
+      "symbol": "_parse_worker"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.750"
+  },
+  {
+    "display_id": 51,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:2928:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "_parse_worker",
+      "start_byte": 2928,
+      "end_byte": 5571,
+      "start_line": 84,
+      "end_line": 139,
+      "kind": "function",
+      "display_name": "_parse_worker"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Failure, plan-only, offline, and live branches are numerous, but each route is explicit and the parse-to-dispatch transition is reconstructible; this supports a local concern, not a stronger obscured-transition claim. Evidence: `_parse_worker` (src/jevscan/core/scanner.py#L94-L139) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        84,
+        139
+      ],
+      "symbol": "_parse_worker"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.520/3 conf=0.510"
+  },
+  {
+    "display_id": 52,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:2928:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "_parse_worker",
+      "start_byte": 2928,
+      "end_byte": 5571,
+      "start_line": 84,
+      "end_line": 139,
+      "kind": "function",
+      "display_name": "_parse_worker"
+    },
+    "rule_id": "JEV03",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The plan-only branch embeds per-request token and state-byte estimation inside parse routing, which is a real abstraction mix, but it is localized and does not obscure the primary parse-to-mode dispatch. Evidence: `_parse_worker` (src/jevscan/core/scanner.py#L105-L139) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        84,
+        139
+      ],
+      "symbol": "_parse_worker"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.580"
+  },
+  {
+    "display_id": 53,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:5574:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "_evaluate_worker",
+      "start_byte": 5574,
+      "end_byte": 7034,
+      "start_line": 142,
+      "end_line": 171,
+      "kind": "function",
+      "display_name": "_evaluate_worker"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Agree): The full-file-limit diagnostic guard precedes target selection, skip accounting, and evaluation; it is a genuine local control complication while the transition remains direct. Evidence: `_evaluate_worker` (src/jevscan/core/scanner.py#L152-L171) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        142,
+        171
+      ],
+      "symbol": "_evaluate_worker"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.050/3 conf=0.600"
+  },
+  {
+    "display_id": 54,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:7037:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "pipeline",
+      "start_byte": 7037,
+      "end_byte": 8617,
+      "start_line": 174,
+      "end_line": 213,
+      "kind": "function",
+      "display_name": "pipeline"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): `pipeline` coordinates queues, source indexing, calibration, nested task groups, and evaluator sentinels, but stage completion and sentinel order are explicit; orchestration complexity is overstated as obscured control flow. Evidence: `pipeline` (src/jevscan/core/scanner.py#L185-L213) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        174,
+        213
+      ],
+      "symbol": "pipeline"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.750/3 conf=0.720"
+  },
+  {
+    "display_id": 55,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:7853:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "pipeline.parse_stage",
+      "start_byte": 7853,
+      "end_byte": 8311,
+      "start_line": 197,
+      "end_line": 205,
+      "kind": "function",
+      "display_name": "pipeline.parse_stage"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Agree): `parse_stage` must join producer/parser tasks before delivering evaluator sentinels. That is one real asynchronous lifecycle complication, with a directly traceable transition. Evidence: `parse_stage` (src/jevscan/core/scanner.py#L197-L205) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        197,
+        205
+      ],
+      "symbol": "pipeline.parse_stage"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.590/3 conf=0.490"
+  },
+  {
+    "display_id": 56,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:9103:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "run_scan",
+      "start_byte": 9103,
+      "end_byte": 13745,
+      "start_line": 228,
+      "end_line": 324,
+      "kind": "function",
+      "display_name": "run_scan"
+    },
+    "rule_id": "JEV01",
+    "label": "Agree",
+    "explanation": "Original review (Agree): `run_scan` owns client/cache/process-pool setup, mode selection, progress reporting, error conversion, shutdown, and summary finalization; these responsibilities are materially interleaved. Evidence: `run_scan` (src/jevscan/core/scanner.py#L239-L324) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        228,
+        324
+      ],
+      "symbol": "run_scan"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.780"
+  },
+  {
+    "display_id": 57,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:9103:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "run_scan",
+      "start_byte": 9103,
+      "end_byte": 13745,
+      "start_line": 228,
+      "end_line": 324,
+      "kind": "function",
+      "display_name": "run_scan"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): The scan path has distinct offline/plan/live and client/cache branches, a progress task, exception handling, and unconditional resource/summary cleanup; multiple important transitions are nested in the lifecycle. Evidence: `run_scan` (src/jevscan/core/scanner.py#L243-L324) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        228,
+        324
+      ],
+      "symbol": "run_scan"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.970/3 conf=0.800"
+  },
+  {
+    "display_id": 58,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:9103:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "run_scan",
+      "start_byte": 9103,
+      "end_byte": 13745,
+      "start_line": 228,
+      "end_line": 324,
+      "kind": "function",
+      "display_name": "run_scan"
+    },
+    "rule_id": "JEV03",
+    "label": "Agree",
+    "explanation": "Original review (Agree): High-level scan orchestration is mixed with low-level client construction, process-pool management, progress metrics, exception translation, and final accounting. Evidence: `run_scan` (src/jevscan/core/scanner.py#L245-L324) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        228,
+        324
+      ],
+      "symbol": "run_scan"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.740"
+  },
+  {
+    "display_id": 59,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:10781:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "run_scan.parse",
+      "start_byte": 10781,
+      "end_byte": 11025,
+      "start_line": 269,
+      "end_line": 272,
+      "kind": "function",
+      "display_name": "run_scan.parse"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): The nested `parse` function is a straight executor delegation with no meaningful alternate transition or obscured path. Evidence: `parse` (src/jevscan/core/scanner.py#L269-L272) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        269,
+        272
+      ],
+      "symbol": "run_scan.parse"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.030/3 conf=0.490"
+  },
+  {
+    "display_id": 60,
+    "target": {
+      "id": "src/jevscan/core/scanner.py:11199:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/scanner.py",
+      "language": "python",
+      "qualified_name": "run_scan.progress",
+      "start_byte": 11199,
+      "end_byte": 11921,
+      "start_line": 278,
+      "end_line": 290,
+      "kind": "function",
+      "display_name": "run_scan.progress"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `progress` repeatedly sleeps and emits a metrics event; its single loop path does not create unclear control flow. Evidence: `progress` (src/jevscan/core/scanner.py#L278-L290) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/scanner.py",
+      "line_range": [
+        278,
+        290
+      ],
+      "symbol": "run_scan.progress"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.420/3 conf=0.300"
+  },
+  {
+    "display_id": 61,
+    "target": {
+      "id": "src/jevscan/core/execution.py:1292:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor._without_cached_judgments",
+      "start_byte": 1292,
+      "end_byte": 2275,
+      "start_line": 39,
+      "end_line": 60,
+      "kind": "method",
+      "display_name": "FileExecutor._without_cached_judgments"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Agree): Cache lookup branches per check between accepting a cached answer and retaining a missing check, then either returns no request or rebuilds a partial request; this is a real local complication. Evidence: `_without_cached_judgments` (src/jevscan/core/execution.py#L39-L60) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        39,
+        60
+      ],
+      "symbol": "FileExecutor._without_cached_judgments"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.250/3 conf=0.560"
+  },
+  {
+    "display_id": 62,
+    "target": {
+      "id": "src/jevscan/core/execution.py:3380:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor._send",
+      "start_byte": 3380,
+      "end_byte": 4921,
+      "start_line": 85,
+      "end_line": 122,
+      "kind": "method",
+      "display_name": "FileExecutor._send"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Agree): `_send` combines request deduplication, inference, context-limit handling, provider-rejection handling, judgment storage, and result acceptance. Evidence: `_send` (src/jevscan/core/execution.py#L85-L122) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        85,
+        122
+      ],
+      "symbol": "FileExecutor._send"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.630"
+  },
+  {
+    "display_id": 63,
+    "target": {
+      "id": "src/jevscan/core/execution.py:3380:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor._send",
+      "start_byte": 3380,
+      "end_byte": 4921,
+      "start_line": 85,
+      "end_line": 122,
+      "kind": "method",
+      "display_name": "FileExecutor._send"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Agree): The digest short-circuit, two exception paths, and accepted-response path form a genuine local control complication, even though each outcome is explicit. Evidence: `_send` (src/jevscan/core/execution.py#L87-L122) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        85,
+        122
+      ],
+      "symbol": "FileExecutor._send"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.160/3 conf=0.500"
+  },
+  {
+    "display_id": 64,
+    "target": {
+      "id": "src/jevscan/core/execution.py:6543:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor._recover",
+      "start_byte": 6543,
+      "end_byte": 8504,
+      "start_line": 155,
+      "end_line": 189,
+      "kind": "method",
+      "display_name": "FileExecutor._recover"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Agree): `_recover` interleaves recovery tracing, final omission, compaction, bare-target fallback, evidence grouping, and request packing. Evidence: `_recover` (src/jevscan/core/execution.py#L155-L189) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        155,
+        189
+      ],
+      "symbol": "FileExecutor._recover"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.670"
+  },
+  {
+    "display_id": 65,
+    "target": {
+      "id": "src/jevscan/core/execution.py:6543:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor._recover",
+      "start_byte": 6543,
+      "end_byte": 8504,
+      "start_line": 155,
+      "end_line": 189,
+      "kind": "method",
+      "display_name": "FileExecutor._recover"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): For each check, recovery may omit a final attempt, compact evidence, or construct a bare target attempt, followed by grouping and packing; those multiple transitions materially complicate the recovery path. Evidence: `_recover` (src/jevscan/core/execution.py#L159-L189) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        155,
+        189
+      ],
+      "symbol": "FileExecutor._recover"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.890/3 conf=0.790"
+  },
+  {
+    "display_id": 66,
+    "target": {
+      "id": "src/jevscan/core/execution.py:6543:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor._recover",
+      "start_byte": 6543,
+      "end_byte": 8504,
+      "start_line": 155,
+      "end_line": 189,
+      "kind": "method",
+      "display_name": "FileExecutor._recover"
+    },
+    "rule_id": "JEV03",
+    "label": "Agree",
+    "explanation": "Original review (Agree): High-level recovery policy is mixed with low-level request-size estimation, context-envelope construction, evidence-key grouping, and fit-based packing. Evidence: `_recover` (src/jevscan/core/execution.py#L168-L189) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        155,
+        189
+      ],
+      "symbol": "FileExecutor._recover"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.720"
+  },
+  {
+    "display_id": 67,
+    "target": {
+      "id": "src/jevscan/core/execution.py:8510:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor._preflight",
+      "start_byte": 8510,
+      "end_byte": 9514,
+      "start_line": 191,
+      "end_line": 211,
+      "kind": "method",
+      "display_name": "FileExecutor._preflight"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): `_preflight` has real branches for known rejection, violations, splitting, and recovery, but they are sequential guards with explicit outcomes; the transition-obscuration claim is too strong. Evidence: `_preflight` (src/jevscan/core/execution.py#L191-L211) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        191,
+        211
+      ],
+      "symbol": "FileExecutor._preflight"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.580/3 conf=0.560"
+  },
+  {
+    "display_id": 68,
+    "target": {
+      "id": "src/jevscan/core/execution.py:9520:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor._process",
+      "start_byte": 9520,
+      "end_byte": 10289,
+      "start_line": 213,
+      "end_line": 230,
+      "kind": "method",
+      "display_name": "FileExecutor._process"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): `_process` chains cache filtering, preflight, send, and recovery gates, but every branch exits explicitly; this is related state complexity rather than an obscured transition. Evidence: `_process` (src/jevscan/core/execution.py#L213-L230) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        213,
+        230
+      ],
+      "symbol": "FileExecutor._process"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.780/3 conf=0.690"
+  },
+  {
+    "display_id": 69,
+    "target": {
+      "id": "src/jevscan/core/execution.py:10295:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor._worker",
+      "start_byte": 10295,
+      "end_byte": 10542,
+      "start_line": 232,
+      "end_line": 238,
+      "kind": "method",
+      "display_name": "FileExecutor._worker"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `_worker` has a direct queue-get/process/task-done path; the `finally` only preserves queue bookkeeping and does not make the execution transition unclear. Evidence: `_worker` (src/jevscan/core/execution.py#L232-L238) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        232,
+        238
+      ],
+      "symbol": "FileExecutor._worker"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.050/3 conf=0.500"
+  },
+  {
+    "display_id": 70,
+    "target": {
+      "id": "src/jevscan/core/execution.py:10548:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor.run",
+      "start_byte": 10548,
+      "end_byte": 11976,
+      "start_line": 240,
+      "end_line": 270,
+      "kind": "method",
+      "display_name": "FileExecutor.run"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): `run` races queue completion against worker completion, distinguishes drained work from worker failure, propagates the relevant exception, and then cancels and gathers all tasks. Evidence: `run` (src/jevscan/core/execution.py#L240-L270) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        240,
+        270
+      ],
+      "symbol": "FileExecutor.run"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=2.050/3 conf=0.710"
+  },
+  {
+    "display_id": 71,
+    "target": {
+      "id": "src/jevscan/core/execution.py:10548:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor.run",
+      "start_byte": 10548,
+      "end_byte": 11976,
+      "start_line": 240,
+      "end_line": 270,
+      "kind": "method",
+      "display_name": "FileExecutor.run"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `FileExecutor.run` owns one cohesive worker-lifecycle operation: seed attempts, run workers, await completion, and clean up. The setup and cleanup are not independent responsibilities interleaved in a useful JEV01 sense. Evidence: `run` (src/jevscan/core/execution.py#L240-L270) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        240,
+        270
+      ],
+      "symbol": "FileExecutor.run"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.500"
+  },
+  {
+    "display_id": 72,
+    "target": {
+      "id": "src/jevscan/core/execution.py:10548:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/execution.py",
+      "language": "python",
+      "qualified_name": "FileExecutor.run",
+      "start_byte": 10548,
+      "end_byte": 11976,
+      "start_line": 240,
+      "end_line": 270,
+      "kind": "method",
+      "display_name": "FileExecutor.run"
+    },
+    "rule_id": "JEV03",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Queue and task cancellation bookkeeping is low-level, but it is the executor’s natural lifecycle implementation rather than a separate abstraction mixed into its primary operation. Evidence: `run` (src/jevscan/core/execution.py#L241-L270) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/execution.py",
+      "line_range": [
+        240,
+        270
+      ],
+      "symbol": "FileExecutor.run"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.550"
+  },
+  {
+    "display_id": 73,
+    "target": {
+      "id": "src/jevscan/core/config.py:12654:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/config.py",
+      "language": "python",
+      "qualified_name": "load_config",
+      "start_byte": 12654,
+      "end_byte": 13798,
+      "start_line": 331,
+      "end_line": 350,
+      "kind": "function",
+      "display_name": "load_config"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Agree): `load_config` has a real source-selection chain—cwd config, target config, packaged defaults, project-root fallback, and validation-error translation—but its paths remain locally traceable. Evidence: `load_config` (src/jevscan/core/config.py#L331-L350) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/config.py",
+      "line_range": [
+        331,
+        350
+      ],
+      "symbol": "load_config"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.380/3 conf=0.360"
+  },
+  {
+    "display_id": 74,
+    "target": {
+      "id": "src/jevscan/core/discovery.py:786:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/discovery.py",
+      "language": "python",
+      "qualified_name": "_ignored",
+      "start_byte": 786,
+      "end_byte": 1212,
+      "start_line": 31,
+      "end_line": 40,
+      "kind": "function",
+      "display_name": "_ignored"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Agree): `_ignored` carries state across ignore scopes, skips paths outside each scope, and preserves the prior decision when a matcher returns `None`; that is a genuine local branch complication. Evidence: `_ignored` (src/jevscan/core/discovery.py#L31-L40) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/discovery.py",
+      "line_range": [
+        31,
+        40
+      ],
+      "symbol": "_ignored"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.000/3 conf=0.600"
+  },
+  {
+    "display_id": 75,
+    "target": {
+      "id": "src/jevscan/core/discovery.py:2460:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/discovery.py",
+      "language": "python",
+      "qualified_name": "discover",
+      "start_byte": 2460,
+      "end_byte": 3533,
+      "start_line": 75,
+      "end_line": 92,
+      "kind": "function",
+      "display_name": "discover"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Agree): `discover` handles target normalization, symlink and missing-target diagnostics, ignore-scope initialization, and traversal delegation through several direct guard paths. Evidence: `discover` (src/jevscan/core/discovery.py#L75-L92) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/discovery.py",
+      "line_range": [
+        75,
+        92
+      ],
+      "symbol": "discover"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.300/3 conf=0.270"
+  },
+  {
+    "display_id": 76,
+    "target": {
+      "id": "src/jevscan/core/discovery.py:3536:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/discovery.py",
+      "language": "python",
+      "qualified_name": "_walk_target",
+      "start_byte": 3536,
+      "end_byte": 6200,
+      "start_line": 95,
+      "end_line": 152,
+      "kind": "function",
+      "display_name": "_walk_target"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Agree): `_walk_target` combines explicit-file filtering, directory traversal, ignore matching, symlink policy, iterator management, and diagnostic generation inside one operation. Evidence: `_walk_target` (src/jevscan/core/discovery.py#L103-L152) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/discovery.py",
+      "line_range": [
+        95,
+        152
+      ],
+      "symbol": "_walk_target"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.660"
+  },
+  {
+    "display_id": 77,
+    "target": {
+      "id": "src/jevscan/core/discovery.py:3536:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/discovery.py",
+      "language": "python",
+      "qualified_name": "_walk_target",
+      "start_byte": 3536,
+      "end_byte": 6200,
+      "start_line": 95,
+      "end_line": 152,
+      "kind": "function",
+      "display_name": "_walk_target"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): The target/file/unsupported split is followed by frame unwinding, iterator errors, symlink filtering, directory entry classification, and cleanup; multiple nested branches affect traversal transitions. Evidence: `_walk_target` (src/jevscan/core/discovery.py#L103-L152) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/discovery.py",
+      "line_range": [
+        95,
+        152
+      ],
+      "symbol": "_walk_target"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.860/3 conf=0.780"
+  },
+  {
+    "display_id": 78,
+    "target": {
+      "id": "src/jevscan/core/discovery.py:3536:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/discovery.py",
+      "language": "python",
+      "qualified_name": "_walk_target",
+      "start_byte": 3536,
+      "end_byte": 6200,
+      "start_line": 95,
+      "end_line": 152,
+      "kind": "function",
+      "display_name": "_walk_target"
+    },
+    "rule_id": "JEV03",
+    "label": "Agree",
+    "explanation": "Original review (Agree): High-level target walking is interleaved with low-level `os.scandir` frame management, per-entry type checks, ignore matching, and descriptor cleanup. Evidence: `_walk_target` (src/jevscan/core/discovery.py#L112-L152) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/discovery.py",
+      "line_range": [
+        95,
+        152
+      ],
+      "symbol": "_walk_target"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.740"
+  },
+  {
+    "display_id": 79,
+    "target": {
+      "id": "src/jevscan/core/client.py:1503:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/client.py",
+      "language": "python",
+      "qualified_name": "_machine_fields",
+      "start_byte": 1503,
+      "end_byte": 2310,
+      "start_line": 55,
+      "end_line": 73,
+      "kind": "function",
+      "display_name": "_machine_fields"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Agree): `_machine_fields` recursively traverses dictionaries and bounded lists while sanitizing selected machine fields; the shape dispatch and filtering create a real local control complication. Evidence: `_machine_fields` (src/jevscan/core/client.py#L55-L73) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/client.py",
+      "line_range": [
+        55,
+        73
+      ],
+      "symbol": "_machine_fields"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.190/3 conf=0.680"
+  },
+  {
+    "display_id": 80,
+    "target": {
+      "id": "src/jevscan/core/client.py:1705:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/client.py",
+      "language": "python",
+      "qualified_name": "_machine_fields.visit",
+      "start_byte": 1705,
+      "end_byte": 2212,
+      "start_line": 59,
+      "end_line": 70,
+      "kind": "function",
+      "display_name": "_machine_fields.visit"
+    },
+    "rule_id": "JEV02",
+    "label": "Disagree",
+    "explanation": "Original review (Agree): The nested `visit` helper has explicit dictionary/list recursion, key filtering, bounded list traversal, and recursive descent; this is a local JEV02 complication, though transitions remain traceable. Evidence: `visit` (src/jevscan/core/client.py#L59-L70) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/client.py",
+      "line_range": [
+        59,
+        70
+      ],
+      "symbol": "_machine_fields.visit"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.440/3 conf=0.420"
+  },
+  {
+    "display_id": 81,
+    "target": {
+      "id": "src/jevscan/core/client.py:4256:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/client.py",
+      "language": "python",
+      "qualified_name": "_retry_after",
+      "start_byte": 4256,
+      "end_byte": 5010,
+      "start_line": 129,
+      "end_line": 147,
+      "kind": "function",
+      "display_name": "_retry_after"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Agree): `_retry_after` handles header precedence, numeric parsing, HTTP-date parsing, malformed values, overflow, and finite-value clamping; the nested parsing fallback is a genuine local complication. Evidence: `_retry_after` (src/jevscan/core/client.py#L129-L147) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/client.py",
+      "line_range": [
+        129,
+        147
+      ],
+      "symbol": "_retry_after"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.380/3 conf=0.370"
+  },
+  {
+    "display_id": 82,
+    "target": {
+      "id": "src/jevscan/core/client.py:8375:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/client.py",
+      "language": "python",
+      "qualified_name": "JevClient.evaluate",
+      "start_byte": 8375,
+      "end_byte": 11354,
+      "start_line": 221,
+      "end_line": 280,
+      "kind": "method",
+      "display_name": "JevClient.evaluate"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Agree): `evaluate` combines concurrency limiting, pacing, budget reservation, HTTP transport, response validation, rejection classification, and retry policy. Evidence: `evaluate` (src/jevscan/core/client.py#L221-L280) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/client.py",
+      "line_range": [
+        221,
+        280
+      ],
+      "symbol": "JevClient.evaluate"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.710"
+  },
+  {
+    "display_id": 83,
+    "target": {
+      "id": "src/jevscan/core/client.py:8375:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/client.py",
+      "language": "python",
+      "qualified_name": "JevClient.evaluate",
+      "start_byte": 8375,
+      "end_byte": 11354,
+      "start_line": 221,
+      "end_line": 280,
+      "kind": "method",
+      "display_name": "JevClient.evaluate"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): The retry path distinguishes transport failures, success, context rejection, request rejection, systemic rejection, retryable statuses, server delays, and backoff; multiple important transitions are present. Evidence: `evaluate` (src/jevscan/core/client.py#L228-L280) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/client.py",
+      "line_range": [
+        221,
+        280
+      ],
+      "symbol": "JevClient.evaluate"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.900/3 conf=0.770"
+  },
+  {
+    "display_id": 84,
+    "target": {
+      "id": "src/jevscan/core/client.py:8375:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/client.py",
+      "language": "python",
+      "qualified_name": "JevClient.evaluate",
+      "start_byte": 8375,
+      "end_byte": 11354,
+      "start_line": 221,
+      "end_line": 280,
+      "kind": "method",
+      "display_name": "JevClient.evaluate"
+    },
+    "rule_id": "JEV03",
+    "label": "Agree",
+    "explanation": "Original review (Agree): High-level evaluation policy is mixed with low-level semaphore/limiter operations, budget accounting, HTTP response inspection, and retry-delay mechanics. Evidence: `evaluate` (src/jevscan/core/client.py#L228-L280) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-runtime.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/client.py",
+      "line_range": [
+        221,
+        280
+      ],
+      "symbol": "JevClient.evaluate"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.660"
+  },
+  {
+    "display_id": 85,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:4089:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "TargetResults.diagnostics",
+      "start_byte": 4089,
+      "end_byte": 5431,
+      "start_line": 94,
+      "end_line": 122,
+      "kind": "method",
+      "display_name": "TargetResults.diagnostics"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Both reduced-context and skipped-check cases are one diagnostic policy with explicit branches, not mixed responsibilities. Evidence: `TargetResults.diagnostics` (src/jevscan/core/evaluation.py#L94-L122) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        94,
+        122
+      ],
+      "symbol": "TargetResults.diagnostics"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.500"
+  },
+  {
+    "display_id": 86,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:4089:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "TargetResults.diagnostics",
+      "start_byte": 4089,
+      "end_byte": 5431,
+      "start_line": 94,
+      "end_line": 122,
+      "kind": "method",
+      "display_name": "TargetResults.diagnostics"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The reduced/skipped diagnostic paths are direct; the nested file-limit condition is a local complication, not unclear flow. Evidence: `TargetResults.diagnostics` (src/jevscan/core/evaluation.py#L94-L122) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        94,
+        122
+      ],
+      "symbol": "TargetResults.diagnostics"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.080/3 conf=0.580"
+  },
+  {
+    "display_id": 87,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:5437:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "TargetResults.emit",
+      "start_byte": 5437,
+      "end_byte": 6729,
+      "start_line": 124,
+      "end_line": 146,
+      "kind": "method",
+      "display_name": "TargetResults.emit"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Summary counting, diagnostic emission, and target-event emission form one reporting lifecycle; JEV01 overstates the separation. Evidence: `TargetResults.emit` (src/jevscan/core/evaluation.py#L124-L146) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        124,
+        146
+      ],
+      "symbol": "TargetResults.emit"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.600"
+  },
+  {
+    "display_id": 88,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:5437:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "TargetResults.emit",
+      "start_byte": 5437,
+      "end_byte": 6729,
+      "start_line": 124,
+      "end_line": 146,
+      "kind": "method",
+      "display_name": "TargetResults.emit"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Status/finding loops and unit/file summary branching are explicit; no important transition is hidden. Evidence: `TargetResults.emit` (src/jevscan/core/evaluation.py#L124-L146) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        124,
+        146
+      ],
+      "symbol": "TargetResults.emit"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.090/3 conf=0.610"
+  },
+  {
+    "display_id": 89,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:6842:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "FileResults.__init__",
+      "start_byte": 6842,
+      "end_byte": 7691,
+      "start_line": 152,
+      "end_line": 166,
+      "kind": "method",
+      "display_name": "FileResults.__init__"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): The constructor establishes target records, then applies omissions and applicability skips—one coherent initialization responsibility. Evidence: `FileResults.__init__` (src/jevscan/core/evaluation.py#L149-L166) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        152,
+        166
+      ],
+      "symbol": "FileResults.__init__"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.510"
+  },
+  {
+    "display_id": 90,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:6842:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "FileResults.__init__",
+      "start_byte": 6842,
+      "end_byte": 7691,
+      "start_line": 152,
+      "end_line": 166,
+      "kind": "method",
+      "display_name": "FileResults.__init__"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Target selection, omission application, and applicability recording use straightforward loops and guards; only local branching exists. Evidence: `FileResults.__init__` (src/jevscan/core/evaluation.py#L149-L166) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        152,
+        166
+      ],
+      "symbol": "FileResults.__init__"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.070/3 conf=0.530"
+  },
+  {
+    "display_id": 91,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:8161:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "FileResults.reject",
+      "start_byte": 8161,
+      "end_byte": 9092,
+      "start_line": 182,
+      "end_line": 200,
+      "kind": "method",
+      "display_name": "FileResults.reject"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Metadata aggregation, recovery tracing, and omission all implement one provider-rejection transition. Evidence: `FileResults.reject` (src/jevscan/core/evaluation.py#L182-L200) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        182,
+        200
+      ],
+      "symbol": "FileResults.reject"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.530"
+  },
+  {
+    "display_id": 92,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:9098:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "FileResults.accept_answer",
+      "start_byte": 9098,
+      "end_byte": 10451,
+      "start_line": 202,
+      "end_line": 241,
+      "kind": "method",
+      "display_name": "FileResults.accept_answer"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Answer acceptance proceeds explicitly through evidence description, cache metrics, and `Judgment` construction; no obscured transition. Evidence: `FileResults.accept_answer` (src/jevscan/core/evaluation.py#L202-L241) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        202,
+        241
+      ],
+      "symbol": "FileResults.accept_answer"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.050/3 conf=0.620"
+  },
+  {
+    "display_id": 93,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:9098:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "FileResults.accept_answer",
+      "start_byte": 9098,
+      "end_byte": 10451,
+      "start_line": 202,
+      "end_line": 241,
+      "kind": "method",
+      "display_name": "FileResults.accept_answer"
+    },
+    "rule_id": "JEV03",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Evidence metadata and inference metrics are part of converting one accepted answer into its owned `Judgment`; no abstraction mismatch is shown. Evidence: `FileResults.accept_answer` (src/jevscan/core/evaluation.py#L202-L241) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        202,
+        241
+      ],
+      "symbol": "FileResults.accept_answer"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.500"
+  },
+  {
+    "display_id": 94,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:11603:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "FileResults.enrich",
+      "start_byte": 11603,
+      "end_byte": 13316,
+      "start_line": 272,
+      "end_line": 305,
+      "kind": "method",
+      "display_name": "FileResults.enrich"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The review loop has one explicit optional-reassessment branch followed by final assessment; related work is easy to trace. Evidence: `FileResults.enrich` (src/jevscan/core/evaluation.py#L262-L305) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        272,
+        305
+      ],
+      "symbol": "FileResults.enrich"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.310/3 conf=0.520"
+  },
+  {
+    "display_id": 95,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:14662:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "FileResults._emit_coverage",
+      "start_byte": 14662,
+      "end_byte": 15535,
+      "start_line": 334,
+      "end_line": 351,
+      "kind": "method",
+      "display_name": "FileResults._emit_coverage"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Coverage calculation has a clear early return and one emission path; the score-1 warning is overstated. Evidence: `_emit_coverage` (src/jevscan/core/evaluation.py#L334-L351) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        334,
+        351
+      ],
+      "symbol": "FileResults._emit_coverage"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.000/3 conf=0.540"
+  },
+  {
+    "display_id": 96,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:15541:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "FileResults.finish",
+      "start_byte": 15541,
+      "end_byte": 16038,
+      "start_line": 353,
+      "end_line": 362,
+      "kind": "method",
+      "display_name": "FileResults.finish"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Missing finalization, failure emission, coverage emission, and record emission are an explicit finish sequence. Evidence: `FileResults.finish` (src/jevscan/core/evaluation.py#L353-L362) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        353,
+        362
+      ],
+      "symbol": "FileResults.finish"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.050/3 conf=0.630"
+  },
+  {
+    "display_id": 97,
+    "target": {
+      "id": "src/jevscan/core/evaluation.py:16041:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/evaluation.py",
+      "language": "python",
+      "qualified_name": "evaluate_file",
+      "start_byte": 16041,
+      "end_byte": 16673,
+      "start_line": 365,
+      "end_line": 382,
+      "kind": "function",
+      "display_name": "evaluate_file"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The `try/finally` lifecycle and optional enrichment path are explicit; `finished` makes abort handling traceable. Evidence: `evaluate_file` (src/jevscan/core/evaluation.py#L365-L382) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/evaluation.py",
+      "line_range": [
+        365,
+        382
+      ],
+      "symbol": "evaluate_file"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.160/3 conf=0.540"
+  },
+  {
+    "display_id": 98,
+    "target": {
+      "id": "src/jevscan/core/cache.py:file",
+      "scope": "file",
+      "path": "src/jevscan/core/cache.py",
+      "language": "python",
+      "qualified_name": "src/jevscan/core/cache.py",
+      "start_byte": 0,
+      "end_byte": 6009,
+      "start_line": 1,
+      "end_line": 146,
+      "kind": null,
+      "display_name": ""
+    },
+    "rule_id": "JEV09",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Similar CRUD wrappers serve intentionally distinct `answers` and `judgments` tables with different key contracts; this is structural similarity, not duplicated owned behavior. Evidence: `AnswerCache` and key contracts (src/jevscan/core/cache.py#L19-L146) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/cache.py",
+      "line_range": [
+        1,
+        146
+      ],
+      "symbol": "src/jevscan/core/cache.py"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.540"
+  },
+  {
+    "display_id": 99,
+    "target": {
+      "id": "src/jevscan/core/cache.py:1482:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/cache.py",
+      "language": "python",
+      "qualified_name": "AnswerCache._open",
+      "start_byte": 1482,
+      "end_byte": 2609,
+      "start_line": 42,
+      "end_line": 60,
+      "kind": "method",
+      "display_name": "AnswerCache._open"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Filesystem setup, SQLite schema setup, migration, and TTL cleanup are related cache initialization bookkeeping, not independently interleaved domain responsibilities. Evidence: `AnswerCache._open` (src/jevscan/core/cache.py#L42-L60) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/cache.py",
+      "line_range": [
+        42,
+        60
+      ],
+      "symbol": "AnswerCache._open"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.580"
+  },
+  {
+    "display_id": 100,
+    "target": {
+      "id": "src/jevscan/core/cache.py:1482:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/cache.py",
+      "language": "python",
+      "qualified_name": "AnswerCache._open",
+      "start_byte": 1482,
+      "end_byte": 2609,
+      "start_line": 42,
+      "end_line": 60,
+      "kind": "method",
+      "display_name": "AnswerCache._open"
+    },
+    "rule_id": "JEV03",
+    "label": "Partial",
+    "explanation": "Original review (Partial): SQL schema and retention details are inline with opening the cache, but the startup path remains a direct low-level cache operation. Evidence: `AnswerCache._open` (src/jevscan/core/cache.py#L42-L60) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/cache.py",
+      "line_range": [
+        42,
+        60
+      ],
+      "symbol": "AnswerCache._open"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.500"
+  },
+  {
+    "display_id": 101,
+    "target": {
+      "id": "src/jevscan/core/cache.py:5590:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/cache.py",
+      "language": "python",
+      "qualified_name": "AnswerCache.__aenter__",
+      "start_byte": 5590,
+      "end_byte": 5835,
+      "start_line": 133,
+      "end_line": 140,
+      "kind": "method",
+      "display_name": "AnswerCache.__aenter__"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Open, cleanup-on-exception, executor shutdown, and return are explicit context-manager transitions; level 1 does not establish unclear flow. Evidence: `AnswerCache.__aenter__` (src/jevscan/core/cache.py#L133-L140) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/cache.py",
+      "line_range": [
+        133,
+        140
+      ],
+      "symbol": "AnswerCache.__aenter__"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.020/3 conf=0.690"
+  },
+  {
+    "display_id": 102,
+    "target": {
+      "id": "src/jevscan/core/rules.py:5826:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/rules.py",
+      "language": "python",
+      "qualified_name": "Rule.compatible_report",
+      "start_byte": 5826,
+      "end_byte": 6453,
+      "start_line": 155,
+      "end_line": 168,
+      "kind": "method",
+      "display_name": "Rule.compatible_report"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Rule-type dispatch and shared validation are explicit; the separate score/choice/Noul paths do not obscure the contract. Evidence: `Rule.compatible_report` (src/jevscan/core/rules.py#L155-L168) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/rules.py",
+      "line_range": [
+        155,
+        168
+      ],
+      "symbol": "Rule.compatible_report"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.210/3 conf=0.520"
+  },
+  {
+    "display_id": 103,
+    "target": {
+      "id": "src/jevscan/core/rules.py:6866:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/rules.py",
+      "language": "python",
+      "qualified_name": "Rule._validate_score",
+      "start_byte": 6866,
+      "end_byte": 7922,
+      "start_line": 178,
+      "end_line": 196,
+      "kind": "method",
+      "display_name": "Rule._validate_score"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The invalid-report guard and per-level threshold validation are direct; the loop does not hide a transition. Evidence: `Rule._validate_score` (src/jevscan/core/rules.py#L178-L196) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/rules.py",
+      "line_range": [
+        178,
+        196
+      ],
+      "symbol": "Rule._validate_score"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.140/3 conf=0.480"
+  },
+  {
+    "display_id": 104,
+    "target": {
+      "id": "src/jevscan/core/parser.py:2622:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_binding",
+      "start_byte": 2622,
+      "end_byte": 3759,
+      "start_line": 91,
+      "end_line": 118,
+      "kind": "function",
+      "display_name": "_binding"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The bounded ancestor walk and binding-kind branches are explicit guard clauses; no tangled path exists. Evidence: `_binding` (src/jevscan/core/parser.py#L91-L118) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        91,
+        118
+      ],
+      "symbol": "_binding"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.560/3 conf=0.540"
+  },
+  {
+    "display_id": 105,
+    "target": {
+      "id": "src/jevscan/core/parser.py:3762:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_symbol",
+      "start_byte": 3762,
+      "end_byte": 4728,
+      "start_line": 121,
+      "end_line": 140,
+      "kind": "function",
+      "display_name": "_symbol"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Body discovery, kind-specific naming, and binding fallback are a direct decision chain. Evidence: `_symbol` (src/jevscan/core/parser.py#L121-L140) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        121,
+        140
+      ],
+      "symbol": "_symbol"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.200/3 conf=0.540"
+  },
+  {
+    "display_id": 106,
+    "target": {
+      "id": "src/jevscan/core/parser.py:4731:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_extend_perl_namespaces",
+      "start_byte": 4731,
+      "end_byte": 5543,
+      "start_line": 143,
+      "end_line": 157,
+      "kind": "function",
+      "display_name": "_extend_perl_namespaces"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Namespace grouping, sibling sorting, and extent assignment are separate but explicit passes over one lexical concern. Evidence: `_extend_perl_namespaces` (src/jevscan/core/parser.py#L143-L158) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        143,
+        157
+      ],
+      "symbol": "_extend_perl_namespaces"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.100/3 conf=0.640"
+  },
+  {
+    "display_id": 107,
+    "target": {
+      "id": "src/jevscan/core/parser.py:7349:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_callee_name",
+      "start_byte": 7349,
+      "end_byte": 8279,
+      "start_line": 232,
+      "end_line": 255,
+      "kind": "function",
+      "display_name": "_callee_name"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): The callee walk has several fallback selectors and an early failure return, but each path is locally explicit. Evidence: `_callee_name` (src/jevscan/core/parser.py#L232-L255) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        232,
+        255
+      ],
+      "symbol": "_callee_name"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.350/3 conf=0.520"
+  },
+  {
+    "display_id": 108,
+    "target": {
+      "id": "src/jevscan/core/parser.py:10835:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_calls_by_callable",
+      "start_byte": 10835,
+      "end_byte": 11718,
+      "start_line": 324,
+      "end_line": 339,
+      "kind": "function",
+      "display_name": "_calls_by_callable"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): `following` and the nesting stack are advanced, pushed, and popped across multiple loops around each reference; the reference-to-innermost-callable transition is materially harder to reconstruct. Evidence: `_calls_by_callable` (src/jevscan/core/parser.py#L324-L339) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        324,
+        339
+      ],
+      "symbol": "_calls_by_callable"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.820/3 conf=0.750"
+  },
+  {
+    "display_id": 109,
+    "target": {
+      "id": "src/jevscan/core/parser.py:11721:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_has_helper_relationship",
+      "start_byte": 11721,
+      "end_byte": 12218,
+      "start_line": 342,
+      "end_line": 350,
+      "kind": "function",
+      "display_name": "_has_helper_relationship"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Name indexing, caller iteration, and sibling lookup are nested, but the helper relationship predicate has one direct success path. Evidence: `_has_helper_relationship` (src/jevscan/core/parser.py#L342-L350) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        342,
+        350
+      ],
+      "symbol": "_has_helper_relationship"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.000/3 conf=0.560"
+  },
+  {
+    "display_id": 110,
+    "target": {
+      "id": "src/jevscan/core/parser.py:12221:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_finalize_units",
+      "start_byte": 12221,
+      "end_byte": 13157,
+      "start_line": 353,
+      "end_line": 372,
+      "kind": "function",
+      "display_name": "_finalize_units"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Child grouping, call analysis, fact accumulation, and replacement occur sequentially; the local branches do not obscure finalization. Evidence: `_finalize_units` (src/jevscan/core/parser.py#L353-L372) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        353,
+        372
+      ],
+      "symbol": "_finalize_units"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.270/3 conf=0.460"
+  },
+  {
+    "display_id": 111,
+    "target": {
+      "id": "src/jevscan/core/parser.py:13160:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_normalize",
+      "start_byte": 13160,
+      "end_byte": 16531,
+      "start_line": 375,
+      "end_line": 439,
+      "kind": "function",
+      "display_name": "_normalize"
+    },
+    "rule_id": "JEV01",
+    "label": "Agree",
+    "explanation": "Original review (Agree): One loop combines interval-parent tracking, kind normalization, qualified/display naming, signatures, byte/line metadata, syntax facts, and member counts—independently meaningful normalization concerns. Evidence: `_normalize` (src/jevscan/core/parser.py#L375-L439) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        375,
+        439
+      ],
+      "symbol": "_normalize"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.740"
+  },
+  {
+    "display_id": 112,
+    "target": {
+      "id": "src/jevscan/core/parser.py:13160:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_normalize",
+      "start_byte": 13160,
+      "end_byte": 16531,
+      "start_line": 375,
+      "end_line": 439,
+      "kind": "function",
+      "display_name": "_normalize"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): Stack transitions, parent/kind branches, language-specific naming, and unit construction interleave enough state changes to obscure the symbol-to-unit path. Evidence: `_normalize` (src/jevscan/core/parser.py#L375-L439) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        375,
+        439
+      ],
+      "symbol": "_normalize"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.840/3 conf=0.750"
+  },
+  {
+    "display_id": 113,
+    "target": {
+      "id": "src/jevscan/core/parser.py:13160:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "_normalize",
+      "start_byte": 13160,
+      "end_byte": 16531,
+      "start_line": 375,
+      "end_line": 439,
+      "kind": "function",
+      "display_name": "_normalize"
+    },
+    "rule_id": "JEV03",
+    "label": "Agree",
+    "explanation": "Original review (Agree): AST hierarchy normalization is interleaved with low-level byte/line calculations, signatures, display labels, and syntax-fact extraction without a boundary. Evidence: `_normalize` (src/jevscan/core/parser.py#L375-L439) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        375,
+        439
+      ],
+      "symbol": "_normalize"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.800"
+  },
+  {
+    "display_id": 114,
+    "target": {
+      "id": "src/jevscan/core/parser.py:16534:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "parse_source",
+      "start_byte": 16534,
+      "end_byte": 18313,
+      "start_line": 442,
+      "end_line": 479,
+      "kind": "function",
+      "display_name": "parse_source"
+    },
+    "rule_id": "JEV03",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): `parse_source` is a linear parser boundary that delegates symbol normalization, reference extraction, and source-block extraction; those steps do not obscure its pipeline. Evidence: `parse_source` (src/jevscan/core/parser.py#L442-L479) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        442,
+        479
+      ],
+      "symbol": "parse_source"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.670"
+  },
+  {
+    "display_id": 115,
+    "target": {
+      "id": "src/jevscan/core/parser.py:16534:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/parser.py",
+      "language": "python",
+      "qualified_name": "parse_source",
+      "start_byte": 16534,
+      "end_byte": 18313,
+      "start_line": 442,
+      "end_line": 479,
+      "kind": "function",
+      "display_name": "parse_source"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): UTF-8 validation, parse diagnostics, unit limits, and `ParsedFile` assembly are one parser-boundary contract, not independently mixed responsibilities. Evidence: `parse_source` (src/jevscan/core/parser.py#L442-L479) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/parser.py",
+      "line_range": [
+        442,
+        479
+      ],
+      "symbol": "parse_source"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.530"
+  },
+  {
+    "display_id": 116,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:783:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "_read_source",
+      "start_byte": 783,
+      "end_byte": 2180,
+      "start_line": 25,
+      "end_line": 49,
+      "kind": "function",
+      "display_name": "_read_source"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Path validation, descriptor descent, regular-file checking, bounded read, and mutation checking form one explicit safe-read protocol; the warning overstates obscurity. Evidence: `_read_source` (src/jevscan/core/retrieval.py#L25-L49) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        25,
+        49
+      ],
+      "symbol": "_read_source"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.720/3 conf=0.650"
+  },
+  {
+    "display_id": 117,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:783:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "_read_source",
+      "start_byte": 783,
+      "end_byte": 2180,
+      "start_line": 25,
+      "end_line": 49,
+      "kind": "function",
+      "display_name": "_read_source"
+    },
+    "rule_id": "JEV03",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): The function is one low-level secure snapshot-read operation; it does not mix high-level orchestration with a separate low-level concern. Evidence: `_read_source` (src/jevscan/core/retrieval.py#L25-L49) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        25,
+        49
+      ],
+      "symbol": "_read_source"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.520"
+  },
+  {
+    "display_id": 118,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:2183:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "_reference_targets",
+      "start_byte": 2183,
+      "end_byte": 2986,
+      "start_line": 52,
+      "end_line": 66,
+      "kind": "function",
+      "display_name": "_reference_targets"
+    },
+    "rule_id": "JEV02",
+    "label": "Agree",
+    "explanation": "Original review (Agree): The future-unit cursor and nesting stack are advanced and unwound before and after each reference, obscuring the important reference-to-owner transition. Evidence: `_reference_targets` (src/jevscan/core/retrieval.py#L52-L66) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        52,
+        66
+      ],
+      "symbol": "_reference_targets"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "score=1.840/3 conf=0.780"
+  },
+  {
+    "display_id": 119,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:7216:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "Catalogue.add",
+      "start_byte": 7216,
+      "end_byte": 8401,
+      "start_line": 186,
+      "end_line": 206,
+      "kind": "method",
+      "display_name": "Catalogue.add"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Partial): `add` maintains source, definition, caller, and test indexes, creating real bookkeeping coupling, but all are one Catalogue-ingestion responsibility. Evidence: `Catalogue.add` (src/jevscan/core/retrieval.py#L186-L206) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        186,
+        206
+      ],
+      "symbol": "Catalogue.add"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.640"
+  },
+  {
+    "display_id": 120,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:7216:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "Catalogue.add",
+      "start_byte": 7216,
+      "end_byte": 8401,
+      "start_line": 186,
+      "end_line": 206,
+      "kind": "method",
+      "display_name": "Catalogue.add"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Unit indexing and reference deduplication/indexing use explicit loops and guards; no important transition is hidden. Evidence: `Catalogue.add` (src/jevscan/core/retrieval.py#L186-L206) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        186,
+        206
+      ],
+      "symbol": "Catalogue.add"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.390/3 conf=0.320"
+  },
+  {
+    "display_id": 121,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:8407:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "Catalogue.related",
+      "start_byte": 8407,
+      "end_byte": 9451,
+      "start_line": 208,
+      "end_line": 228,
+      "kind": "method",
+      "display_name": "Catalogue.related"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Unit/file name selection and route dispatch are explicit; definition lookup has a separate direct path. Evidence: `Catalogue.related` (src/jevscan/core/retrieval.py#L208-L228) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        208,
+        228
+      ],
+      "symbol": "Catalogue.related"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.370/3 conf=0.330"
+  },
+  {
+    "display_id": 122,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:9454:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "_catalogue",
+      "start_byte": 9454,
+      "end_byte": 11149,
+      "start_line": 231,
+      "end_line": 267,
+      "kind": "function",
+      "display_name": "_catalogue"
+    },
+    "rule_id": "JEV03",
+    "label": "Agree",
+    "explanation": "Original review (Agree): `_catalogue` interleaves discovery policy, file/byte budgets, safe I/O, parse-failure accounting, and index insertion; resource/error details cross the orchestration boundary. Evidence: `_catalogue` (src/jevscan/core/retrieval.py#L231-L267) Final displayed-order adjudication: Agree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Agree",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        231,
+        267
+      ],
+      "symbol": "_catalogue"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.720"
+  },
+  {
+    "display_id": 123,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:9454:function",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "_catalogue",
+      "start_byte": 9454,
+      "end_byte": 11149,
+      "start_line": 231,
+      "end_line": 267,
+      "kind": "function",
+      "display_name": "_catalogue"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Discovery skips, budget breaks, read exceptions, parse failures, and iterator cleanup are explicit paths around a direct scan loop. Evidence: `_catalogue` (src/jevscan/core/retrieval.py#L231-L267) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        231,
+        267
+      ],
+      "symbol": "_catalogue"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.550/3 conf=0.520"
+  },
+  {
+    "display_id": 124,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:11626:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "SourceIndex._load",
+      "start_byte": 11626,
+      "end_byte": 12102,
+      "start_line": 284,
+      "end_line": 293,
+      "kind": "method",
+      "display_name": "SourceIndex._load"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Locking, lazy task creation, shielded completion, and cancellation waiting are explicit lifecycle branches; the transition is complicated but traceable. Evidence: `SourceIndex._load` (src/jevscan/core/retrieval.py#L284-L293) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        284,
+        293
+      ],
+      "symbol": "SourceIndex._load"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.580/3 conf=0.550"
+  },
+  {
+    "display_id": 125,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:12108:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "SourceIndex.candidates",
+      "start_byte": 12108,
+      "end_byte": 14210,
+      "start_line": 295,
+      "end_line": 338,
+      "kind": "method",
+      "display_name": "SourceIndex.candidates"
+    },
+    "rule_id": "JEV01",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Route acquisition, snapshot filtering, deduplication, ordering, and capping are one candidate-selection pipeline; JEV01 overstates responsibility separation. Evidence: `SourceIndex.candidates` (src/jevscan/core/retrieval.py#L295-L338) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        295,
+        338
+      ],
+      "symbol": "SourceIndex.candidates"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.520"
+  },
+  {
+    "display_id": 126,
+    "target": {
+      "id": "src/jevscan/core/retrieval.py:12108:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/retrieval.py",
+      "language": "python",
+      "qualified_name": "SourceIndex.candidates",
+      "start_byte": 12108,
+      "end_byte": 14210,
+      "start_line": 295,
+      "end_line": 338,
+      "kind": "method",
+      "display_name": "SourceIndex.candidates"
+    },
+    "rule_id": "JEV02",
+    "label": "Partial",
+    "explanation": "Original review (Partial): Enclosing-context versus catalogue selection, then filtering/deduplication/sorting/capping, is direct pipeline control flow. Evidence: `SourceIndex.candidates` (src/jevscan/core/retrieval.py#L295-L338) Final displayed-order adjudication: Partial.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Partial",
+    "review_target": {
+      "path": "src/jevscan/core/retrieval.py",
+      "line_range": [
+        295,
+        338
+      ],
+      "symbol": "SourceIndex.candidates"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "score=1.400/3 conf=0.450"
+  },
+  {
+    "display_id": 127,
+    "target": {
+      "id": "src/jevscan/core/context.py:3965:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/context.py",
+      "language": "python",
+      "qualified_name": "ContextBuilder.compose",
+      "start_byte": 3965,
+      "end_byte": 4745,
+      "start_line": 107,
+      "end_line": 126,
+      "kind": "method",
+      "display_name": "ContextBuilder.compose"
+    },
+    "rule_id": "JEV01",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): Span merging, evidence construction, and LRU memoization are one evidence-composition abstraction; caching is intrinsic, not a second responsibility. Evidence: `ContextBuilder.compose` (src/jevscan/core/context.py#L107-L126) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/context.py",
+      "line_range": [
+        107,
+        126
+      ],
+      "symbol": "ContextBuilder.compose"
+    },
+    "displayed_status": "confirmed",
+    "displayed_answer": "noul=0.640"
+  },
+  {
+    "display_id": 128,
+    "target": {
+      "id": "src/jevscan/core/context.py:3965:method",
+      "scope": "unit",
+      "path": "src/jevscan/core/context.py",
+      "language": "python",
+      "qualified_name": "ContextBuilder.compose",
+      "start_byte": 3965,
+      "end_byte": 4745,
+      "start_line": 107,
+      "end_line": 126,
+      "kind": "method",
+      "display_name": "ContextBuilder.compose"
+    },
+    "rule_id": "JEV03",
+    "label": "Disagree",
+    "explanation": "Original review (Disagree): The method maps spans to documents, computes coverage, encodes `Evidence`, and maintains its composition cache; it does not mix abstraction levels. Evidence: `ContextBuilder.compose` (src/jevscan/core/context.py#L107-L126) Final displayed-order adjudication: Disagree.",
+    "split": "development",
+    "provenance": "original baseline-parser.txt review; final displayed-order label set supplied by parent",
+    "review_verdict": "Disagree",
+    "review_target": {
+      "path": "src/jevscan/core/context.py",
+      "line_range": [
+        107,
+        126
+      ],
+      "symbol": "ContextBuilder.compose"
+    },
+    "displayed_status": "tentative",
+    "displayed_answer": "noul=0.550"
+  }
+]

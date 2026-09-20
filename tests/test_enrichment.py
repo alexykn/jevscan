@@ -7,8 +7,10 @@ from pathlib import Path
 import httpx
 import pytest
 
+from jevscan.cli.import_calibration import main as import_calibration
 from jevscan.core.assessment import assess
 from jevscan.core.cache import AnswerCache
+from jevscan.core.capture import FinalJudgmentRecorder
 from jevscan.core.client import JevClient
 from jevscan.core.config import Config, EnrichmentConfig, EvaluationConfig, JevConfig, load_config
 from jevscan.core.context import ContextBuilder
@@ -20,6 +22,7 @@ from jevscan.core.planning import Planner
 from jevscan.core.protocol import JevError, NoulAnswer
 from jevscan.core.retrieval import SourceIndex
 from jevscan.core.rules import ChoiceQuestion, Rule, TargetedEnrichmentPolicy
+from jevscan.core.semantic_calibration import load_cases, replay_case
 
 pytestmark = [pytest.mark.parser, pytest.mark.usefixtures("grammar_runtime")]
 
@@ -131,6 +134,7 @@ async def run_review(
     cache=None,
     enrichment=None,
     evaluation=None,
+    capture=None,
     source="def work(value):\n    return value + 1\n",
 ):
     config = Config(
@@ -144,8 +148,60 @@ async def run_review(
     sink, summary = Sink(), Summary("live")
     index = SourceIndex(tmp_path, config.scan, config.enrichment)
     async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(responses)) as client:
-        await evaluate_file(planner, client, cache, sink, summary, index)
+        await evaluate_file(planner, client, cache, sink, summary, index, capture=capture)
     return [event for event in sink.events if event["event"] == "evaluation"], summary, index
+
+
+@pytest.mark.parametrize("route", ["callers", "not_applicable"])
+async def test_final_capture_replays_actual_enrichment(tmp_path: Path, evidence_rule: Rule, route: str) -> None:
+    from jevscan.cli.import_calibration import main as import_capture
+    from jevscan.core.capture import FinalJudgmentRecorder
+    from jevscan.core.semantic_calibration import load_cases, replay_cases
+
+    caller = "from target import work\ndef checked(value):\n    assert isinstance(value, int)\n    return work(value)\n"
+    (tmp_path / "caller.py").write_text(caller)
+    responses = Responses(route=route, final="defect")
+    destination = tmp_path / "capture.jsonl"
+    recorder = FinalJudgmentRecorder(destination, "jev-test", "https://api.typesafe.ai", {})
+    try:
+        events, summary, _ = await run_review(tmp_path, evidence_rule, responses, capture=recorder)
+        recorder.mark_complete(not summary.incomplete, "complete")
+    finally:
+        recorder.close()
+    assert len(events) == 1
+    event = events[0]
+    assert "initial_evidence_state" not in json.dumps(event)
+    assert json.dumps(caller) not in json.dumps(event)
+    assert '"content":' not in json.dumps(event)
+    rows = [json.loads(line) for line in destination.read_text().splitlines()]
+    judgments = [row for row in rows if row["kind"] == "judgment"]
+    assert len(judgments) == 1
+    labels = tmp_path / "labels.json"
+    labels.write_text(
+        json.dumps({
+            "cases": [
+                {
+                    "case_id": judgments[0]["case_id"],
+                    "label": "Agree" if route == "callers" else "Partial",
+                    "split": "development",
+                    "explanation": "Mocked complete production enrichment workflow.",
+                }
+            ]
+        })
+    )
+    imported = tmp_path / "cases.jsonl"
+    assert import_capture([str(destination), "--labels", str(labels), "-o", str(imported)]) == 0
+    cases = load_cases(imported)
+    assert len(cases) == 1
+    replay = replay_cases(cases)
+    assert replay.records[0].assessment.status == event["statuses"]["contract"]
+    assert cases[0].answer.model_dump(mode="json") == event["answers"]["contract"]
+    if route == "callers":
+        assert event["statuses"]["contract"] == "error"
+        assert cases[0].evidence.state == responses.requests[-1]["state"]
+        assert cases[0].evidence.source_documents["caller.py"] == caller
+    else:
+        assert event["statuses"]["contract"] == "not_applicable"
 
 
 async def test_closed_routing_relevance_and_fresh_judgment(tmp_path: Path, evidence_rule: Rule) -> None:
@@ -174,6 +230,108 @@ async def test_closed_routing_relevance_and_fresh_judgment(tmp_path: Path, evide
     assert metrics["request"]["input_tokens"] == 11
     assert (summary.enrichment_reviewed, summary.enrichment_reruns, summary.enrichment_resolved) == (1, 1, 1)
     assert summary.checks_evaluated == 1 and not summary.incomplete
+
+
+async def test_final_capture_uses_enriched_cached_judgment_and_imports(tmp_path: Path, evidence_rule: Rule) -> None:
+    (tmp_path / "caller.py").write_text(
+        "from target import work\ndef checked(value):\n    assert isinstance(value, int)\n    return work(value)\n"
+    )
+    capture = tmp_path / "final.jsonl"
+    recorder = FinalJudgmentRecorder(capture, "jev-test", "https://api.typesafe.ai", {"test": True})
+    responses = Responses(initial="missing", final="clean")
+    events, summary, _ = await run_review(tmp_path, evidence_rule, responses, capture=recorder)
+    recorder.mark_complete(True, "complete")
+    recorder.close()
+    event = events[0]
+    assert event["statuses"]["contract"] == "ok"
+    assert "return work(value)" not in json.dumps(event)
+    row = json.loads(capture.read_text().splitlines()[0])
+    assert row["answer"]["choice"] == "clean"
+    assert len(row["evidence"]["state"]["documents"]) == 2
+    assert row["review"]["initial_answer"]["choice"] == "missing"
+    assert any(
+        question["instructions"]["policy"] == row["prompt"]["policy"]
+        for prediction in row["review"]["predictions"]
+        for question in prediction.get("question_wires", {}).values()
+        if isinstance(question, dict) and "instructions" in question
+    )
+    assert row["fully_cached"] is False
+    labels = tmp_path / "labels.json"
+    labels.write_text(
+        json.dumps({
+            "cases": [
+                {
+                    "case_id": row["case_id"],
+                    "label": "Disagree",
+                    "explanation": "The enriched judgment is clean.",
+                }
+            ]
+        })
+    )
+    imported = tmp_path / "cases.jsonl"
+    assert import_calibration([str(capture), "--labels", str(labels), "-o", str(imported)]) == 0
+    case = load_cases(imported)[0]
+    assert case.capture is not None and case.capture.phase == "final"
+    assert case.capture.review["initial_answer"]["choice"] == "missing"
+    assert case.capture.evidence.state["supplemental_evidence"]
+    assert summary.enrichment_reruns == 1
+
+    class NoRequests:
+        def __call__(self, _request: httpx.Request) -> httpx.Response:
+            raise AssertionError("cached final capture must not call the provider")
+
+    cache_path = tmp_path / "answers.sqlite3"
+    async with AnswerCache(cache_path, 86_400) as cache:
+        first = Responses(initial="missing", final="clean")
+        await run_review(tmp_path, evidence_rule, first, cache=cache)
+        cached_capture = tmp_path / "cached-final.jsonl"
+        cached_recorder = FinalJudgmentRecorder(cached_capture, "jev-test", "https://api.typesafe.ai", {"test": True})
+        await run_review(
+            tmp_path,
+            evidence_rule,
+            NoRequests(),
+            cache=cache,
+            capture=cached_recorder,
+        )
+        cached_recorder.mark_complete(True, "complete")
+        cached_recorder.close()
+    cached_row = json.loads(cached_capture.read_text().splitlines()[0])
+    assert cached_row["fully_cached"] is True
+
+
+async def test_final_capture_preserves_model_routed_not_applicable(tmp_path: Path, evidence_rule: Rule) -> None:
+    rule = evidence_rule.model_copy(
+        update={"report": evidence_rule.report.model_copy(update={"not_applicable_choices": ["clean"]})}
+    )
+    capture = tmp_path / "not-applicable.jsonl"
+    recorder = FinalJudgmentRecorder(capture, "jev-test", "https://api.typesafe.ai", {"test": True})
+    events, _, _ = await run_review(
+        tmp_path,
+        rule,
+        Responses(route="not_applicable", initial="missing"),
+        capture=recorder,
+    )
+    recorder.mark_complete(True, "complete")
+    recorder.close()
+    assert events[0]["statuses"]["contract"] == "not_applicable"
+    row = json.loads(capture.read_text().splitlines()[0])
+    assert row["disposition"] == {"status": "not_applicable", "reason": "model_routed_not_applicable"}
+    labels = tmp_path / "labels.json"
+    labels.write_text(
+        json.dumps({
+            "cases": [
+                {
+                    "case_id": row["case_id"],
+                    "label": "Disagree",
+                    "explanation": "The rule was routed not applicable.",
+                }
+            ]
+        })
+    )
+    output = tmp_path / "cases.jsonl"
+    assert import_calibration([str(capture), "--labels", str(labels), "-o", str(output)]) == 0
+    replay = replay_case(load_cases(output)[0])
+    assert replay.assessment.status == "not_applicable"
 
 
 async def test_declared_targeted_enrichment_works_for_renamed_custom_rule(tmp_path: Path, evidence_rule: Rule) -> None:
@@ -304,7 +462,9 @@ class Actual:
         (0.4, "unknown"),
         (0.51, "unknown"),
         (0.599, "unknown"),
-        (0.6, "warning"),
+        (0.6, "ok"),
+        (0.70, "ok"),
+        (0.71, "warning"),
         (0.95, "error"),
     ):
         result = assess(check, NoulAnswer(type="noul", noul=value))

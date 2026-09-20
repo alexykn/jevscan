@@ -1,0 +1,13 @@
+# Predeclared objective for the next acceptance experiment.
+#
+# This does not retroactively rescore or replace the completed PR 12 run.
+# It reflects an agent-assisted workflow where useful review candidates should
+# be preserved while false review workload is reduced.
+utility:
+  Agree: {confirmed: 4, tentative: 2, none: -4}
+  Partial: {confirmed: -1, tentative: 1, none: 0}
+  Disagree: {confirmed: -8, tentative: -2, none: 0}
+min_positive_support: 3
+min_negative_support: 3
+min_review_list_recall: 0.8
+max_candidates: 4096

@@ -1,0 +1,2711 @@
+{
+  "cases": 128,
+  "mode": "reporting-only",
+  "sweeps": [
+    {
+      "changed_rule_ids": [
+        "JEV01",
+        "JEV03",
+        "JEV09"
+      ],
+      "confirmed": 45,
+      "field": "warning.min_probability",
+      "report": {
+        "cases": 128,
+        "non_comparable": [],
+        "rules": {
+          "JEV01": {
+            "development": {
+              "confirmed_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 4,
+                "denominator": 17,
+                "fraction": 0.23529411764705882
+              },
+              "label_counts": {
+                "Agree": 4,
+                "Disagree": 17,
+                "Partial": 10
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 10,
+                "denominator": 10,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 7,
+                "denominator": 10,
+                "fraction": 0.7
+              },
+              "review_list_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV01",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 16,
+                "warning": 15
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 4,
+                "denominator": 15,
+                "fraction": 0.26666666666666666
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 16
+              },
+              "total": 31
+            }
+          },
+          "JEV02": {
+            "development": {
+              "confirmed_recall": {
+                "count": 9,
+                "denominator": 14,
+                "fraction": 0.6428571428571429
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 3,
+                "denominator": 15,
+                "fraction": 0.2
+              },
+              "label_counts": {
+                "Agree": 14,
+                "Disagree": 15,
+                "Partial": 48
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 48,
+                "denominator": 48,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 10,
+                "denominator": 48,
+                "fraction": 0.20833333333333334
+              },
+              "review_list_recall": {
+                "count": 14,
+                "denominator": 14,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV02",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 1,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 55,
+                "warning": 21
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 9,
+                "denominator": 22,
+                "fraction": 0.4090909090909091
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 55
+              },
+              "total": 77
+            }
+          },
+          "JEV03": {
+            "development": {
+              "confirmed_recall": {
+                "count": 7,
+                "denominator": 9,
+                "fraction": 0.7777777777777778
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 1,
+                "denominator": 7,
+                "fraction": 0.14285714285714285
+              },
+              "label_counts": {
+                "Agree": 9,
+                "Disagree": 7,
+                "Partial": 3
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 3,
+                "denominator": 3,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 9,
+                "denominator": 9,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV03",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 11,
+                "warning": 8
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 7,
+                "denominator": 8,
+                "fraction": 0.875
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 11
+              },
+              "total": 19
+            }
+          },
+          "JEV09": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 1,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 0,
+                "Disagree": 1,
+                "Partial": 0
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV09",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 1,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 1
+              },
+              "total": 1
+            }
+          }
+        },
+        "version": 1
+      },
+      "tentative": 83,
+      "threshold": 0.5
+    },
+    {
+      "changed_rule_ids": [
+        "JEV01",
+        "JEV03",
+        "JEV09"
+      ],
+      "confirmed": 45,
+      "field": "warning.min_probability",
+      "report": {
+        "cases": 128,
+        "non_comparable": [],
+        "rules": {
+          "JEV01": {
+            "development": {
+              "confirmed_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 4,
+                "denominator": 17,
+                "fraction": 0.23529411764705882
+              },
+              "label_counts": {
+                "Agree": 4,
+                "Disagree": 17,
+                "Partial": 10
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 8,
+                "denominator": 10,
+                "fraction": 0.8
+              },
+              "partial_confirmed": {
+                "count": 7,
+                "denominator": 10,
+                "fraction": 0.7
+              },
+              "review_list_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV01",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 16,
+                "warning": 15
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 4,
+                "denominator": 15,
+                "fraction": 0.26666666666666666
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 4
+              },
+              "total": 31
+            }
+          },
+          "JEV02": {
+            "development": {
+              "confirmed_recall": {
+                "count": 9,
+                "denominator": 14,
+                "fraction": 0.6428571428571429
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 3,
+                "denominator": 15,
+                "fraction": 0.2
+              },
+              "label_counts": {
+                "Agree": 14,
+                "Disagree": 15,
+                "Partial": 48
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 48,
+                "denominator": 48,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 10,
+                "denominator": 48,
+                "fraction": 0.20833333333333334
+              },
+              "review_list_recall": {
+                "count": 14,
+                "denominator": 14,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV02",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 1,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 55,
+                "warning": 21
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 9,
+                "denominator": 22,
+                "fraction": 0.4090909090909091
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 55
+              },
+              "total": 77
+            }
+          },
+          "JEV03": {
+            "development": {
+              "confirmed_recall": {
+                "count": 7,
+                "denominator": 9,
+                "fraction": 0.7777777777777778
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 1,
+                "denominator": 7,
+                "fraction": 0.14285714285714285
+              },
+              "label_counts": {
+                "Agree": 9,
+                "Disagree": 7,
+                "Partial": 3
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 2,
+                "denominator": 3,
+                "fraction": 0.6666666666666666
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 8,
+                "denominator": 9,
+                "fraction": 0.8888888888888888
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV03",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 11,
+                "warning": 8
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 7,
+                "denominator": 8,
+                "fraction": 0.875
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 4
+              },
+              "total": 19
+            }
+          },
+          "JEV09": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 1,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 0,
+                "Disagree": 1,
+                "Partial": 0
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV09",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 1,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 1
+            }
+          }
+        },
+        "version": 1
+      },
+      "tentative": 63,
+      "threshold": 0.55
+    },
+    {
+      "changed_rule_ids": [
+        "JEV01",
+        "JEV03",
+        "JEV09"
+      ],
+      "confirmed": 45,
+      "field": "warning.min_probability",
+      "report": {
+        "cases": 128,
+        "non_comparable": [],
+        "rules": {
+          "JEV01": {
+            "development": {
+              "confirmed_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 4,
+                "denominator": 17,
+                "fraction": 0.23529411764705882
+              },
+              "label_counts": {
+                "Agree": 4,
+                "Disagree": 17,
+                "Partial": 10
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 7,
+                "denominator": 10,
+                "fraction": 0.7
+              },
+              "partial_confirmed": {
+                "count": 7,
+                "denominator": 10,
+                "fraction": 0.7
+              },
+              "review_list_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV01",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 16,
+                "warning": 15
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 4,
+                "denominator": 15,
+                "fraction": 0.26666666666666666
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 31
+            }
+          },
+          "JEV02": {
+            "development": {
+              "confirmed_recall": {
+                "count": 9,
+                "denominator": 14,
+                "fraction": 0.6428571428571429
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 3,
+                "denominator": 15,
+                "fraction": 0.2
+              },
+              "label_counts": {
+                "Agree": 14,
+                "Disagree": 15,
+                "Partial": 48
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 48,
+                "denominator": 48,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 10,
+                "denominator": 48,
+                "fraction": 0.20833333333333334
+              },
+              "review_list_recall": {
+                "count": 14,
+                "denominator": 14,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV02",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 1,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 55,
+                "warning": 21
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 9,
+                "denominator": 22,
+                "fraction": 0.4090909090909091
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 55
+              },
+              "total": 77
+            }
+          },
+          "JEV03": {
+            "development": {
+              "confirmed_recall": {
+                "count": 7,
+                "denominator": 9,
+                "fraction": 0.7777777777777778
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 1,
+                "denominator": 7,
+                "fraction": 0.14285714285714285
+              },
+              "label_counts": {
+                "Agree": 9,
+                "Disagree": 7,
+                "Partial": 3
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 7,
+                "denominator": 9,
+                "fraction": 0.7777777777777778
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV03",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 11,
+                "warning": 8
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 7,
+                "denominator": 8,
+                "fraction": 0.875
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 19
+            }
+          },
+          "JEV09": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 1,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 0,
+                "Disagree": 1,
+                "Partial": 0
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV09",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 1,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 1
+            }
+          }
+        },
+        "version": 1
+      },
+      "tentative": 55,
+      "threshold": 0.6
+    },
+    {
+      "changed_rule_ids": [
+        "JEV01",
+        "JEV03",
+        "JEV09"
+      ],
+      "confirmed": 38,
+      "field": "warning.min_probability",
+      "report": {
+        "cases": 128,
+        "non_comparable": [],
+        "rules": {
+          "JEV01": {
+            "development": {
+              "confirmed_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 2,
+                "denominator": 17,
+                "fraction": 0.11764705882352941
+              },
+              "label_counts": {
+                "Agree": 4,
+                "Disagree": 17,
+                "Partial": 10
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 3,
+                "denominator": 10,
+                "fraction": 0.3
+              },
+              "partial_confirmed": {
+                "count": 3,
+                "denominator": 10,
+                "fraction": 0.3
+              },
+              "review_list_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV01",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 6,
+                "unknown": 16,
+                "warning": 9
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 4,
+                "denominator": 9,
+                "fraction": 0.4444444444444444
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 31
+            }
+          },
+          "JEV02": {
+            "development": {
+              "confirmed_recall": {
+                "count": 9,
+                "denominator": 14,
+                "fraction": 0.6428571428571429
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 3,
+                "denominator": 15,
+                "fraction": 0.2
+              },
+              "label_counts": {
+                "Agree": 14,
+                "Disagree": 15,
+                "Partial": 48
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 48,
+                "denominator": 48,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 10,
+                "denominator": 48,
+                "fraction": 0.20833333333333334
+              },
+              "review_list_recall": {
+                "count": 14,
+                "denominator": 14,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV02",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 1,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 55,
+                "warning": 21
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 9,
+                "denominator": 22,
+                "fraction": 0.4090909090909091
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 55
+              },
+              "total": 77
+            }
+          },
+          "JEV03": {
+            "development": {
+              "confirmed_recall": {
+                "count": 6,
+                "denominator": 9,
+                "fraction": 0.6666666666666666
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 1,
+                "denominator": 7,
+                "fraction": 0.14285714285714285
+              },
+              "label_counts": {
+                "Agree": 9,
+                "Disagree": 7,
+                "Partial": 3
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 6,
+                "denominator": 9,
+                "fraction": 0.6666666666666666
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV03",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 1,
+                "unknown": 11,
+                "warning": 7
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 6,
+                "denominator": 7,
+                "fraction": 0.8571428571428571
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 19
+            }
+          },
+          "JEV09": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 1,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 0,
+                "Disagree": 1,
+                "Partial": 0
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV09",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 1,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 1
+            }
+          }
+        },
+        "version": 1
+      },
+      "tentative": 55,
+      "threshold": 0.65
+    },
+    {
+      "changed_rule_ids": [
+        "JEV01",
+        "JEV03",
+        "JEV09"
+      ],
+      "confirmed": 32,
+      "field": "warning.min_probability",
+      "report": {
+        "cases": 128,
+        "non_comparable": [],
+        "rules": {
+          "JEV01": {
+            "development": {
+              "confirmed_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 17,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 4,
+                "Disagree": 17,
+                "Partial": 10
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 1,
+                "denominator": 10,
+                "fraction": 0.1
+              },
+              "partial_confirmed": {
+                "count": 1,
+                "denominator": 10,
+                "fraction": 0.1
+              },
+              "review_list_recall": {
+                "count": 4,
+                "denominator": 4,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV01",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 10,
+                "unknown": 16,
+                "warning": 5
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 4,
+                "denominator": 5,
+                "fraction": 0.8
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 31
+            }
+          },
+          "JEV02": {
+            "development": {
+              "confirmed_recall": {
+                "count": 9,
+                "denominator": 14,
+                "fraction": 0.6428571428571429
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 3,
+                "denominator": 15,
+                "fraction": 0.2
+              },
+              "label_counts": {
+                "Agree": 14,
+                "Disagree": 15,
+                "Partial": 48
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 48,
+                "denominator": 48,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 10,
+                "denominator": 48,
+                "fraction": 0.20833333333333334
+              },
+              "review_list_recall": {
+                "count": 14,
+                "denominator": 14,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV02",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 1,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 55,
+                "warning": 21
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 9,
+                "denominator": 22,
+                "fraction": 0.4090909090909091
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 55
+              },
+              "total": 77
+            }
+          },
+          "JEV03": {
+            "development": {
+              "confirmed_recall": {
+                "count": 5,
+                "denominator": 9,
+                "fraction": 0.5555555555555556
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 7,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 9,
+                "Disagree": 7,
+                "Partial": 3
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 5,
+                "denominator": 9,
+                "fraction": 0.5555555555555556
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV03",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 3,
+                "unknown": 11,
+                "warning": 5
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 5,
+                "denominator": 5,
+                "fraction": 1.0
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 19
+            }
+          },
+          "JEV09": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 1,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 0,
+                "Disagree": 1,
+                "Partial": 0
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV09",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 1,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 1
+            }
+          }
+        },
+        "version": 1
+      },
+      "tentative": 55,
+      "threshold": 0.7
+    },
+    {
+      "changed_rule_ids": [
+        "JEV01",
+        "JEV03",
+        "JEV09"
+      ],
+      "confirmed": 25,
+      "field": "warning.min_probability",
+      "report": {
+        "cases": 128,
+        "non_comparable": [],
+        "rules": {
+          "JEV01": {
+            "development": {
+              "confirmed_recall": {
+                "count": 2,
+                "denominator": 4,
+                "fraction": 0.5
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 17,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 4,
+                "Disagree": 17,
+                "Partial": 10
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 10,
+                "fraction": 0.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 10,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 2,
+                "denominator": 4,
+                "fraction": 0.5
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV01",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 13,
+                "unknown": 16,
+                "warning": 2
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 2,
+                "denominator": 2,
+                "fraction": 1.0
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 31
+            }
+          },
+          "JEV02": {
+            "development": {
+              "confirmed_recall": {
+                "count": 9,
+                "denominator": 14,
+                "fraction": 0.6428571428571429
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 3,
+                "denominator": 15,
+                "fraction": 0.2
+              },
+              "label_counts": {
+                "Agree": 14,
+                "Disagree": 15,
+                "Partial": 48
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 48,
+                "denominator": 48,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 10,
+                "denominator": 48,
+                "fraction": 0.20833333333333334
+              },
+              "review_list_recall": {
+                "count": 14,
+                "denominator": 14,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV02",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 1,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 55,
+                "warning": 21
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 9,
+                "denominator": 22,
+                "fraction": 0.4090909090909091
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 55
+              },
+              "total": 77
+            }
+          },
+          "JEV03": {
+            "development": {
+              "confirmed_recall": {
+                "count": 1,
+                "denominator": 9,
+                "fraction": 0.1111111111111111
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 7,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 9,
+                "Disagree": 7,
+                "Partial": 3
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 1,
+                "denominator": 9,
+                "fraction": 0.1111111111111111
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV03",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 7,
+                "unknown": 11,
+                "warning": 1
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 1,
+                "denominator": 1,
+                "fraction": 1.0
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 19
+            }
+          },
+          "JEV09": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 1,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 0,
+                "Disagree": 1,
+                "Partial": 0
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV09",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 1,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 1
+            }
+          }
+        },
+        "version": 1
+      },
+      "tentative": 55,
+      "threshold": 0.75
+    },
+    {
+      "changed_rule_ids": [
+        "JEV01",
+        "JEV03",
+        "JEV09"
+      ],
+      "confirmed": 23,
+      "field": "warning.min_probability",
+      "report": {
+        "cases": 128,
+        "non_comparable": [],
+        "rules": {
+          "JEV01": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 4,
+                "fraction": 0.0
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 17,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 4,
+                "Disagree": 17,
+                "Partial": 10
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 10,
+                "fraction": 0.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 10,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 4,
+                "fraction": 0.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV01",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 15,
+                "unknown": 16,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 31
+            }
+          },
+          "JEV02": {
+            "development": {
+              "confirmed_recall": {
+                "count": 9,
+                "denominator": 14,
+                "fraction": 0.6428571428571429
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 3,
+                "denominator": 15,
+                "fraction": 0.2
+              },
+              "label_counts": {
+                "Agree": 14,
+                "Disagree": 15,
+                "Partial": 48
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 48,
+                "denominator": 48,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 10,
+                "denominator": 48,
+                "fraction": 0.20833333333333334
+              },
+              "review_list_recall": {
+                "count": 14,
+                "denominator": 14,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV02",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 1,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 55,
+                "warning": 21
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 9,
+                "denominator": 22,
+                "fraction": 0.4090909090909091
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 55
+              },
+              "total": 77
+            }
+          },
+          "JEV03": {
+            "development": {
+              "confirmed_recall": {
+                "count": 1,
+                "denominator": 9,
+                "fraction": 0.1111111111111111
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 7,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 9,
+                "Disagree": 7,
+                "Partial": 3
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 1,
+                "denominator": 9,
+                "fraction": 0.1111111111111111
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV03",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 7,
+                "unknown": 11,
+                "warning": 1
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 1,
+                "denominator": 1,
+                "fraction": 1.0
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 19
+            }
+          },
+          "JEV09": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 1,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 0,
+                "Disagree": 1,
+                "Partial": 0
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV09",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 1,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 1
+            }
+          }
+        },
+        "version": 1
+      },
+      "tentative": 55,
+      "threshold": 0.8
+    },
+    {
+      "changed_rule_ids": [
+        "JEV01",
+        "JEV03",
+        "JEV09"
+      ],
+      "confirmed": 22,
+      "field": "warning.min_probability",
+      "report": {
+        "cases": 128,
+        "non_comparable": [],
+        "rules": {
+          "JEV01": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 4,
+                "fraction": 0.0
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 17,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 4,
+                "Disagree": 17,
+                "Partial": 10
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 10,
+                "fraction": 0.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 10,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 4,
+                "fraction": 0.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV01",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 15,
+                "unknown": 16,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 31
+            }
+          },
+          "JEV02": {
+            "development": {
+              "confirmed_recall": {
+                "count": 9,
+                "denominator": 14,
+                "fraction": 0.6428571428571429
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 3,
+                "denominator": 15,
+                "fraction": 0.2
+              },
+              "label_counts": {
+                "Agree": 14,
+                "Disagree": 15,
+                "Partial": 48
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 48,
+                "denominator": 48,
+                "fraction": 1.0
+              },
+              "partial_confirmed": {
+                "count": 10,
+                "denominator": 48,
+                "fraction": 0.20833333333333334
+              },
+              "review_list_recall": {
+                "count": 14,
+                "denominator": 14,
+                "fraction": 1.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV02",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 1,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 55,
+                "warning": 21
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 9,
+                "denominator": 22,
+                "fraction": 0.4090909090909091
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 55
+              },
+              "total": 77
+            }
+          },
+          "JEV03": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 9,
+                "fraction": 0.0
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 7,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 9,
+                "Disagree": 7,
+                "Partial": 3
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 3,
+                "fraction": 0.0
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 9,
+                "fraction": 0.0
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV03",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 8,
+                "unknown": 11,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 19
+            }
+          },
+          "JEV09": {
+            "development": {
+              "confirmed_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "confirmed_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "disagree_confirmed": {
+                "count": 0,
+                "denominator": 1,
+                "fraction": 0.0
+              },
+              "label_counts": {
+                "Agree": 0,
+                "Disagree": 1,
+                "Partial": 0
+              },
+              "non_comparable": 0,
+              "partial_any_signal": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "partial_confirmed": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_recall": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "review_list_severity_agreement": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "rule_id": "JEV09",
+              "severity_confusion": {
+                "error": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                },
+                "warning": {
+                  "confirmed_error": 0,
+                  "confirmed_warning": 0,
+                  "none": 0,
+                  "tentative_error": 0,
+                  "tentative_warning": 0
+                }
+              },
+              "severity_counts": {
+                "error": 0,
+                "not_applicable": 0,
+                "ok": 0,
+                "unknown": 1,
+                "warning": 0
+              },
+              "split": "development",
+              "strict_supported_warning": {
+                "count": 0,
+                "denominator": 0,
+                "fraction": null
+              },
+              "tentative_severity_counts": {
+                "error": 0,
+                "warning": 0
+              },
+              "total": 1
+            }
+          }
+        },
+        "version": 1
+      },
+      "tentative": 55,
+      "threshold": 0.85
+    }
+  ],
+  "version": 1
+}

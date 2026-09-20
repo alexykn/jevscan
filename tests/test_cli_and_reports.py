@@ -64,6 +64,131 @@ def test_output_cannot_overwrite_an_input(tmp_path: Path, monkeypatch) -> None:
     assert source.read_text() == "def f(): pass\n"
 
 
+@pytest.mark.parser
+@pytest.mark.usefixtures("grammar_runtime")
+def test_project_skill_workflow_captures_imports_and_updates_yaml(tmp_path: Path, monkeypatch) -> None:
+    from functools import partial
+
+    import httpx
+    import yaml
+
+    from jevscan.cli.calibrate import main as calibrate
+    from jevscan.cli.import_calibration import main as import_capture
+    from jevscan.core import scanner
+    from jevscan.core.client import JevClient
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "offline-test-key")
+    source_root = tmp_path / "src"
+    source_root.mkdir()
+    (source_root / "alpha.py").write_text("def alpha():\n    return 1\n")
+    (source_root / "beta.py").write_text("def beta():\n    return 2\n")
+    rules = tmp_path / "project.yaml"
+    rules.write_text(
+        "# Keep this project comment.\n"
+        "version: 4\n"
+        "rulesets:\n"
+        "  TEAM:\n"
+        "    description: Workflow test\n"
+        "enrichment:\n"
+        "  enabled: false\n"
+        "rules:\n"
+        "  - name: TEAM01\n"
+        "    ruleset: TEAM\n"
+        "    applies_to: [function]\n"
+        "    context: unit\n"
+        "    question:\n"
+        "      type: noul\n"
+        "      instructions: Is the operation defective?\n"
+        "    report:\n"
+        "      message: Review this operation.\n"
+        "      levels:\n"
+        "        warning:\n"
+        "          min_probability: 0.5 # Calibrate this value.\n"
+        "        error:\n"
+        "          min_probability: 0.95\n"
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        source = "".join(document["content"] for document in body["state"]["documents"])
+        probability = 0.9 if "def alpha" in source else 0.65
+        return httpx.Response(
+            200,
+            json={
+                "model": "jev-test",
+                "answers": {key: {"type": "noul", "noul": probability} for key in body["questions"]},
+                "usage": {"input_tokens": 1},
+            },
+        )
+
+    monkeypatch.setattr(scanner, "JevClient", partial(JevClient, transport=httpx.MockTransport(respond)))
+    capture, report = tmp_path / "judgments.jsonl", tmp_path / "scan.json"
+    assert (
+        main([
+            str(source_root),
+            "--config",
+            str(rules),
+            "--rule",
+            "TEAM",
+            "--model",
+            "jev-test",
+            "--jobs",
+            "1",
+            "--no-cache",
+            "--format",
+            "json",
+            "--output",
+            str(report),
+            "--calibration-output",
+            str(capture),
+        ])
+        == 1
+    )
+    rows = [json.loads(line) for line in capture.read_text().splitlines()]
+    judgments = [row for row in rows if row["kind"] == "judgment"]
+    assert len(judgments) == 2
+    assert all(row["rule_id"] == "TEAM01" for row in judgments)
+    labels = tmp_path / "labels.yaml"
+    labels.write_text(
+        yaml.safe_dump({
+            "cases": [
+                {
+                    "case_id": row["case_id"],
+                    "label": "Agree" if row["target"]["qualified_name"] == "alpha" else "Disagree",
+                    "source_group": row["target"]["path"],
+                    "split": "development",
+                    "explanation": "Synthetic label for mocked command-workflow verification, not semantic accuracy.",
+                }
+                for row in judgments
+            ]
+        })
+    )
+    cases = tmp_path / "cases.jsonl"
+    assert import_capture([str(capture), "--labels", str(labels), "--output", str(cases)]) == 0
+    audit = tmp_path / "audit.json"
+    assert (
+        calibrate([
+            str(cases),
+            "--select",
+            "--rules",
+            str(rules),
+            "--apply",
+            "--output",
+            str(audit),
+        ])
+        == 0
+    )
+    written = rules.read_text()
+    assert "# Keep this project comment." in written
+    assert "# Calibrate this value." in written
+    policy = yaml.safe_load(written)["rules"][0]["report"]
+    assert policy["levels"]["warning"]["min_probability"] == 0.9
+    assert policy["levels"]["error"]["min_probability"] == 0.95
+    assert json.loads(audit.read_text())["writeback"]["applied"] is True
+    assert '"content":' not in report.read_text()
+
+
 def test_exit_codes_keep_operational_errors_distinct() -> None:
     summary = Summary("live", findings={"info": 0, "warning": 1, "error": 0})
     assert summary.exit_code("warning") == 1

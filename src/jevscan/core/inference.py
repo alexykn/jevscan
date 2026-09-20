@@ -9,7 +9,14 @@ from jevscan.core.cache import AnswerCache, cache_key, judgment_cache_key
 from jevscan.core.client import JevClient, ReservationUsage
 from jevscan.core.model_limits import TokenCalibration
 from jevscan.core.models import Summary
-from jevscan.core.protocol import Answer, ContextLimitError, JevError, JevResponse, validate_answer, validate_response
+from jevscan.core.protocol import (
+    Answer,
+    ContextLimitError,
+    JevResponse,
+    decode_cached_answer,
+    validate_answer,
+    validate_response,
+)
 from jevscan.core.rules import Question
 
 
@@ -43,19 +50,7 @@ class Inference:
             raw = raw_by_key.get(keys[name])
             if raw is None:
                 continue
-            try:
-                payload = json.loads(raw)
-                response = validate_response(
-                    json.dumps({
-                        "model": payload["model"],
-                        "usage": {"input_tokens": 0, "output_tokens": 0},
-                        "answers": {"cached": payload["answer"]},
-                    }),
-                    {"cached": question},
-                )
-            except (KeyError, TypeError, ValueError, JevError) as exc:
-                raise JevError("cached judgment does not match the expected answer schema") from exc
-            cached[name] = response.answers["cached"], response.model
+            cached[name] = decode_cached_answer(raw, question)
         self.summary.cache_hits += len(cached)
         return cached
 

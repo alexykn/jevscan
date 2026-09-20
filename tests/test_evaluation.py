@@ -97,6 +97,20 @@ def test_declared_applicability_is_generic_for_file_rules(basic_rule: Rule) -> N
     assert planner.applicability_skips[planner.context.file.id]["CUSTOM_FILE"].endswith("(fallback_candidate)")
 
 
+def test_rust_empty_implementations_reach_body_required_planning(basic_rule: Rule) -> None:
+    rule = basic_rule.model_copy(
+        update={
+            "applies_to": ["function", "method"],
+            "require_body": True,
+        }
+    )
+    source = 'trait Store { fn required(&self); fn defaulted(&self) {} }\nextern "C" { fn ffi(); }\nfn empty() {}\n'
+    planner = planned(source, configured(rule), "rust")
+    selected = {check.target.qualified_name for check in planner.checks}
+    assert {"Store::defaulted", "empty"} <= selected
+    assert {"Store::required", "ffi"}.isdisjoint(selected)
+
+
 def test_large_class_shared_once_with_independent_method_bindings(basic_rule: Rule) -> None:
     source = 'class Coordinator:\n    """BODY_SENTINEL ' + "some background. " * 2300 + '"""\n'
     source += "    def first(self): return self.second()\n    def second(self): return 1\n"

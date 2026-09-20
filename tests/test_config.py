@@ -149,10 +149,11 @@ def test_previous_yaml_schema_needs_named_rule_migration(tmp_path: Path) -> None
 
 
 def test_yaml_optional_field_can_be_cleared_without_deleting_other_settings(tmp_path):
+    baseline = load_config([tmp_path], cwd=tmp_path).config.rules["JEV01"].report
     write_config(tmp_path, {"rules": [{"name": "JEV01", "report": {"uncertain_range": None}}]})
     config = load_config([tmp_path], cwd=tmp_path).config
     assert config.rules["JEV01"].report.uncertain_range is None
-    assert config.rules["JEV01"].report.levels.warning.min_probability == 0.5
+    assert config.rules["JEV01"].report.levels == baseline.levels
     (tmp_path / "jevscan.yaml").write_text(resolved_yaml(config))
     assert load_config([tmp_path], cwd=tmp_path).config == config
 

@@ -64,6 +64,81 @@ class Routing:
     families: tuple[str, ...] = ()
 
 
+def allowed_families(check: Check, limits: EnrichmentConfig) -> tuple[str, ...]:
+    if not limits.enabled or limits.mode == "off":
+        return ()
+    if limits.mode == "full":
+        return tuple(EVIDENCE_FAMILIES)
+    aliases = {"callees": "definitions"}
+    return tuple(
+        dict.fromkeys(
+            aliases.get(configured, configured)
+            for configured in check.rule.enrichment_families
+            if aliases.get(configured, configured) in EVIDENCE_FAMILIES
+        )
+    )
+
+
+def routing_questions(_check: Check, families: tuple[str, ...]) -> dict[str, Question]:
+    questions: dict[str, Question] = {
+        "disposition": ChoiceQuestion(
+            type="choice",
+            instructions=(
+                "Which evidence disposition applies to this rule and exact target? First determine whether "
+                "the operation is applicable, then whether concrete necessary evidence is missing. "
+                "Do not infer missing facts merely from low model confidence. Source context sufficiency "
+                "is distinct from certainty about the verdict."
+            ),
+            criteria=DISPOSITIONS,
+        )
+    }
+    for family in families:
+        description = EVIDENCE_FAMILIES[family]
+        questions[family] = NoulQuestion(
+            type="noul",
+            instructions=(
+                "Assuming the rule applies and additional local evidence could help, would this evidence "
+                f"family supply a concrete currently missing fact for the exact target: {family}: {description} "
+                "Judge this family independently: several families or none may help. Evidence already present, "
+                "a matching short name alone, or generic extra context is insufficient. "
+                "Do not assume any other question's answer or prefer evidence that supports a defect."
+            ),
+        )
+    return questions
+
+
+def routing_decision(
+    answers: dict[str, Answer],
+    families: tuple[str, ...],
+    *,
+    min_route_confidence: float,
+    min_route_probability: float,
+    min_evidence_probability: float,
+) -> Routing:
+    disposition = answers["disposition"]
+    assert isinstance(disposition, ChoiceAnswer)
+    scores = {}
+    for name in families:
+        answer = answers[name]
+        assert isinstance(answer, NoulAnswer)
+        scores[name] = answer.noul
+    if (
+        disposition.confidence < min_route_confidence
+        or disposition.probabilities[disposition.choice] < min_route_probability
+    ):
+        return Routing(None)
+    if disposition.choice != "local_evidence":
+        return Routing(disposition.choice)
+    return Routing(
+        disposition.choice,
+        tuple(
+            name
+            for name in sorted(scores, key=lambda name: (-scores[name], name))
+            if scores[name] >= min_evidence_probability
+        ),
+    )
+
+
 class EnrichmentStoppedError(Exception):
     """An explicit local limit, not a transport failure or a negative finding."""
 
@@ -136,6 +211,10 @@ class Enricher:
         self.index, self.inference = index, inference
         self.calls = 0
         self.reviewed = 0
+        self._snapshots: dict[str, str] = {context.parsed.path: context.parsed.source.decode("utf-8")}
+
+    def source_documents(self) -> dict[str, str]:
+        return dict(self._snapshots)
 
     @staticmethod
     def _wire(check: Check, questions: dict[str, Question]) -> dict[str, bytes]:
@@ -150,7 +229,11 @@ class Enricher:
             raise EnrichmentStoppedError("request_budget")
         self.calls += 1
         body = self.budget.body(state, wire)
-        entry: dict[str, Any] = {"phase": phase, "request_sha256": hashlib.sha256(body).hexdigest()}
+        entry: dict[str, Any] = {
+            "phase": phase,
+            "request_sha256": hashlib.sha256(body).hexdigest(),
+            "question_wires": {key: json.loads(value) for key, value in wire.items()},
+        }
         trace["predictions"].append(entry)
         prediction = await self.inference.predict(
             body,
@@ -169,44 +252,10 @@ class Enricher:
         return prediction
 
     def _allowed_families(self, check: Check) -> tuple[str, ...]:
-        if not self.limits.enabled or self.limits.mode == "off":
-            return ()
-        if self.limits.mode == "full":
-            return tuple(EVIDENCE_FAMILIES)
-        aliases = {"callees": "definitions"}
-        allowed = []
-        for configured in check.rule.enrichment_families:
-            family = aliases.get(configured, configured)
-            if family in EVIDENCE_FAMILIES and family not in allowed:
-                allowed.append(family)
-        return tuple(allowed)
+        return allowed_families(check, self.limits)
 
     def _routing_questions(self, check: Check) -> dict[str, Question]:
-        questions: dict[str, Question] = {
-            "disposition": ChoiceQuestion(
-                type="choice",
-                instructions=(
-                    "Which evidence disposition applies to this rule and exact target? First determine whether "
-                    "the operation is applicable, then whether concrete necessary evidence is missing. "
-                    "Do not infer missing facts merely from low model confidence. Source context sufficiency "
-                    "is distinct from certainty about the verdict."
-                ),
-                criteria=DISPOSITIONS,
-            )
-        }
-        for family in self._allowed_families(check):
-            description = EVIDENCE_FAMILIES[family]
-            questions[family] = NoulQuestion(
-                type="noul",
-                instructions=(
-                    "Assuming the rule applies and additional local evidence could help, would this evidence "
-                    f"family supply a concrete currently missing fact for the exact target: {family}: {description} "
-                    "Judge this family independently: several families or none may help. Evidence already present, "
-                    "a matching short name alone, or generic extra context is insufficient. "
-                    "Do not assume any other question's answer or prefer evidence that supports a defect."
-                ),
-            )
-        return questions
+        return routing_questions(check, self._allowed_families(check))
 
     async def _routing_answers(self, check: Check, evidence: Evidence, trace: dict[str, Any]) -> dict[str, Answer]:
         """Batch independent routing questions; small configured request budgets still apply."""
@@ -232,27 +281,27 @@ class Enricher:
 
     async def _route(self, check: Check, evidence: Evidence, trace: dict[str, Any]) -> Routing:
         answers = await self._routing_answers(check, evidence, trace)
-        disposition = answers["disposition"]
-        assert isinstance(disposition, ChoiceAnswer)
-        scores = {}
-        for name in self._allowed_families(check):
-            answer = answers[name]
-            assert isinstance(answer, NoulAnswer)
-            scores[name] = answer.noul
-        trace["evidence_probabilities"] = scores
-        if (
-            disposition.confidence < self.limits.min_route_confidence
-            or disposition.probabilities[disposition.choice] < self.limits.min_route_probability
-        ):
-            return Routing(None)
-        if disposition.choice != "local_evidence":
-            return Routing(disposition.choice)
-        families = tuple(
-            name
-            for name in sorted(scores, key=lambda name: (-scores[name], name))
-            if scores[name] >= self.limits.min_evidence_probability
+        families = self._allowed_families(check)
+        trace["routing_config"] = {
+            "allowed_families": list(families),
+            "min_route_confidence": self.limits.min_route_confidence,
+            "min_route_probability": self.limits.min_route_probability,
+            "min_evidence_probability": self.limits.min_evidence_probability,
+        }
+        decision = routing_decision(
+            answers,
+            families,
+            min_route_confidence=self.limits.min_route_confidence,
+            min_route_probability=self.limits.min_route_probability,
+            min_evidence_probability=self.limits.min_evidence_probability,
         )
-        return Routing(disposition.choice, families)
+        probabilities = {}
+        for name in families:
+            answer = answers[name]
+            if isinstance(answer, NoulAnswer):
+                probabilities[name] = answer.noul
+        trace["evidence_probabilities"] = probabilities
+        return decision
 
     async def _candidates(
         self, check: Check, evidence: Evidence, families: tuple[str, ...], trace: dict[str, Any]
@@ -349,6 +398,10 @@ class Enricher:
                 trace["outcome"] = "no_relevant_evidence"
                 return None
             enriched = _augment(self.context, evidence, selected, trace["retrieval"])
+            self._snapshots.update({
+                candidate.snapshot.parsed.path: candidate.snapshot.parsed.source.decode("utf-8")
+                for candidate in selected
+            })
             trace["selected"] = [candidate.metadata() for candidate in selected]
             # Fresh judgment: no initial answer, route, relevance score, or expected label in state.
             prediction = await self._predict(

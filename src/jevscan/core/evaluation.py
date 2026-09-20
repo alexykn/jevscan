@@ -5,6 +5,7 @@ from typing import Any
 
 from jevscan.core.assessment import Assessment, assess
 from jevscan.core.cache import AnswerCache
+from jevscan.core.capture import FinalJudgmentSink
 from jevscan.core.client import JevClient
 from jevscan.core.context import Evidence
 from jevscan.core.enrichment import REVIEW_PRIORITY, Enricher, review_trigger
@@ -152,6 +153,7 @@ class FileResults:
     def __init__(self, planner: Planner) -> None:
         self.planner = planner
         self.records: dict[str, TargetResults] = {}
+        self._capture_reviews: dict[tuple[str, str], dict[str, Any]] = {}
         self.request_failures: dict[tuple[object, ...], dict[str, Any]] = {}
         self.request_rejected_checks = 0
         all_checks = [*planner.checks, *(omission.check for omission in planner.omissions)]
@@ -269,7 +271,7 @@ class FileResults:
         # Schedule across the whole file before consuming either budget. Emission stays in source order.
         return sorted(pending, key=lambda item: (item[0], item[2].check.target.start_byte, item[2].check.rule_id))
 
-    async def enrich(self, enricher: Enricher) -> None:
+    async def enrich(self, enricher: Enricher, capture: FinalJudgmentSink | None = None) -> None:
         for _, trigger, initial in self._review_queue():
             record = self.records[initial.check.target.id]
             name = initial.check.rule_id
@@ -280,6 +282,11 @@ class FileResults:
                 "initial_cached": initial.cached,
                 "initial_evidence": initial.evidence,
             })
+            if capture is not None:
+                self._capture_reviews[(initial.check.target.id, name)] = {
+                    "initial_evidence_state": initial.context.state,
+                    "initial_question_wire": initial.check.question(),
+                }
             result = await enricher.refine(initial.check, initial.answer, initial.context, initial.review)
             if result is not None:
                 response = result.prediction.response
@@ -303,6 +310,19 @@ class FileResults:
             final = record.judgments[name].assessment()
             initial.review["final_status"] = final.status
             enricher.inference.summary.enrichment_resolved += final.status != "unknown"
+
+    def capture_final(self, sink: FinalJudgmentSink, source_documents: dict[str, str]) -> None:
+        for record in self.records.values():
+            for rule_id, reason in record.applicability.items():
+                sink.record_skip(record.target, rule_id, reason, "applicability")
+            for rule_id, reason in record.skipped.items():
+                sink.record_skip(record.target, rule_id, reason, "omitted")
+            for judgment in record.judgments.values():
+                review = {
+                    **self._capture_reviews.get((record.target.id, judgment.check.rule_id), {}),
+                    **judgment.review,
+                }
+                sink.record(judgment, judgment.assessment(), source_documents, review)
 
     def _finalize_missing(self, aborted: bool) -> None:
         for check in [*self.planner.checks, *(item.check for item in self.planner.omissions)]:
@@ -369,14 +389,24 @@ async def evaluate_file(
     sink: EventSink,
     summary: Summary,
     index: SourceIndex | None = None,
+    capture: FinalJudgmentSink | None = None,
 ) -> None:
     results = FileResults(planner)
     inference = Inference(client, cache, summary, planner.budget.calibration)
     finished = False
+    enricher: Enricher | None = None
     try:
         await FileExecutor(planner, inference, results).run()
         if index is not None:
-            await results.enrich(Enricher(planner.context, planner.budget, index.limits, index, inference))
+            enricher = Enricher(planner.context, planner.budget, index.limits, index, inference)
+            await results.enrich(enricher, capture)
+        if capture is not None:
+            source_documents = (
+                enricher.source_documents()
+                if enricher is not None
+                else {planner.context.parsed.path: planner.context.parsed.source.decode("utf-8")}
+            )
+            results.capture_final(capture, source_documents)
         finished = True
     finally:
         results.finish(sink, summary, aborted=not finished)

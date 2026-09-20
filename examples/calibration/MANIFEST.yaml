@@ -1,0 +1,652 @@
+schema_version: 1
+corpus: public-synthetic-jev
+corpus_revision: 3
+provenance: "synthetic, model-generated; not independent ground truth"
+source_root: sources
+source_snapshot:
+  algorithm: sha256
+  canonicalization: "sorted source filenames, each followed by NUL and raw UTF-8 bytes"
+  digest: 6393505d40cd945c81a27481ebbbda894f19338cef864f7ce138b748ec11568b
+source_contract:
+  evidence_files_are_neutral: true
+  labels_are_outside_source_root: true
+  validation: "real Tree-sitter parse_source followed by the production Planner"
+  scenario_group_policy: "paired or translated versions share one group and are not independent held-out cases"
+  live_measurement_policy: "do not claim model accuracy until blind adjudication and live measurements"
+coverage_notes:
+  independent_semantic_scenarios_are_limited: true
+  current_focus: "JEV01 and JEV05 have additional independent paired groups; JEV04 and JEV06 retain explicit ambiguity groups."
+  remaining_gap: "This is a small synthetic calibration corpus, not complete coverage of every language construct or domain contract."
+
+rule_contracts:
+  - name: JEV01
+    title: mixed-responsibilities
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    applicability: none
+    question:
+      type: noul
+      proposition: "Does the target interleave two or more independently meaningful responsibilities inside one operation, rather than only orchestrating cohesive steps?"
+      true_criteria: "The target implements multiple independently meaningful responsibilities whose control or state handling is interleaved."
+      false_criteria: "The target has one coherent responsibility or only delegates cohesive steps; no concrete interleaving is shown."
+    report:
+      message: "This operation appears to interleave responsibilities that would be clearer as distinct operations."
+      warning: {min_probability: 0.5}
+      error: {min_probability: 0.9}
+      severity: "warning or error according to the probability gate"
+
+  - name: JEV02
+    title: unclear-control-flow
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    applicability: none
+    question:
+      type: score
+      proposition: "Select the level that describes how many important execution transitions in the target are obscured by its control-flow structure. Judge path traceability, not domain difficulty or line count."
+      criteria:
+        "0": "The main path and each important transition are direct and explicit."
+        "1": "One local nesting or branch complication exists, but all important transitions remain easy to trace."
+        "2": "Multiple nested or interleaved branches obscure at least one important transition."
+        "3": "Important transitions are scattered or tangled enough that the main path cannot be reconstructed directly."
+    report:
+      message: "Interleaved concerns or nesting appear to obscure the main execution path."
+      warning: {min_score: 1.0, min_confidence: 0.6}
+      error: {min_score: 2.0, min_confidence: 0.7}
+      severity: "warning or error according to score and confidence gates"
+
+  - name: JEV03
+    title: mixed-abstraction-levels
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    applicability: none
+    question:
+      type: noul
+      proposition: "Does the target mix high-level orchestration with a substantial low-level implementation concern that obscures its primary operation?"
+      true_criteria: "The target interleaves orchestration with substantial parsing, resource bookkeeping, or other low-level detail."
+      false_criteria: "The target stays at one abstraction level, or its small necessary details and cleanup do not obscure the primary operation."
+    report:
+      message: "High-level orchestration appears mixed with substantial low-level implementation detail."
+      warning: {min_probability: 0.5}
+      error: {min_probability: 0.9}
+      severity: "warning or error according to the probability gate"
+
+  - name: JEV04
+    title: redundant-validation
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    applicability:
+      requires_any: [validation_candidate]
+    question:
+      type: choice
+      proposition: "Select exactly one outcome for repeated validation in the target."
+      criteria:
+        demonstrably_redundant: "A visible operation establishes a specific invariant and the target later checks that same invariant again without a new boundary, mutation, or concurrency risk."
+        justified_or_absent: "No repeated validation is visible, or every visible repeat follows a new boundary or possible invalidation."
+        insufficient_context: "A concrete repeated validation is visible, but the missing upstream guarantee or boundary fact is required to choose between redundant and justified_or_absent."
+      defect_choices: [demonstrably_redundant]
+      uncertain_choices: [insufficient_context]
+    report:
+      message: "A validation check appears to repeat an invariant explicitly established in the supplied code."
+      warning: {min_probability: 0.6, min_confidence: 0.5}
+      error: {min_probability: 0.92, min_confidence: 0.7}
+      severity: "warning or error according to probability and confidence gates"
+
+  - name: JEV05
+    title: hidden-invariant-failure
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    applicability:
+      requires_any: [fallback_candidate]
+    question:
+      type: choice
+      proposition: "Select exactly one outcome for fallback or swallowed-failure behavior visible in the target."
+      criteria:
+        concealed_bug: "A visible fallback or swallowed failure silently hides a violation of an invariant established by the supplied evidence."
+        legitimate_behavior: "No fallback or swallowed failure is visible, or the behavior handles a legitimate runtime condition such as I/O failure, cancellation, input error, or documented optional behavior."
+        insufficient_context: "A concrete fallback or swallowed failure is visible, but a missing invariant or intended failure contract is required to choose between concealed_bug and legitimate_behavior."
+      defect_choices: [concealed_bug]
+      uncertain_choices: [insufficient_context]
+    report:
+      message: "A fallback or swallowed failure appears to conceal a violation of an established internal invariant."
+      warning: {min_probability: 0.6, min_confidence: 0.5}
+      error: {min_probability: 0.92, min_confidence: 0.7}
+      severity: "warning or error according to probability and confidence gates"
+
+  - name: JEV06
+    title: unhelpful-decomposition
+    target: unit
+    context: owner
+    applies_to: [class, impl, package, module]
+    require_members: true
+    applicability:
+      requires_any: [helper_relationship]
+    question:
+      type: choice
+      proposition: "Select exactly one outcome for helper decomposition in the target."
+      criteria:
+        meaningful: "Each visible helper hides a coherent operation behind a meaningful name or satisfies an evident interface requirement, and the caller is clearer."
+        needless_indirection: "Visible helpers only forward arguments or move lines without hiding meaningful detail, and the caller is less clear because of that indirection."
+        not_applicable: "No helper decomposition is visible in the target; data-only types and declarations are not decomposition defects."
+        insufficient_context: "Helper decomposition is visibly present, but a missing helper implementation or caller is required to distinguish meaningful from needless_indirection."
+      defect_choices: [needless_indirection]
+      not_applicable_choices: [not_applicable]
+      uncertain_choices: [insufficient_context]
+    report:
+      message: "Helper indirection appears to obscure the caller without providing meaningful decomposition."
+      warning: {min_probability: 0.6, min_confidence: 0.5}
+      error: {min_probability: 0.9, min_confidence: 0.7}
+      severity: "warning or error according to probability and confidence gates"
+
+  - name: JEV07
+    title: fragmented-ownership
+    target: file
+    context: file
+    applies_to: []
+    require_body: false
+    applicability: none
+    question:
+      type: noul
+      proposition: "Does the file assign the same authoritative state or lifecycle bookkeeping to conflicting owners, creating a concrete synchronization obligation?"
+      true_criteria: "Two or more owners visibly act as authoritative for the same state or lifecycle transition, creating a synchronization obligation."
+      false_criteria: "State has one authoritative owner, or repeated data is a derived cache or deliberately synchronized representation without a concrete ownership conflict."
+    report:
+      message: "State or lifecycle bookkeeping appears to have competing authoritative owners."
+      warning: {min_probability: 0.5}
+      error: {min_probability: 0.92}
+      severity: "warning or error according to the probability gate"
+
+  - name: JEV08
+    title: incohesive-owner
+    target: unit
+    context: owner
+    applies_to: [class, impl, package, module]
+    require_members: false
+    applicability:
+      requires_any: [executable_behavior]
+    question:
+      type: noul
+      proposition: "Does this owner combine two or more unrelated responsibilities with weakly connected state or behavior?"
+      true_criteria: "The owner contains multiple responsibilities with weakly connected state or behavior and no clear cohesive boundary."
+      false_criteria: "The owner is cohesive, a domain aggregate or facade, or one implementation of a required interface; method count alone is not evidence."
+    report:
+      message: "This owner appears to combine unrelated state and behavior."
+      warning: {min_probability: 0.5}
+      error: {min_probability: 0.9}
+      severity: "warning or error according to the probability gate"
+
+  - name: JEV09
+    title: duplicated-behavior
+    target: file
+    context: file
+    applies_to: []
+    require_body: false
+    applicability: none
+    question:
+      type: noul
+      proposition: "Does the file contain materially duplicated implementations of the same owned behavior, creating a maintenance obligation to keep them in sync?"
+      true_criteria: "At least two implementations contain materially duplicated owned behavior with a concrete obligation to keep them synchronized."
+      false_criteria: "No implementation is materially duplicated behavior, or similarity is explained by a distinct boundary or required implementation."
+    report:
+      message: "The same owned behavior appears implemented more than once and may need to be maintained in sync."
+      warning: {min_probability: 0.5}
+      error: {min_probability: 0.93}
+      severity: "warning or error according to the probability gate"
+
+scenarios:
+  - id: s01
+    scenario_group: g01
+    source: sources/amber.js
+    language: javascript
+    rule: JEV01
+    target: {scope: unit, name: publishReceipt, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: true
+    expected_report: warning_or_error_if_probability_gate_is_met
+    rationale: "One operation inserts a receipt, records an audit event, and renders presentation markup with interleaved state handling."
+    context_requirements: [store behavior, audit ownership, renderer contract]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s02
+    scenario_group: g01
+    source: sources/birch.py
+    language: python
+    rule: JEV01
+    target: {scope: unit, name: publish_receipt, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: false
+    expected_report: no_defect_report
+    rationale: "Corrected translation counterpart keeps receipt persistence, audit, and rendering as delegated cohesive steps at one orchestration level."
+    context_requirements: [store and renderer contracts, audit ownership]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s03
+    scenario_group: g03
+    source: sources/cascade.pl
+    language: perl
+    rule: JEV02
+    target: {scope: unit, name: sync_record, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: 3
+    expected_report: error_if_score_at_least_2_and_confidence_at_least_0_7
+    rationale: "A retry loop contains state branches, reachability checks, version comparison, and alternate transitions whose path order is hard to trace."
+    context_requirements: [remote reachability and version contracts]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s04
+    scenario_group: g03
+    source: sources/dahlia.js
+    language: javascript
+    rule: JEV02
+    target: {scope: unit, name: syncRecord, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: 0
+    expected_report: no_defect_report
+    rationale: "Corrected translation counterpart delegates the remote transition directly instead of embedding retry and state branches."
+    context_requirements: [remote push contract]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s05
+    scenario_group: g05
+    source: sources/fir.js
+    language: javascript
+    rule: JEV03
+    target: {scope: unit, name: load_manifest, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: true
+    expected_report: warning_or_error_if_probability_gate_is_met
+    rationale: "High-level manifest decoding is interleaved with byte slicing and manual length arithmetic."
+    context_requirements: [decode and parse contracts, byte format specification]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s06
+    scenario_group: g05
+    source: sources/eider.ts
+    language: typescript
+    rule: JEV03
+    target: {scope: unit, name: loadManifest, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: false
+    expected_report: no_defect_report
+    rationale: "Corrected translation counterpart delegates decoding and parsing and does not expose the byte-level header arithmetic."
+    context_requirements: [decode and parse contracts]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s07
+    scenario_group: g07
+    source: sources/juniper.pl
+    language: perl
+    rule: JEV04
+    target: {scope: unit, name: Permit::save, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: demonstrably_redundant
+    expected_report: warning_or_error_if_choice_probability_and_confidence_gates_are_met
+    rationale: "The same token-presence invariant is checked before and after a call without visible mutation or boundary."
+    context_requirements: [store build guarantee, token mutation contract]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s08
+    scenario_group: g07
+    source: sources/kestrel.js
+    language: javascript
+    rule: JEV04
+    target: {scope: unit, name: savePermit, kind: function}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: justified_or_absent
+    expected_report: no_defect_report
+    rationale: "Corrected counterpart checks the token before the store boundary and the returned permit after that boundary; the checks concern different values."
+    context_requirements: [store build and returned-permit contracts]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s09
+    scenario_group: g09
+    source: sources/poppy.js
+    language: javascript
+    rule: JEV04
+    target: {scope: unit, name: make_checker.check, kind: closure}
+    applicability: {status: applicable, required_facts: [validation_candidate], observed_facts: [validation_candidate, executable_behavior]}
+    provisional_outcome: insufficient_context
+    provisional_answer: insufficient_context
+    expected_report: uncertain_when_insufficient_context_is_selected
+    rationale: "The same schema predicate is visible before and after normalization, but the missing normalize guarantee determines whether the second check is justified."
+    context_requirements: [schema.normalize mutation and boundary contract]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s10
+    scenario_group: g10
+    source: sources/fawn.js
+    language: javascript
+    rule: JEV04
+    target: {scope: unit, name: identity, kind: function}
+    applicability: {status: not_applicable, required_facts: [validation_candidate], observed_facts: []}
+    provisional_outcome: not_applicable
+    provisional_answer: null
+    expected_report: not_applicable_skip
+    rationale: "The target has no validation-shaped syntax, so the planner must skip this rule rather than ask a semantic clean question."
+    context_requirements: []
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s11
+    scenario_group: g11
+    source: sources/marrow.js
+    language: javascript
+    rule: JEV05
+    target: {scope: unit, name: decode_session, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: concealed_bug
+    expected_report: warning_or_error_if_choice_probability_and_confidence_gates_are_met
+    rationale: "A catch path returns an empty permission set after the supplied code established that a session must have non-empty permissions."
+    context_requirements: [hydrate failure contract, session permission invariant]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s12
+    scenario_group: g11
+    source: sources/nacre.pl
+    language: perl
+    rule: JEV05
+    target: {scope: unit, name: decode_session, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: legitimate_behavior
+    expected_report: no_defect_report
+    rationale: "Corrected counterpart propagates a hydration failure instead of returning a session that violates the established permission invariant."
+    context_requirements: [hydrate failure contract, session permission invariant]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s13
+    scenario_group: g13
+    source: sources/oriole.py
+    language: python
+    rule: JEV05
+    target: {scope: unit, name: choose_route, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_outcome: insufficient_context
+    provisional_answer: insufficient_context
+    expected_report: uncertain_when_insufficient_context_is_selected
+    rationale: "A broad routing exception is swallowed into a default route, but the supplied code does not state whether routing failure is recoverable."
+    context_requirements: [router failure contract, whether default routing is safe]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s14
+    scenario_group: g14
+    source: sources/fawn.js
+    language: javascript
+    rule: JEV05
+    target: {scope: unit, name: identity, kind: function}
+    applicability: {status: not_applicable, required_facts: [fallback_candidate], observed_facts: []}
+    provisional_outcome: not_applicable
+    provisional_answer: null
+    expected_report: not_applicable_skip
+    rationale: "The target has no fallback or swallowed-failure syntax, so the planner must skip this rule."
+    context_requirements: []
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s15
+    scenario_group: g15
+    source: sources/quince.js
+    language: javascript
+    rule: JEV06
+    target: {scope: unit, name: Notes, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: needless_indirection
+    expected_report: warning_or_error_if_choice_probability_and_confidence_gates_are_met
+    rationale: "The visible helper only forwards a note to one store operation and does not hide a coherent operation or clarify the caller."
+    context_requirements: [store API, whether writeNote is an interface requirement]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s16
+    scenario_group: g15
+    source: sources/rose.pl
+    language: perl
+    rule: JEV06
+    target: {scope: unit, name: Notes, kind: package}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: meaningful
+    expected_report: no_defect_report
+    rationale: "Corrected counterpart gives validation and persistence distinct meaningful operations, making add's orchestration clearer."
+    context_requirements: [store contract, note validation contract]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s17
+    scenario_group: g17
+    source: sources/sable.ts
+    language: typescript
+    rule: JEV06
+    target: {scope: unit, name: Relay, kind: class}
+    applicability: {status: applicable, required_facts: [helper_relationship], observed_facts: [helper_relationship, executable_behavior]}
+    provisional_outcome: insufficient_context
+    provisional_answer: insufficient_context
+    expected_report: uncertain_when_insufficient_context_is_selected
+    rationale: "execute forwards to dispatch, but the supplied code omits whether dispatch satisfies an external interface or meaningful lifecycle boundary."
+    context_requirements: [external interface requirements, callers of execute and dispatch]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s18
+    scenario_group: g18
+    source: sources/zinnia.pl
+    language: perl
+    rule: JEV06
+    target: {scope: unit, name: Service, kind: package}
+    applicability: {status: not_applicable, required_facts: [helper_relationship], observed_facts: [executable_behavior]}
+    provisional_outcome: not_applicable
+    provisional_answer: null
+    expected_report: not_applicable_skip
+    rationale: "The package has implemented members but no visible sibling caller/helper relationship, so decomposition is not admitted."
+    context_requirements: []
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s19
+    scenario_group: g19
+    source: sources/tamarind.js
+    language: javascript
+    rule: JEV07
+    target: {scope: file, name: tamarind.js, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_outcome: defect
+    provisional_answer: true
+    expected_report: warning_or_error_if_probability_gate_is_met
+    rationale: "The SessionStore owner and the expire function both mutate the same module-level session lifecycle state."
+    context_requirements: [whether expire is part of SessionStore's lifecycle API]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s20
+    scenario_group: g19
+    source: sources/umber.pl
+    language: perl
+    rule: JEV07
+    target: {scope: file, name: umber.pl, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_outcome: clean
+    provisional_answer: false
+    expected_report: no_defect_report
+    rationale: "Corrected counterpart gives one package-level owner all lifecycle operations over the session table."
+    context_requirements: [whether callers mutate sessions outside SessionStore]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s21
+    scenario_group: g21
+    source: sources/yarrow.js
+    language: javascript
+    rule: JEV08
+    target: {scope: unit, name: Service, kind: class}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: true
+    expected_report: warning_or_error_if_probability_gate_is_met
+    rationale: "One class combines mail delivery, CSV parsing, and key rotation with unrelated collaborators and responsibilities."
+    context_requirements: [whether Service is an intentional facade, domain boundaries]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s22
+    scenario_group: g21
+    source: sources/zinnia.pl
+    language: perl
+    rule: JEV08
+    target: {scope: unit, name: Service, kind: package}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: false
+    expected_report: no_defect_report
+    rationale: "Corrected counterpart owns one cohesive message-delivery lifecycle and its retry behavior."
+    context_requirements: [whether Service is a required interface implementation]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s23
+    scenario_group: g23
+    source: sources/alder.rs
+    language: rust
+    rule: JEV08
+    target: {scope: unit, name: impl Settings, kind: impl}
+    applicability: {status: applicable, required_facts: [executable_behavior], observed_facts: [executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: false
+    expected_report: no_defect_report
+    rationale: "The implementation parses and exposes one Settings value and remains a cohesive owner."
+    context_requirements: [Settings API and interface requirements]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s24
+    scenario_group: g24
+    source: sources/beech.js
+    language: javascript
+    rule: JEV09
+    target: {scope: file, name: beech.js, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_outcome: defect
+    provisional_answer: true
+    expected_report: warning_or_error_if_probability_gate_is_met
+    rationale: "normalizeAddress and prepareAddress contain materially identical address implementations with no distinct boundary."
+    context_requirements: [whether the two functions are intentionally versioned APIs]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s25
+    scenario_group: g24
+    source: sources/camellia.pl
+    language: perl
+    rule: JEV09
+    target: {scope: file, name: camellia.pl, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_outcome: clean
+    provisional_answer: false
+    expected_report: no_defect_report
+    rationale: "Corrected counterpart contains one address normalization implementation and a thin shipping delegate instead of two copies."
+    context_requirements: [address normalization contract]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s26
+    scenario_group: g26
+    source: sources/dogwood.py
+    language: python
+    rule: JEV09
+    target: {scope: file, name: dogwood.py, kind: null}
+    applicability: {status: applicable, required_facts: [], observed_facts: []}
+    provisional_outcome: clean
+    provisional_answer: false
+    expected_report: no_defect_report
+    rationale: "Loading and saving the same field are distinct boundary operations, not duplicated implementations of one owned behavior."
+    context_requirements: [record lifecycle and caller ownership]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s27
+    scenario_group: g27
+    source: sources/cedar.js
+    language: javascript
+    rule: JEV01
+    target: {scope: unit, name: reconcileOrder, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: true
+    expected_report: warning_or_error_if_probability_gate_is_met
+    rationale: "The operation interleaves policy rejection, inventory reservation, audit writes, cancellation, and capture across shared state and alternate paths."
+    context_requirements: [policy decision contract, inventory reservation atomicity, ledger ownership]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s28
+    scenario_group: g27
+    source: sources/sycamore.js
+    language: javascript
+    rule: JEV01
+    target: {scope: unit, name: reconcileOrder, kind: function}
+    applicability: {status: applicable, required_facts: [], observed_facts: [executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: false
+    expected_report: no_defect_report
+    rationale: "The paired implementation evaluates one order decision and delegates its application as one cohesive reconciliation operation."
+    context_requirements: [policy decision contract, inventory application contract]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s29
+    scenario_group: g28
+    source: sources/hazel.js
+    language: javascript
+    rule: JEV05
+    target: {scope: unit, name: recordShipment, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: concealed_bug
+    expected_report: warning_or_error_if_choice_probability_and_confidence_gates_are_met
+    rationale: "The local Shipment constructor establishes non-empty packages; ShipmentIndex stores by one key but looks up another, and the catch returns a successful raw shipment that bypasses the constructor with empty packages."
+    context_requirements: [Shipment constructor invariant, ShipmentIndex key contract, caller success output]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s30
+    scenario_group: g28
+    source: sources/maple.js
+    language: javascript
+    rule: JEV05
+    target: {scope: unit, name: recordShipment, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: legitimate_behavior
+    expected_report: no_defect_report
+    rationale: "The paired local Shipment and ShipmentIndex implementations use the same key and return an explicit rejected result when construction or lookup fails."
+    context_requirements: [Shipment constructor invariant, ShipmentIndex key contract, caller rejection output]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s31
+    scenario_group: g29
+    source: sources/indigo.pl
+    language: perl
+    rule: JEV05
+    target: {scope: unit, name: Billing::settle_invoice, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_outcome: defect
+    provisional_answer: concealed_bug
+    expected_report: warning_or_error_if_choice_probability_and_confidence_gates_are_met
+    rationale: "The local make_invoice helper establishes non-empty lines; index_add stores by one key while index_find uses another, and the catch returns a settled raw invoice with empty lines."
+    context_requirements: [make_invoice invariant, index key contract, caller settlement output]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"
+
+  - id: s32
+    scenario_group: g29
+    source: sources/olive.pl
+    language: perl
+    rule: JEV05
+    target: {scope: unit, name: Billing::settle_invoice, kind: function}
+    applicability: {status: applicable, required_facts: [fallback_candidate], observed_facts: [fallback_candidate, executable_behavior]}
+    provisional_outcome: clean
+    provisional_answer: legitimate_behavior
+    expected_report: no_defect_report
+    rationale: "The paired local helpers use the same index key and return an explicit rejected result when construction or lookup fails instead of fabricating an invoice."
+    context_requirements: [make_invoice invariant, index key contract, caller rejection output]
+    generator_provenance: "synthetic, model-generated; not independent ground truth"

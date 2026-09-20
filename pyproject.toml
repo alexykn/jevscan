@@ -22,6 +22,8 @@ dynamic = ["version", "dependencies"]
 
 [project.scripts]
 jevscan = "jevscan.cli.main:main"
+jevscan-calibrate = "jevscan.cli.calibrate:main"
+jevscan-calibration-import = "jevscan.cli.import_calibration:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -58,6 +60,9 @@ markers = ["parser: requires the real Tree-sitter runtime and bundled grammars"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+# Frozen semantic evidence includes deliberate defects and partial programs.
+# Production parser/planner and snapshot tests validate these data files.
+extend-exclude = ["examples/calibration/**/sources"]
 
 [tool.ruff.lint]
 extend-select = ["I", "B", "UP", "S", "N", "C4", "SIM", "RET", "PTH", "LOG", "TRY", "PERF", "ARG"]
@@ -68,6 +73,9 @@ ignore = [
 
 [tool.ruff.format]
 preview = true
+
+[tool.ty.src]
+exclude = ["examples/calibration/**/sources/**"]
 
 [tool.ty.environment]
 python-version = "3.12"

@@ -36,6 +36,7 @@ class _Symbol:
     end: int
     body: Any
     bound_kind: Kind | None = None
+    outer_binding: str | None = None
 
 
 def require_parser_runtime() -> None:
@@ -88,8 +89,84 @@ def _body(node: Any) -> Any:
     )
 
 
+def _rust_tuple_binding(node: Any, source: bytes) -> tuple[str, Kind] | None:
+    """Bind a closure only when its tuple expression and pattern align exactly."""
+    expression = node.parent
+    declaration = expression.parent if expression is not None else None
+    if (
+        node.type != "closure_expression"
+        or expression is None
+        or expression.type != "tuple_expression"
+        or declaration is None
+        or declaration.type != "let_declaration"
+    ):
+        return None
+    pattern = declaration.child_by_field_name("pattern")
+    value = declaration.child_by_field_name("value")
+    if pattern is None or pattern.type != "tuple_pattern" or value is None or value.id != expression.id:
+        return None
+    expressions = list(expression.named_children)
+    patterns = list(pattern.named_children)
+    if len(expressions) != len(patterns) or any(item.type != "identifier" for item in patterns):
+        return None
+    try:
+        position = next(index for index, item in enumerate(expressions) if item.id == node.id)
+    except StopIteration:
+        return None
+    return _text(patterns[position], source), Kind.FUNCTION
+
+
+def _typescript_property_object(node: Any) -> Any | None:
+    pair = node.parent
+    object_node = pair.parent if pair is not None else None
+    if (
+        node.type != "arrow_function"
+        or pair is None
+        or pair.type != "pair"
+        or pair.child_by_field_name("value") is None
+        or pair.child_by_field_name("value").id != node.id
+        or object_node is None
+        or object_node.type != "object"
+    ):
+        return None
+    return object_node
+
+
+def _variable_name_for_value(declaration: Any, value: Any, source: bytes) -> str | None:
+    if declaration is None or declaration.type != "variable_declarator":
+        return None
+    declared_value = declaration.child_by_field_name("value")
+    name = declaration.child_by_field_name("name")
+    if declared_value is None or declared_value.id != value.id or name is None or name.type != "identifier":
+        return None
+    return _text(name, source)
+
+
+def _typescript_outer_binding(node: Any, source: bytes) -> str | None:
+    object_node = _typescript_property_object(node)
+    if object_node is None:
+        return None
+    container = object_node.parent
+    direct = _variable_name_for_value(container, object_node, source)
+    if direct is not None:
+        return direct
+    call = container.parent if container.type == "arguments" else None
+    if (
+        container.type != "arguments"
+        or call is None
+        or call.type != "call_expression"
+        or len(container.named_children) != 1
+        or container.named_children[0].id != object_node.id
+    ):
+        return None
+    return _variable_name_for_value(call.parent, call, source)
+
+
 def _binding(node: Any, source: bytes) -> tuple[str | None, Kind | None]:
     """Recognize actual assignment/field syntax, not a name guessed from function text."""
+    tuple_binding = _rust_tuple_binding(node, source)
+    if tuple_binding is not None:
+        return tuple_binding
     current = node.parent
     for _ in range(3):
         if current is None:
@@ -112,19 +189,45 @@ def _binding(node: Any, source: bytes) -> tuple[str | None, Kind | None]:
                 )
                 return _text(name, source).strip("\"'"), kind
             break
-        if current.type not in {"parenthesized_expression", "as_expression", "satisfies_expression"}:
+        if current.type not in {
+            "parenthesized_expression",
+            "as_expression",
+            "satisfies_expression",
+            "type_cast_expression",
+        }:
             break
         current = current.parent
     return None, None
 
 
-def _symbol(node: Any, kind: Kind, source: bytes) -> _Symbol:
-    body = _body(node)
+def _rust_callable_start(node: Any) -> int:
+    if node.type not in {"function_item", "function_signature_item"} or node.parent is None:
+        return node.start_byte
     start = node.start_byte
+    sibling = node.prev_named_sibling
+    while sibling is not None and sibling.type == "attribute_item":
+        start = sibling.start_byte
+        sibling = sibling.prev_named_sibling
+    return start
+
+
+def _symbol(node: Any, kind: Kind, source: bytes, language: str) -> _Symbol:
+    body = _body(node)
+    start = _rust_callable_start(node)
     if node.parent is not None and node.parent.type == "decorated_definition":
         start = node.parent.start_byte
+    if (
+        kind == Kind.METHOD
+        and node.type == "function_signature_item"
+        and node.parent is not None
+        and node.parent.type == "declaration_list"
+        and node.parent.parent is not None
+        and node.parent.parent.type == "foreign_mod_item"
+    ):
+        kind = Kind.FUNCTION
     name_node = node.child_by_field_name("name")
     bound_kind = None
+    outer_binding = None
     if kind == Kind.IMPL:
         type_node = node.child_by_field_name("type")
         trait_node = node.child_by_field_name("trait")
@@ -135,9 +238,11 @@ def _symbol(node: Any, kind: Kind, source: bytes) -> _Symbol:
         name = _text(name_node, source)
     else:
         name, bound_kind = _binding(node, source)
+        if language == "typescript":
+            outer_binding = _typescript_outer_binding(node, source)
         if name is None:
             name = f"<anonymous@{node.start_point.row + 1}:{node.start_point.column + 1}>"
-    return _Symbol(node, kind, name, start, node.end_byte, body, bound_kind)
+    return _Symbol(node, kind, name, start, node.end_byte, body, bound_kind, outer_binding)
 
 
 def _extend_perl_namespaces(symbols: list[_Symbol]) -> None:
@@ -157,14 +262,190 @@ def _extend_perl_namespaces(symbols: list[_Symbol]) -> None:
             symbol.end = siblings[index + 1].start if index + 1 < len(siblings) else symbol.node.parent.end_byte
 
 
-def _first_error_line(root: Any) -> int:
+def _parse_errors(root: Any) -> tuple[Any, ...]:
     pending = [root]
+    errors = []
     while pending:
         node = pending.pop()
         if node.is_error or node.is_missing:
-            return node.start_point.row + 1
-        pending.extend(reversed([child for child in node.children if child.has_error or child.is_missing]))
-    return 1
+            errors.append(node)
+        pending.extend(reversed(node.children))
+    return tuple(errors)
+
+
+def _first_error_line(errors: tuple[Any, ...]) -> int:
+    return min((node.start_point.row + 1 for node in errors), default=1)
+
+
+_TYPE_SCRIPT_GRAMMARS = frozenset({"typescript", "tsx"})
+_TYPE_ANNOTATION_PARENTS = frozenset({
+    "required_parameter",
+    "optional_parameter",
+    "rest_parameter",
+    "function_declaration",
+    "function_expression",
+    "generator_function",
+    "generator_function_declaration",
+    "method_definition",
+    "function_signature",
+    "abstract_method_signature",
+    "method_signature",
+    "arrow_function",
+})
+
+
+def _is_signature_type_annotation(node: Any) -> bool:
+    return node.type == "type_annotation" and node.parent is not None and node.parent.type in _TYPE_ANNOTATION_PARENTS
+
+
+def _is_nested_signature_type_annotation(node: Any) -> bool:
+    if _is_signature_type_annotation(node):
+        return True
+    property_signature = _parent_of_type(node, "property_signature")
+    object_type = _parent_of_type(property_signature, "object_type") if property_signature is not None else None
+    if object_type is None:
+        return False
+    container = object_type.parent
+    if container is not None and container.type == "type_arguments":
+        generic = _parent_of_type(container, "generic_type")
+        container = generic.parent if generic is not None else None
+    return container is not None and _is_signature_type_annotation(container)
+
+
+def _is_imported_member(node: Any) -> bool:
+    if node.type != "member_expression" or [child.type for child in node.children] != [
+        "call_expression",
+        ".",
+        "property_identifier",
+    ]:
+        return False
+    call = node.child_by_field_name("object")
+    property_node = node.child_by_field_name("property")
+    if (
+        call is None
+        or property_node is None
+        or call.type != "call_expression"
+        or property_node.type != "property_identifier"
+    ):
+        return False
+    function = call.child_by_field_name("function")
+    arguments = call.child_by_field_name("arguments")
+    return (
+        function is not None
+        and function.type == "import"
+        and arguments is not None
+        and arguments.type == "arguments"
+        and [child.type for child in arguments.children] == ["(", "string", ")"]
+        and len(arguments.named_children) == 1
+    )
+
+
+def _named_child(node: Any, index: int, node_type: str) -> Any | None:
+    children = node.named_children
+    return children[index] if len(children) > index and children[index].type == node_type else None
+
+
+def _parent_of_type(node: Any, node_type: str) -> Any | None:
+    parent = node.parent
+    return parent if parent is not None and parent.type == node_type else None
+
+
+def _is_nested_imported_member(node: Any, source: bytes) -> bool:
+    arguments = _parent_of_type(node, "type_arguments")
+    if arguments is None:
+        return False
+    inner_generic = _parent_of_type(arguments, "generic_type")
+    outer_arguments = _parent_of_type(inner_generic, "type_arguments") if inner_generic is not None else None
+    outer_generic = _parent_of_type(outer_arguments, "generic_type") if outer_arguments is not None else None
+    lookup = _parent_of_type(outer_generic, "lookup_type") if outer_generic is not None else None
+    annotation = lookup.parent if lookup is not None else None
+    if inner_generic is None or outer_arguments is None or outer_generic is None or lookup is None:
+        return False
+    if annotation is None or not _is_signature_type_annotation(annotation):
+        return False
+    inner_name = _named_child(inner_generic, 0, "type_identifier")
+    outer_name = _named_child(outer_generic, 0, "type_identifier")
+    if (
+        inner_name is None
+        or _text(inner_name, source) != "NonNullable"
+        or outer_name is None
+        or _text(outer_name, source) != "Parameters"
+    ):
+        return False
+    inner_index = _named_child(arguments, 1, "tuple_type")
+    lookup_index = _named_child(lookup, 1, "literal_type")
+    return (
+        inner_index is not None
+        and len(inner_index.named_children) == 1
+        and inner_index.named_children[0].type == "literal_type"
+        and lookup_index is not None
+        and _text(lookup_index, source) == "0"
+    )
+
+
+def _is_recoverable_export_type(node: Any, source: bytes) -> bool:
+    statement = node.parent
+    block = statement.parent if statement is not None else None
+    module = block.parent if block is not None else None
+    ambient = module.parent if module is not None else None
+    if (
+        node.type != "ERROR"
+        or _text(node, source) != "type"
+        or statement is None
+        or statement.type != "export_statement"
+        or block is None
+        or block.type != "statement_block"
+        or module is None
+        or module.type != "module"
+        or ambient is None
+        or ambient.type != "ambient_declaration"
+    ):
+        return False
+    child_types = [child.type for child in statement.children]
+    return child_types in (["export", "ERROR", "*", "from", "string", ";"], ["export", "ERROR", "*", "from", "string"])
+
+
+def _is_recoverable_import_type(node: Any, source: bytes) -> bool:
+    parent = node.parent
+    if node.type != "ERROR" or parent is None:
+        return False
+    children = node.named_children
+    if parent.type == "type_annotation" and _is_nested_signature_type_annotation(parent):
+        if len(children) == 1 and _is_imported_member(children[0]):
+            return True
+        if len(children) == 1 and children[0].type == "readonly_type":
+            readonly = children[0]
+            return (
+                [child.type for child in readonly.children] == ["readonly", "member_expression"]
+                and len(readonly.named_children) == 1
+                and _is_imported_member(readonly.named_children[0])
+            )
+    return (
+        parent.type == "type_arguments"
+        and len(children) == 1
+        and _is_imported_member(children[0])
+        and _is_nested_imported_member(node, source)
+    )
+
+
+def _recoverable_type_errors(errors: tuple[Any, ...], source: bytes) -> bool:
+    return bool(errors) and all(
+        _is_recoverable_export_type(node, source) or _is_recoverable_import_type(node, source) for node in errors
+    )
+
+
+def _errors_outside_executable_bodies(errors: tuple[Any, ...], captured: list[Any], spec: Any) -> bool:
+    executable = [node for node in captured if spec.nodes[node.type] in CALLABLE_KINDS and _body(node) is not None]
+    for error in errors:
+        containing = [
+            node for node in executable if node.start_byte <= error.start_byte and error.end_byte <= node.end_byte
+        ]
+        if not containing:
+            continue
+        body = _body(min(containing, key=lambda node: node.end_byte - node.start_byte))
+        if body is not None and error.start_byte < body.end_byte and error.end_byte > body.start_byte:
+            return False
+    return True
 
 
 _NAME_NODES = frozenset({
@@ -272,10 +553,12 @@ def _references(root: Any, source: bytes) -> tuple[Reference, ...]:
     return tuple(references)
 
 
-def _has_implementation(symbol: _Symbol) -> bool:
+def _has_implementation(symbol: _Symbol, language: str) -> bool:
     if symbol.body is None:
         return False
     if symbol.kind not in CALLABLE_KINDS:
+        return True
+    if language == "rust" and symbol.node.type == "function_item":
         return True
     if symbol.body.type not in {"block", "statement_block"}:
         return True  # Expression-bodied arrows/closures are implementations too.
@@ -309,14 +592,14 @@ def _contains_sentinel(node: Any, source: bytes) -> bool:
     return False
 
 
-def _syntax_facts(symbol: _Symbol, node_types: frozenset[str], source: bytes) -> tuple[SyntaxFact, ...]:
+def _syntax_facts(symbol: _Symbol, node_types: frozenset[str], source: bytes, language: str) -> tuple[SyntaxFact, ...]:
     """Record broad syntactic admission facts; semantic classification remains with Jev."""
     facts: set[SyntaxFact] = set()
     if node_types & _VALIDATION_NODES:
         facts.add("validation_candidate")
     if node_types & _FALLBACK_NODES or _contains_sentinel(symbol.node, source):
         facts.add("fallback_candidate")
-    if symbol.kind in CALLABLE_KINDS and _has_implementation(symbol):
+    if symbol.kind in CALLABLE_KINDS and _has_implementation(symbol, language):
         facts.add("executable_behavior")
     return tuple(sorted(facts))
 
@@ -394,10 +677,14 @@ def _normalize(
         kind = symbol.kind
         if kind == Kind.FUNCTION and parent and parent.kind in {Kind.CLASS, Kind.IMPL, Kind.TRAIT, Kind.INTERFACE}:
             kind = Kind.METHOD
-        if kind == Kind.CLOSURE and symbol.bound_kind is not None:
+        if kind == Kind.CLOSURE and symbol.node.type != "async_block" and symbol.bound_kind is not None:
             kind = symbol.bound_kind
         separator = "::" if job.language in {"rust", "perl"} else "."
-        qualified = parent.qualified_name + separator + symbol.name if parent else symbol.name
+        qualified_parts = [parent.qualified_name] if parent else []
+        if symbol.outer_binding is not None:
+            qualified_parts.append(symbol.outer_binding)
+        qualified_parts.append(symbol.name)
+        qualified = separator.join(qualified_parts)
         if job.language == "perl" and (kind in {Kind.PACKAGE, Kind.CLASS} or "::" in symbol.name):
             # Perl package declarations and explicitly qualified subs name absolute namespaces.
             qualified = symbol.name
@@ -407,7 +694,11 @@ def _normalize(
         if len(signature) > 1024:
             signature = signature[:1024] + " [signature abbreviated]"
         label = callback_label(symbol.node, source) if symbol.name.startswith("<anonymous@") else symbol.name
-        display = parent.display_name + separator + label if parent else label
+        display_parts = [parent.display_name] if parent else []
+        if symbol.outer_binding is not None:
+            display_parts.append(symbol.outer_binding)
+        display_parts.append(label)
+        display = separator.join(display_parts)
         if job.language == "perl" and (kind in {Kind.PACKAGE, Kind.CLASS} or "::" in symbol.name):
             display = symbol.name
         node_types = _syntax_node_types(symbol.node)
@@ -428,9 +719,9 @@ def _normalize(
             display_name=display,
             body_start_byte=symbol.body.start_byte if symbol.body is not None else None,
             body_end_byte=symbol.body.end_byte if symbol.body is not None else None,
-            has_implementation=_has_implementation(symbol),
+            has_implementation=_has_implementation(symbol, job.language),
             branch_nodes=bisect_left(branches, symbol.end) - bisect_left(branches, symbol.start),
-            syntax_facts=_syntax_facts(symbol, node_types, source),
+            syntax_facts=_syntax_facts(symbol, node_types, source, job.language),
         )
         if parent:
             member_counts[parent.id] += 1
@@ -445,21 +736,43 @@ def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> Parsed
     source.decode("utf-8")  # The file boundary establishes the UTF-8 contract before any slicing.
     parser, query = _frontend(job.grammar)
     tree = parser.parse(source)
-    if tree.root_node.has_error:
+    errors = _parse_errors(tree.root_node)
+    recovery_diagnostics: tuple[Diagnostic, ...] = ()
+    if errors and (job.grammar not in _TYPE_SCRIPT_GRAMMARS or not _recoverable_type_errors(errors, source)):
         error = Diagnostic(
             job.display_path,
             "syntax-error",
             "Tree-sitter reported invalid or unsupported syntax; file not evaluated",
             Severity.ERROR,
-            _first_error_line(tree.root_node),
+            _first_error_line(errors),
         )
         return ParsedFile(job.display_path, job.language, b"", (), diagnostics=(error,), failed=True)
     captures = QueryCursor(query).captures(tree.root_node)
+    if errors and not _errors_outside_executable_bodies(errors, captures.get("unit", []), SPECS[job.grammar]):
+        error = Diagnostic(
+            job.display_path,
+            "syntax-error",
+            "Tree-sitter reported invalid or unsupported syntax; file not evaluated",
+            Severity.ERROR,
+            _first_error_line(errors),
+        )
+        return ParsedFile(job.display_path, job.language, b"", (), diagnostics=(error,), failed=True)
+    if errors:
+        recovery_diagnostics = (
+            Diagnostic(
+                job.display_path,
+                "typescript-type-recovery",
+                "TypeScript type-only syntax was recovered; reference/type extraction may be incomplete",
+                Severity.WARNING,
+                _first_error_line(errors),
+                False,
+            ),
+        )
     captured = captures.get("unit", [])
     if len(captured) > max_units:
         diagnostic = Diagnostic(job.display_path, "unit-limit", f"file exceeds scan.max_units_per_file ({max_units})")
         return ParsedFile(job.display_path, job.language, b"", (), diagnostics=(diagnostic,), failed=True)
-    symbols = [_symbol(node, SPECS[job.grammar].nodes[node.type], source) for node in captured]
+    symbols = [_symbol(node, SPECS[job.grammar].nodes[node.type], source, job.language) for node in captured]
     if job.language == "perl":
         _extend_perl_namespaces(symbols)
     branches = sorted(node.start_byte for node in captures.get("branch", []))
@@ -474,6 +787,7 @@ def parse_source(source: bytes, job: FileJob, max_units: int = 10_000) -> Parsed
         source,
         units,
         declarations,
+        diagnostics=recovery_diagnostics,
         references=references,
         blocks=source_blocks(tree.root_node, source),
     )
