@@ -77,3 +77,27 @@ The final selection procedure is fixed in [FINAL_EVALUATION_PLAN.md](FINAL_EVALU
 Completed supplementary evidence includes the
 [lookup-daemon evaluation](LOOKUP_RESULTS.md) and the
 [baseline-only real-project assembly](BASELINE_ASSEMBLY.md).
+
+## Round-2 JEV04 pair experiment
+
+The predeclared round-2 plan is
+[FOCUSED_QUESTIONS_PLAN.md](FOCUSED_QUESTIONS_PLAN.md). It adds
+`jev04-pair-joint` and `jev04-pair-decomposed` to the existing
+`focused_experiment.py` pipeline without changing packaged production rules or
+calling a provider during planning and replay.
+
+Use repeatable `--candidate` filters on `plan` and `capture` to purchase only
+selected pair candidates. Held-out planning and capture still require the
+development freeze and reject candidates not frozen. A pair question is paid
+only for a target with exactly one bounded extractor pair whose operation and
+intervening spans are covered by the unchanged requested evidence. Zero,
+multiple, capped, unsupported, ambiguous, and incomplete cases are recorded as
+explicit whole-target fallbacks with reasons; they are not silently counted as
+clean pair judgments.
+
+Pair-level replay combines eligible pair records with already captured
+`jev04-baseline` whole-target records for ineligible parents. The output
+reports fallback coverage and remains incomplete when required baseline
+fallback records are absent. Decomposed pair children must carry matching pair
+IDs and question metadata before their diagnostic conservative AND is
+calculated; probabilities are never combined.

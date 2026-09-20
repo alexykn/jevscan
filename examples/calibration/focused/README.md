@@ -30,14 +30,16 @@ uv run python calibration/focused_experiment.py config \
 uv run python calibration/focused_experiment.py plan \
   --phase development \
   --config .jevscan-calibration/focused.yaml \
+  --candidate jev04-pair-joint \
   --output .jevscan-calibration/focused-dev-plan.json
 uv run python calibration/focused_experiment.py freeze \
   --development-plan .jevscan-calibration/focused-dev-plan.json \
-  --candidate jev04-focused-joint \
+  --candidate jev04-pair-joint \
   --output .jevscan-calibration/focused-freeze.json
 uv run python calibration/focused_experiment.py plan \
   --phase heldout \
   --config .jevscan-calibration/focused.yaml \
+  --candidate jev04-pair-joint \
   --freeze .jevscan-calibration/focused-freeze.json \
   --output .jevscan-calibration/focused-heldout-plan.json
 ```
@@ -49,6 +51,7 @@ Planning and replay are offline. A live capture is explicit, requires
 uv run python calibration/focused_experiment.py capture \
   --phase development \
   --config .jevscan-calibration/focused.yaml \
+  --candidate jev04-pair-joint \
   --output .jevscan-calibration/focused-dev.jsonl \
   --ledger .jevscan-calibration/focused-ledger.json
 ```
@@ -59,4 +62,9 @@ invocations use the same ledger. It records planned estimates, body
 reservations, provider usage when reported, model and identity hashes, and
 client attempt counters. Tests use mock transports only and never contact a
 provider. Captured cases are replayed through the production assessment
-contract by the `metrics` command.
+contract by the `metrics` command. Pair questions are purchased only for
+exactly one bounded extracted pair; all other selected pair parents are
+explicit whole-target fallbacks. Candidate-level pair metrics use captured
+`jev04-baseline` records for those fallback parents, while pair-decomposed
+children are composed only as a conservative diagnostic AND after their pair
+metadata matches.

@@ -16,7 +16,7 @@ import math
 import os
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -25,9 +25,20 @@ from httpx import AsyncBaseTransport
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "src"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
+from calibration.validation_candidates import (
+    DEFAULT_LIMITS,
+    ExtractionKind,
+    ExtractionLimits,
+    FallbackReason,
+    ValidationPair,
+    extract_validation_candidates,
+    pair_binding_metadata,
+)
 from jevscan.core.client import JevClient, ReservationUsage
 from jevscan.core.config import BudgetConfig, JevConfig, load_config
 from jevscan.core.context import ContextBuilder, Evidence
@@ -65,6 +76,11 @@ _CANDIDATE_RULES: dict[str, tuple[str, ...]] = {
         "FOCUS_JEV04_DECOMPOSED_GUARANTEE",
         "FOCUS_JEV04_DECOMPOSED_PRESERVATION",
     ),
+    "jev04-pair-joint": ("FOCUS_JEV04_PAIR_JOINT",),
+    "jev04-pair-decomposed": (
+        "FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE",
+        "FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION",
+    ),
 }
 
 _RULE_BASES = {
@@ -76,6 +92,9 @@ _RULE_BASES = {
     "FOCUS_JEV04_JOINT": "JEV04",
     "FOCUS_JEV04_DECOMPOSED_GUARANTEE": "JEV04",
     "FOCUS_JEV04_DECOMPOSED_PRESERVATION": "JEV04",
+    "FOCUS_JEV04_PAIR_JOINT": "JEV04",
+    "FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE": "JEV04",
+    "FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION": "JEV04",
 }
 _METRIC_ALIASES = {
     "FOCUS_JEV01_BASELINE": {"FOCUS_JEV01_BASELINE", "JEV01"},
@@ -123,6 +142,12 @@ _FOCUSED_JEV04_PRESERVATION_CRITERIA = NoulCriteria(
     true="The established validation invariant remains preserved between the two checks with no invalidating boundary.",
     false="A visible await, callback, external call, mutation, aliasing, or concurrency boundary can invalidate the invariant.",
 )
+_PAIR_TASK_PREFIX = (
+    "Judge only this one bound validation pair and the same value/state relation between its earlier and later "
+    "validation operations. Do not judge any other check or the whole target. Use the complete supplied source "
+    "evidence; the location metadata below identifies the pair and contains no source text."
+)
+_PAIR_CANDIDATES = frozenset({"jev04-pair-joint", "jev04-pair-decomposed"})
 
 
 def candidate_rule_ids(candidate: str) -> tuple[str, ...]:
@@ -204,6 +229,9 @@ def candidate_documents() -> dict[str, dict[str, Any]]:
         "FOCUS_JEV04_JOINT": _rule_document(
             rules["JEV04"], title="focused-jev04-joint", instructions=_FOCUSED_JEV04_JOINT
         ),
+        "FOCUS_JEV04_PAIR_JOINT": _rule_document(
+            rules["JEV04"], title="focused-jev04-pair-joint", instructions=_FOCUSED_JEV04_JOINT
+        ),
         "FOCUS_JEV04_DECOMPOSED_GUARANTEE": noul_rule(
             rules["JEV04"],
             rules["JEV01"],
@@ -215,6 +243,20 @@ def candidate_documents() -> dict[str, dict[str, Any]]:
             rules["JEV04"],
             rules["JEV01"],
             title="focused-jev04-decomposed-preservation",
+            instructions=_FOCUSED_JEV04_PRESERVATION,
+            criteria=_FOCUSED_JEV04_PRESERVATION_CRITERIA,
+        ),
+        "FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE": noul_rule(
+            rules["JEV04"],
+            rules["JEV01"],
+            title="focused-jev04-pair-decomposed-guarantee",
+            instructions=_FOCUSED_JEV04_GUARANTEE,
+            criteria=_FOCUSED_JEV04_GUARANTEE_CRITERIA,
+        ),
+        "FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION": noul_rule(
+            rules["JEV04"],
+            rules["JEV01"],
+            title="focused-jev04-pair-decomposed-preservation",
             instructions=_FOCUSED_JEV04_PRESERVATION,
             criteria=_FOCUSED_JEV04_PRESERVATION_CRITERIA,
         ),
@@ -420,6 +462,150 @@ def _additional_source_records(entry: Mapping[str, Any], primary_source: Path) -
     return result
 
 
+@dataclass(frozen=True, slots=True)
+class _PairBinding:
+    outcome: Any
+    pair: ValidationPair | None
+    reason: str | None
+    detail: str
+
+    @property
+    def eligible(self) -> bool:
+        return self.pair is not None and self.reason is None
+
+    def metadata(self, candidate: str) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "candidate": candidate,
+            "status": "bound" if self.eligible else "whole_target_fallback",
+            "target_id": self.outcome.target_id,
+            "source_path": self.outcome.source_path,
+            "extractor_kind": self.outcome.kind.value,
+            "candidate_count": len(self.outcome.pairs),
+            "reason": self.reason,
+            "detail": self.detail,
+        }
+        if self.outcome.fallback_reason is not None:
+            result["extractor_fallback_reason"] = self.outcome.fallback_reason.value
+        if self.pair is not None:
+            result["pair"] = pair_binding_metadata(self.pair)
+            result["pair_id"] = self.pair.id
+        return result
+
+
+def _pair_binding(
+    parsed: Any,
+    target: Target,
+    evidence: Evidence | None = None,
+    *,
+    limits: ExtractionLimits = DEFAULT_LIMITS,
+) -> _PairBinding:
+    if target.scope != "unit":
+        return _PairBinding(
+            outcome=extract_validation_candidates(parsed, target, limits=limits),
+            pair=None,
+            reason=FallbackReason.INVALID_TARGET.value,
+            detail="pair extraction requires the original unit target",
+        )
+    outcome = extract_validation_candidates(parsed, target, limits=limits)
+    if outcome.kind == ExtractionKind.CANDIDATES:
+        if len(outcome.pairs) == 1:
+            pair = outcome.pairs[0]
+            metadata = pair_binding_metadata(pair)
+            spans = [
+                metadata["earlier"]["operation_span"],
+                metadata["later"]["operation_span"],
+                metadata["intervening_span"],
+            ]
+            if evidence is not None and not all(
+                evidence.contains(target.path, span["start_byte"], span["end_byte"]) for span in spans
+            ):
+                return _PairBinding(
+                    outcome,
+                    None,
+                    "evidence_incomplete",
+                    "the exact pair locations are not fully covered by the unchanged requested evidence",
+                )
+            return _PairBinding(outcome, pair, None, "exactly one bounded validation pair")
+        if not outcome.pairs:
+            return _PairBinding(
+                outcome,
+                None,
+                FallbackReason.NO_EXACT_PREDICATE_GROUP.value,
+                "zero bounded validation pairs were extracted",
+            )
+        return _PairBinding(
+            outcome,
+            None,
+            FallbackReason.MULTIPLE_PAIRS.value,
+            f"{len(outcome.pairs)} bounded validation pairs were extracted; exactly one is required",
+        )
+    if outcome.kind == ExtractionKind.NOT_APPLICABLE:
+        return _PairBinding(outcome, None, "not_applicable", "the target has no admitted validation operation")
+    reason = outcome.fallback_reason.value if outcome.fallback_reason is not None else "extraction_fallback"
+    return _PairBinding(
+        outcome, None, reason, outcome.detail or "bounded pair extraction requested whole-target fallback"
+    )
+
+
+def _pair_bound_check(check: Check, candidate: str, pair: ValidationPair) -> Check:
+    binding = {
+        "candidate": candidate,
+        **pair_binding_metadata(pair),
+    }
+    task = (
+        f"{check.rule.question.instructions}\n\n{_PAIR_TASK_PREFIX}\n"
+        "Pair binding metadata (machine-readable location metadata only):\n"
+        f"{json.dumps(binding, ensure_ascii=False, sort_keys=True, separators=(',', ':'))}"
+    )
+    question = check.rule.question.model_copy(update={"instructions": task})
+    return replace(check, rule=check.rule.model_copy(update={"question": question}))
+
+
+def _allowed_candidates(
+    candidates: Iterable[str] | None,
+    freeze: Mapping[str, Any] | None,
+) -> set[str] | None:
+    requested = None if candidates is None else set(candidates)
+    unknown = requested - set(_CANDIDATE_RULES) if requested is not None else set()
+    if unknown:
+        raise ValueError(f"unknown focused candidates: {sorted(unknown)}")
+    frozen = set(freeze["candidates"]) if freeze else None
+    if frozen is not None and requested is not None:
+        rejected = requested - frozen
+        if rejected:
+            raise ValueError(f"heldout candidates are not frozen: {sorted(rejected)}")
+    return requested if requested is not None else frozen
+
+
+def _prepare_candidate(
+    planner: Planner,
+    parsed: Any,
+    entry: Mapping[str, Any],
+    source: Path,
+    candidate: str,
+    rule_id: str,
+) -> tuple[Check, Evidence, dict[str, Any] | None, bool]:
+    matches = [
+        check for check in planner.checks if check.rule_id == rule_id and _target_matches(check.target, entry["target"])
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"{entry['id']}: expected one planned {rule_id} target, found "
+            f"{len(matches)} ({[check.target.metadata() for check in matches]})"
+        )
+    check = matches[0]
+    _validate_declared_hashes(entry, source, check.target)
+    evidence = planner.requested_evidence(check)
+    if candidate not in _PAIR_CANDIDATES:
+        return check, evidence, None, True
+    binding = _pair_binding(parsed, check.target, evidence)
+    metadata = binding.metadata(candidate)
+    if not binding.eligible:
+        return check, evidence, metadata, False
+    assert binding.pair is not None
+    return _pair_bound_check(check, candidate, binding.pair), evidence, metadata, True
+
+
 def _pack_requests(planner: Planner, items: list[tuple[Check, Evidence]]) -> list[Request]:
     grouped: dict[str, tuple[Evidence, list[Check]]] = {}
     for check, evidence in items:
@@ -453,6 +639,7 @@ class _CaptureItem:
     phase: str
     context_complete: bool
     target_complete: bool
+    pair_binding: dict[str, Any] | None = None
 
     @property
     def parent_case_id(self) -> str:
@@ -469,16 +656,19 @@ def _capture_items(
     phase: str,
     config_path: Path,
     freeze_path: Path | None,
-) -> tuple[list[_CaptureItem], list[Request], dict[Path, Planner], str, dict[str, Any]]:
+    candidates: Iterable[str] | None = None,
+) -> tuple[list[_CaptureItem], list[Request], dict[Path, Planner], str, dict[str, Any], list[dict[str, Any]]]:
     manifest = load_manifest(manifest_path)
     manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     freeze = _assert_frozen(freeze_path, manifest_sha256) if phase == "heldout" else None
-    allowed_candidates = set(freeze["candidates"]) if freeze else None
+    allowed_candidates = _allowed_candidates(candidates, freeze)
     entries = _entries(manifest, phase)
     items: list[_CaptureItem] = []
     all_items: list[tuple[Check, Evidence]] = []
+    extractor_outcomes: list[dict[str, Any]] = []
     planners: dict[Path, Planner] = {}
     parsed_files: dict[Path, Any] = {}
+    selected_count = 0
 
     for entry in entries:
         source = _entry_source(manifest_path, entry, phase)
@@ -488,40 +678,42 @@ def _capture_items(
             parsed_files[source] = parsed
             planners[source] = Planner(ContextBuilder(parsed), _focused_config(source, config_path))
         planner = planners[source]
-        expected_target = entry["target"]
         for candidate, rule_id in _candidate_rules_for(str(entry["rule"])):
             if allowed_candidates is not None and candidate not in allowed_candidates:
                 continue
-            matches = [
-                check
-                for check in planner.checks
-                if check.rule_id == rule_id and _target_matches(check.target, expected_target)
-            ]
-            if len(matches) != 1:
-                raise ValueError(
-                    f"{entry['id']}: expected one planned {rule_id} target, found "
-                    f"{len(matches)} ({[check.target.metadata() for check in matches]})"
-                )
-            check = matches[0]
-            _validate_declared_hashes(entry, source, check.target)
-            evidence = planner.requested_evidence(check)
-            description = planner.context.describe(check, evidence)
-            item = _CaptureItem(
-                entry,
-                candidate,
-                check,
-                evidence,
-                source,
-                phase,
-                bool(description["context_complete"]),
-                bool(description["target_complete"]),
+            selected_count += 1
+            check, evidence, pair_binding, eligible = _prepare_candidate(
+                planner, parsed, entry, source, candidate, rule_id
             )
-            items.append(item)
+            if pair_binding is not None:
+                extractor_outcomes.append({
+                    "case_id": entry["id"],
+                    "candidate": candidate,
+                    "rule_ids": list(candidate_rule_ids(candidate)),
+                    "target": check.target.metadata(),
+                    "binding": pair_binding,
+                })
+            if not eligible:
+                continue
+            description = planner.context.describe(check, evidence)
+            items.append(
+                _CaptureItem(
+                    entry,
+                    candidate,
+                    check,
+                    evidence,
+                    source,
+                    phase,
+                    bool(description["context_complete"]),
+                    bool(description["target_complete"]),
+                    pair_binding,
+                )
+            )
             all_items.append((check, evidence))
-    if not all_items:
+    if not selected_count:
         raise ValueError("freeze selects no candidates in the requested phase")
-    requests = _pack_requests(next(iter(planners.values())), all_items)
-    return items, requests, planners, manifest_sha256, manifest
+    requests = _pack_requests(next(iter(planners.values())), all_items) if all_items else []
+    return items, requests, planners, manifest_sha256, manifest, extractor_outcomes
 
 
 def _evidence_sources(evidence: Evidence, source: Path, expected_path: str) -> dict[str, str]:
@@ -567,6 +759,48 @@ def _validate_declared_hashes(entry: Mapping[str, Any], source: Path, target: Ta
             raise ValueError(f"{entry['id']}: {field} must use canonical sha256:<hex> format")
         if declared != actual:
             raise ValueError(f"{entry['id']}: {field} does not match the current source")
+
+
+def _plan_record(
+    entry: Mapping[str, Any],
+    *,
+    candidate: str,
+    rule_id: str,
+    check: Check,
+    evidence: Evidence,
+    source: Path,
+    phase: str,
+    pair_binding: dict[str, Any] | None,
+    eligible: bool,
+) -> dict[str, Any]:
+    source_bytes = source.read_bytes()
+    return {
+        "case_id": entry["id"],
+        "candidate": candidate,
+        "rule_id": rule_id,
+        "question_id": check.id if eligible else None,
+        "group": entry["group"] if phase == "heldout" else entry["source_group"],
+        "label": entry["label"],
+        "source_commit": entry.get("source_commit"),
+        "source": _source_identity(entry, source),
+        "target": check.target.metadata(),
+        "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
+        "target_sha256": hashlib.sha256(source_bytes[check.target.start_byte : check.target.end_byte]).hexdigest(),
+        "expected_score": entry.get("expected_score"),
+        "additional_sources": _additional_source_records(entry, source),
+        "question_sha256": f"sha256:{_json_hash(check.question())}" if eligible else None,
+        "evidence_sha256": f"sha256:{_json_hash(evidence.state)}",
+        "validation_pair": (
+            pair_binding["pair"]
+            if pair_binding is not None and "pair" in pair_binding
+            else None
+            if pair_binding is not None
+            else entry.get("validation_pair")
+        ),
+        "pair_binding": pair_binding,
+        "fallback": pair_binding if pair_binding is not None and not eligible else None,
+        "actual_provider_input_tokens": None,
+    }
 
 
 def _case_hashes(
@@ -628,7 +862,8 @@ def _capture_case(
         "source_sha256": source_hash,
         "target_sha256": target_hash,
         "manifest_sha256": manifest_sha256,
-        "validation_pair": entry.get("validation_pair"),
+        "validation_pair": item.pair_binding["pair"] if item.pair_binding is not None else entry.get("validation_pair"),
+        "pair_binding": item.pair_binding,
         "expected_score": entry.get("expected_score"),
         "usage": dict(usage),
         "actual_provider_input_tokens": usage.get("reported_input_tokens"),
@@ -959,6 +1194,9 @@ async def _capture_live(
         "reported_cost": reported_cost,
         "output": str(output),
         "receipts_path": str(receipts_path),
+        "selected_candidates": ledger_invocation.get("selected_candidates", []),
+        "extractor_outcomes_path": ledger_invocation.get("extractor_outcomes_path"),
+        "extractor_outcomes": ledger_invocation.get("extractor_outcomes", []),
         "ledger": str(ledger_path),
     }
 
@@ -974,6 +1212,7 @@ def capture_manifest(
     freeze_path: Path | None = None,
     endpoint: str = DEFAULT_ENDPOINT,
     transport: AsyncBaseTransport | None = None,
+    candidates: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """Capture bounded pinned answers through the production request/response path."""
     api_key = os.environ.get("TYPESAFE_API_KEY")
@@ -981,11 +1220,13 @@ def capture_manifest(
         raise RuntimeError("TYPESAFE_API_KEY is unavailable; capture was not executed")
     if phase not in {"development", "heldout"}:
         raise ValueError("phase must be development or heldout")
-    items, requests, planners, manifest_sha256, _manifest = _capture_items(
+    candidate_list = list(candidates) if candidates is not None else None
+    items, requests, planners, manifest_sha256, _manifest, extractor_outcomes = _capture_items(
         manifest_path,
         phase=phase,
         config_path=config_path,
         freeze_path=freeze_path,
+        candidates=candidate_list,
     )
     planner = next(iter(planners.values()))
     parent_counts: dict[tuple[str, str], set[tuple[str, str, str]]] = defaultdict(set)
@@ -1011,11 +1252,23 @@ def capture_manifest(
         "planned_input_tokens": planned_tokens,
         "reserved_input_tokens": reserved_tokens,
         "reserved_cost": reserved_cost,
-        "parent_opportunities": len({item.opportunity_key for item in items}),
+        "parent_opportunities": len(
+            {item.opportunity_key for item in items}
+            | {(str(outcome["case_id"]), str(outcome["target"]["id"]), "JEV04") for outcome in extractor_outcomes}
+        ),
         "purchased_questions": sum(len(request.checks) for request in requests),
+        "selected_candidates": sorted(
+            set(candidate_list)
+            if candidate_list is not None
+            else {item.candidate for item in items} | {outcome["candidate"] for outcome in extractor_outcomes}
+        ),
+        "extractor_outcomes": extractor_outcomes,
         "status": "reserved",
         "requests": reservation_documents,
     }
+    extractor_outcomes_path = output.with_suffix(".extractor.jsonl")
+    _write_jsonl(extractor_outcomes_path, extractor_outcomes)
+    invocation["extractor_outcomes_path"] = str(extractor_outcomes_path)
     ledger["reserved_cost"] += reserved_cost
     ledger["invocations"].append(invocation)
     _write_json(ledger_path, ledger)
@@ -1059,19 +1312,23 @@ def plan_manifest(
     phase: str,
     config_path: Path,
     freeze_path: Path | None = None,
+    candidates: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """Plan candidate questions with production parsing/context/budgeting only."""
     if phase not in {"development", "heldout"}:
         raise ValueError("phase must be development or heldout")
+    candidate_list = list(candidates) if candidates is not None else None
     manifest = load_manifest(manifest_path)
     manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     freeze = _assert_frozen(freeze_path, manifest_sha256) if phase == "heldout" else None
-    allowed_candidates = set(freeze["candidates"]) if freeze else None
+    allowed_candidates = _allowed_candidates(candidate_list, freeze)
     entries = _entries(manifest, phase)
     planned: list[dict[str, Any]] = []
     all_items: list[tuple[Check, Evidence]] = []
+    planned_items: list[tuple[Check, Evidence, dict[str, Any]]] = []
     planners: dict[Path, Planner] = {}
     parsed_files: dict[Path, Any] = {}
+    selected_count = 0
 
     for entry in entries:
         source = _entry_source(manifest_path, entry, phase)
@@ -1082,55 +1339,37 @@ def plan_manifest(
             config = _focused_config(source, config_path)
             planners[source] = Planner(ContextBuilder(parsed), config)
         planner = planners[source]
-        expected_target = entry["target"]
         for candidate, rule_id in _candidate_rules_for(str(entry["rule"])):
             if allowed_candidates is not None and candidate not in allowed_candidates:
                 continue
-            matches = [
-                check
-                for check in planner.checks
-                if check.rule_id == rule_id and _target_matches(check.target, expected_target)
-            ]
-            if len(matches) != 1:
-                raise ValueError(
-                    f"{entry['id']}: expected one planned {rule_id} target, found "
-                    f"{len(matches)} ({[check.target.metadata() for check in matches]})"
-                )
-            check = matches[0]
-            _validate_declared_hashes(entry, source, check.target)
-            evidence = planner.requested_evidence(check)
-            all_items.append((check, evidence))
-            source_bytes = source.read_bytes()
-            planned.append({
-                "case_id": entry["id"],
-                "candidate": candidate,
-                "rule_id": rule_id,
-                "question_id": check.id,
-                "group": entry["group"] if phase == "heldout" else entry["source_group"],
-                "label": entry["label"],
-                "source_commit": entry.get("source_commit"),
-                "source": _source_identity(entry, source),
-                "target": check.target.metadata(),
-                "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
-                "target_sha256": hashlib.sha256(
-                    source_bytes[check.target.start_byte : check.target.end_byte]
-                ).hexdigest(),
-                "expected_score": entry.get("expected_score"),
-                "additional_sources": _additional_source_records(entry, source),
-                "question_sha256": f"sha256:{_json_hash(check.question())}",
-                "evidence_sha256": f"sha256:{_json_hash(evidence.state)}",
-                "validation_pair": entry.get("validation_pair"),
-                "actual_provider_input_tokens": None,
-            })
+            selected_count += 1
+            planned_check, evidence, pair_binding, eligible = _prepare_candidate(
+                planner, parsed, entry, source, candidate, rule_id
+            )
+            record = _plan_record(
+                entry,
+                candidate=candidate,
+                rule_id=rule_id,
+                check=planned_check,
+                evidence=evidence,
+                source=source,
+                phase=phase,
+                pair_binding=pair_binding,
+                eligible=eligible,
+            )
+            planned.append(record)
+            if eligible:
+                all_items.append((planned_check, evidence))
+                planned_items.append((planned_check, evidence, record))
 
-    if not all_items:
+    if not selected_count:
         raise ValueError("freeze selects no candidates in the requested phase")
-    requests = _pack_requests(next(iter(planners.values())), all_items)
+    requests = _pack_requests(next(iter(planners.values())), all_items) if all_items else []
     planned_tokens = 0
     reserved_tokens = 0
     batch_documents: list[dict[str, Any]] = []
     parent_counts: dict[tuple[str, str], set[tuple[str, str, str]]] = defaultdict(set)
-    for (check, evidence), record in zip(all_items, planned, strict=True):
+    for check, evidence, record in planned_items:
         parent_counts[(evidence.key, check.id)].add((
             str(record["case_id"]),
             check.target.id,
@@ -1172,6 +1411,9 @@ def plan_manifest(
         0,
     )
     purchased_questions = sum((int(batch["question_count"]) for batch in batch_documents), 0)
+    selected_parent_opportunities = {
+        (str(record["case_id"]), str(record["target"]["id"]), _RULE_BASES[record["rule_id"]]) for record in planned
+    }
     result = {
         "schema_version": 1,
         "phase": phase,
@@ -1190,11 +1432,24 @@ def plan_manifest(
         "actual_provider_input_tokens": None,
         "reported_input_tokens": None,
         "frozen_candidates": freeze["candidates"] if freeze else None,
+        "selected_candidates": sorted(
+            set(candidate_list) if candidate_list is not None else {record["candidate"] for record in planned}
+        ),
+        "extractor_outcomes": [
+            {
+                "case_id": record["case_id"],
+                "candidate": record["candidate"],
+                "binding": record["pair_binding"],
+            }
+            for record in planned
+            if record["pair_binding"] is not None
+        ],
         "cases": planned,
         "batches": batch_documents,
         "accounting": {
-            "parent_opportunities": len({parent_key for values in parent_counts.values() for parent_key in values}),
+            "parent_opportunities": len(selected_parent_opportunities),
             "purchased_questions": purchased_questions,
+            "whole_target_fallbacks": sum(record["fallback"] is not None for record in planned),
         },
     }
     if result["reserved_cost"] > CUMULATIVE_CAP:
@@ -1218,6 +1473,9 @@ def freeze_candidates(
         raise ValueError("freeze requires a development plan for the same manifest")
     if not candidates or any(candidate not in _CANDIDATE_RULES for candidate in candidates):
         raise ValueError("freeze candidates must be named focused candidates")
+    selected = plan.get("selected_candidates")
+    if isinstance(selected, list) and any(candidate not in selected for candidate in candidates):
+        raise ValueError("freeze candidate was not selected in the development plan")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(
@@ -1353,16 +1611,55 @@ def _metrics_for_records(records: list[Any], signal_by_case: Mapping[str, bool] 
     }
 
 
-def _composed_metrics(child_records: Mapping[str, list[Any]]) -> dict[str, Any]:
+_PAIR_TASK_MARKER = "Pair binding metadata (machine-readable location metadata only):\n"
+
+
+def _record_pair_metadata(record: Any) -> Mapping[str, Any]:
+    provenance = record.case.provenance
+    binding = provenance.get("pair_binding")
+    if not isinstance(binding, Mapping) or not isinstance(binding.get("pair"), Mapping):
+        raise TypeError(f"{record.case.case_id}: missing pair binding provenance")
+    pair = binding["pair"]
+    wire = record.case.question_wire
+    try:
+        task = wire["instructions"]["task"]
+        encoded = task.split(_PAIR_TASK_MARKER, 1)[1]
+        task_binding = json.loads(encoded)
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{record.case.case_id}: question metadata has no pair binding") from exc
+    if not isinstance(task_binding, Mapping):
+        raise TypeError(f"{record.case.case_id}: question pair binding is not an object")
+    if task_binding.get("candidate") != binding.get("candidate"):
+        raise ValueError(f"{record.case.case_id}: question and provenance candidates disagree")
+    if task_binding.get("pair_id") != pair.get("pair_id"):
+        raise ValueError(f"{record.case.case_id}: question and provenance pair IDs disagree")
+    if encode(task_binding) != encode({"candidate": binding.get("candidate"), **pair}):
+        raise ValueError(f"{record.case.case_id}: question and provenance pair metadata disagree")
+    return pair
+
+
+def _composed_metrics(child_records: Mapping[str, list[Any]], *, require_pair_binding: bool = False) -> dict[str, Any]:
     """Compose aligned child replay signals without changing production assessment."""
     by_case: dict[str, dict[str, Any]] = defaultdict(dict)
     for rule_id, records in child_records.items():
         for record in records:
             parent_case_id = str(record.case.provenance.get("parent_case_id", record.case.case_id))
+            if rule_id in by_case[parent_case_id]:
+                raise ValueError(f"composed candidate has duplicate child records for {parent_case_id}/{rule_id}")
             by_case[parent_case_id][rule_id] = record
     common = {case_id: children for case_id, children in by_case.items() if len(children) == len(child_records)}
     if not common:
         return {"aligned_cases": 0, "metrics": None}
+    pair_metadata: dict[str, Mapping[str, Any]] = {}
+    if require_pair_binding:
+        for parent_case_id, children in common.items():
+            child_pairs = {rule_id: _record_pair_metadata(record) for rule_id, record in children.items()}
+            if len({str(pair.get("pair_id")) for pair in child_pairs.values()}) != 1:
+                raise ValueError(f"composed candidate children disagree on pair ID for {parent_case_id}")
+            serialized = {encode(pair) for pair in child_pairs.values()}
+            if len(serialized) != 1:
+                raise ValueError(f"composed candidate children disagree on pair metadata for {parent_case_id}")
+            pair_metadata[parent_case_id] = next(iter(child_pairs.values()))
     primary_rule = next(iter(child_records))
     primary = [children[primary_rule] for children in common.values()]
     labels = {
@@ -1383,7 +1680,58 @@ def _composed_metrics(child_records: Mapping[str, list[Any]]) -> dict[str, Any]:
         parent_case_id: all(record.signal for record in children.values())
         for parent_case_id, children in common.items()
     }
-    return {"aligned_cases": len(primary), "metrics": _metrics_for_records(primary, signals)}
+    result: dict[str, Any] = {"aligned_cases": len(primary), "metrics": _metrics_for_records(primary, signals)}
+    if require_pair_binding:
+        result["pair_ids"] = {parent_case_id: metadata["pair_id"] for parent_case_id, metadata in pair_metadata.items()}
+    return result
+
+
+def _combined_pair_metrics(
+    pair_records: list[Any],
+    fallback_records: list[Any],
+    pair_signal_by_case: Mapping[str, bool] | None = None,
+) -> dict[str, Any]:
+    """Combine eligible pair signals with deployed whole-target fallbacks."""
+    eligible: dict[str, Any] = {}
+    for record in pair_records:
+        parent_case_id = str(record.case.provenance.get("parent_case_id", record.case.case_id))
+        if parent_case_id in eligible:
+            raise ValueError(f"duplicate pair-bound record for {parent_case_id}")
+        _record_pair_metadata(record)
+        eligible[parent_case_id] = record
+
+    fallback: dict[str, Any] = {}
+    for record in fallback_records:
+        parent_case_id = str(record.case.provenance.get("parent_case_id", record.case.case_id))
+        if parent_case_id in fallback:
+            raise ValueError(f"duplicate baseline fallback record for {parent_case_id}")
+        fallback[parent_case_id] = record
+
+    missing = sorted(set(fallback) - set(eligible))
+    combined = [eligible[parent_case_id] for parent_case_id in sorted(eligible)]
+    signals = {
+        parent_case_id: (pair_signal_by_case[parent_case_id] if pair_signal_by_case is not None else record.signal)
+        for parent_case_id, record in eligible.items()
+    }
+    for parent_case_id in missing:
+        baseline = fallback[parent_case_id]
+        combined.append(baseline)
+        signals[parent_case_id] = baseline.signal
+    for parent_case_id, pair_record in eligible.items():
+        baseline = fallback.get(parent_case_id)
+        if baseline is not None:
+            if baseline.case.target != pair_record.case.target:
+                raise ValueError(f"pair and whole-target fallback targets disagree for {parent_case_id}")
+            if baseline.case.label != pair_record.case.label:
+                raise ValueError(f"pair and whole-target fallback labels disagree for {parent_case_id}")
+    return {
+        "eligible_pair_cases": len(eligible),
+        "whole_target_fallback_cases": len(missing),
+        "fallback_records_available": bool(fallback_records),
+        "missing_fallback_cases": sorted(set(eligible) - set(fallback)),
+        "complete": not (set(eligible) - set(fallback)),
+        "metrics": _metrics_for_records(combined, signals) if combined else None,
+    }
 
 
 def _usage_metrics(cases: Iterable[CalibrationCase]) -> dict[str, Any]:
@@ -1444,13 +1792,47 @@ def replay_metrics(cases_path: Path) -> dict[str, Any]:
     cases = load_cases(cases_path)
     result: dict[str, Any] = {"usage": _usage_metrics(cases)}
     for candidate, rule_ids in _CANDIDATE_RULES.items():
+        if candidate == "jev04-pair-joint":
+            pair_records = _metric_records(cases, rule_ids, candidate)
+            fallback_records = _metric_records(cases, ("FOCUS_JEV04_BASELINE",), "jev04-baseline")
+            result[candidate] = {
+                "composition": "pair-bound focused joint signal with deployed whole-target JEV04 fallback for ineligible cases",
+                "eligible": _metrics_for_records(pair_records),
+                "combined": _combined_pair_metrics(pair_records, fallback_records),
+            }
+            continue
         if len(rule_ids) == 1:
             result[candidate] = _metrics_for_records(_metric_records(cases, rule_ids, candidate))
             continue
         child_records = {rule_id: _metric_records(cases, (rule_id,), candidate) for rule_id in rule_ids}
+        if candidate == "jev04-pair-decomposed":
+            composed = _composed_metrics(child_records, require_pair_binding=True)
+            by_child = {
+                rule_id: {
+                    str(record.case.provenance.get("parent_case_id", record.case.case_id)): record for record in records
+                }
+                for rule_id, records in child_records.items()
+            }
+            common_ids = set.intersection(*(set(records) for records in by_child.values())) if by_child else set()
+            primary_rule = rule_ids[0]
+            primary = [by_child[primary_rule][parent_case_id] for parent_case_id in sorted(common_ids)]
+            pair_signals = {
+                parent_case_id: all(by_child[rule_id][parent_case_id].signal for rule_id in rule_ids)
+                for parent_case_id in common_ids
+            }
+            fallback_records = _metric_records(cases, ("FOCUS_JEV04_BASELINE",), "jev04-baseline")
+            result[candidate] = {
+                "composition": "conservative AND of pair-bound guarantee and preservation signals; probabilities are not multiplied",
+                "diagnostic_only": True,
+                "pair_binding": "one locally identified earlier/later pair with matching question metadata is required",
+                "children": {rule_id: _metrics_for_records(records) for rule_id, records in child_records.items()},
+                "composed": composed,
+                "combined": _combined_pair_metrics(primary, fallback_records, pair_signals),
+            }
+            continue
         if candidate == "jev04-focused-decomposed":
             pair_bound = all(child_records.values()) and all(
-                isinstance(record.case.provenance.get("validation_pair"), Mapping)
+                isinstance(record.case.provenance.get("pair_binding"), Mapping)
                 for records in child_records.values()
                 for record in records
             )
@@ -1459,7 +1841,7 @@ def replay_metrics(cases_path: Path) -> dict[str, Any]:
                 "diagnostic_only": not pair_bound,
                 "pair_binding": "one locally identified earlier/later pair with intervening locations is required",
                 "children": {rule_id: _metrics_for_records(records) for rule_id, records in child_records.items()},
-                "composed": _composed_metrics(child_records) if pair_bound else None,
+                "composed": _composed_metrics(child_records, require_pair_binding=True) if pair_bound else None,
             }
         else:
             result[candidate] = {
@@ -1480,12 +1862,14 @@ def _main(argv: list[str] | None = None) -> int:
     plan.add_argument("--config", type=Path, required=True)
     plan.add_argument("--phase", choices=("development", "heldout"), required=True)
     plan.add_argument("--freeze", type=Path)
+    plan.add_argument("--candidate", action="append")
     plan.add_argument("--output", type=Path, required=True)
     capture = commands.add_parser("capture", help="capture pinned provider answers under the cumulative cap")
     capture.add_argument("--manifest", type=Path, default=FOCUSED_MANIFEST)
     capture.add_argument("--config", type=Path, required=True)
     capture.add_argument("--phase", choices=("development", "heldout"), required=True)
     capture.add_argument("--freeze", type=Path)
+    capture.add_argument("--candidate", action="append")
     capture.add_argument("--output", type=Path, required=True)
     capture.add_argument("--receipts", type=Path)
     capture.add_argument("--ledger", type=Path, default=Path(".jevscan-calibration/focused-ledger.json"))
@@ -1503,7 +1887,13 @@ def _main(argv: list[str] | None = None) -> int:
         write_candidate_config(args.output)
         return 0
     if args.command == "plan":
-        result = plan_manifest(args.manifest, phase=args.phase, config_path=args.config, freeze_path=args.freeze)
+        result = plan_manifest(
+            args.manifest,
+            phase=args.phase,
+            config_path=args.config,
+            freeze_path=args.freeze,
+            candidates=args.candidate,
+        )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return 0
@@ -1517,6 +1907,7 @@ def _main(argv: list[str] | None = None) -> int:
             ledger_path=args.ledger,
             freeze_path=args.freeze,
             endpoint=args.endpoint,
+            candidates=args.candidate,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
