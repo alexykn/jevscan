@@ -32,6 +32,10 @@ examining expanded held-out outcomes. Apply the algorithm's selected warning
 policies, including unchanged baselines when selection lacks support or finds
 no improvement. Do not manually substitute a preferred threshold.
 
+Here, "apply" fixes the candidate evaluated on held-out data. Promotion to
+packaged defaults remains a product acceptance decision; substituting a
+runner-up after seeing held-out data would be post-hoc tuning.
+
 Error thresholds, questions, applicability, and rule meanings are fixed.
 Rule redesign and splitting rules belong in a separate change.
 
@@ -43,11 +47,12 @@ aggregate utility. Include independent group counts and candidate-search
 truncation. Synthetic agent-written and agent-reviewed examples are useful
 controlled evidence, not human ground truth or a population accuracy estimate.
 
-There is no new hard precision or recall gate. A concrete implementation or
-label-contract defect must be fixed and disclosed; reusing held-out evidence
-to change the procedure makes that evidence development data and requires a
-new independent check. Unexpected but valid precision/recall tradeoffs should
-be reported rather than concealed through manual policy selection.
+There is no new hard precision or recall gate for this completed experiment.
+A concrete implementation or label-contract defect must be fixed and
+disclosed; reusing held-out evidence to change the procedure makes that
+evidence development data and requires a new independent check. Unexpected
+but valid precision/recall tradeoffs should be reported rather than concealed
+through manual policy selection.
 
 Finish by checking the installed workflow, package contents, portable skill,
 privacy boundaries, and the full test/lint/type suite on the final source.
@@ -62,3 +67,16 @@ The resulting corpus has 108 cases in 52 groups: four groups for JEV01 and
 six for each other rule, with 34 development and 18 held-out groups.
 This reduces the initial numerical coverage claim without discarding cases
 or changing their split. The objective and selection procedure are unchanged.
+
+## Acceptance decision
+
+The fresh held-out evaluation preserved aggregate positive review-list recall
+at 7/12, reduced confirmed positives from 6/12 to 5/12, and left confirmed
+negative findings at two. The product owner accepted the frozen
+precision/recall tradeoff for the packaged defaults, without substituting a
+runner-up. The result is reported as a threshold operating point, not an
+improvement to the underlying model judgments.
+
+Future selection runs must declare a review-list recall constraint before
+measurement, in addition to the false-review utility. This does not
+retroactively retune the completed experiment.

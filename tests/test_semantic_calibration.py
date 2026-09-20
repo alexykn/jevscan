@@ -7,7 +7,9 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from jevscan.core.assessment import assess
+from jevscan.core.assessment import Assessment, assess
+from jevscan.core.config import EnrichmentConfig
+from jevscan.core.enrichment import DISPOSITIONS, allowed_families, routing_questions
 from jevscan.core.models import Kind, Target
 from jevscan.core.protocol import (
     PROMPT_VERSION,
@@ -273,6 +275,103 @@ def case_document(
     return document
 
 
+def _noul_case_with_capture(disposition: dict[str, str]) -> dict[str, Any]:
+    document = case_document()
+    rule = Rule.model_validate({
+        "applies_to": ["function"],
+        "question": {"type": "noul", "instructions": "Is this operation defective?"},
+        "report": {
+            "message": "Review this operation.",
+            "levels": {
+                "warning": {"min_probability": 0.85},
+                "error": {"min_probability": 0.99},
+            },
+        },
+    })
+    target = Target("target", "unit", "sample.py", "python", "sample", 0, 10, 1, 1, Kind.FUNCTION)
+    answer = {"type": "noul", "noul": 0.99}
+    question = prompt_binder(document["prompt"]["version"], document["prompt"]["policy"]).bind(
+        rule.question, target, document["prompt"]["policy"]
+    )
+    document.update({
+        "rule": rule.model_dump(mode="json"),
+        "answer": answer,
+        "question_wire": question,
+    })
+    document["hashes"].update({
+        "question": _hash_bytes(encode(question)),
+        "rule": _hash_bytes(encode(document["rule"])),
+        "report": _hash_bytes(encode(rule.report.model_dump(mode="json"))),
+    })
+    document["comparability"]["question"] = document["hashes"]["question"]
+    document["capture"] = {
+        "phase": "final",
+        "question_wire": question,
+        "evidence": document["evidence"],
+        "answer": answer,
+        "disposition": disposition,
+        "context_complete": document["context_complete"],
+        "target_complete": document["target_complete"],
+        "returned_model": document["returned_model"],
+        "assessment": {"status": disposition["status"], "reason": disposition["reason"]},
+    }
+    return document
+
+
+def _ordinary_not_applicable_choice_case() -> CalibrationCase:
+    document = case_document()
+    rule = Rule.model_validate({
+        "applies_to": ["function"],
+        "question": {
+            "type": "choice",
+            "instructions": "Select the applicable outcome.",
+            "criteria": {
+                "defect": "A defect is present.",
+                "clean": "No defect is present.",
+                "not_applicable": "The rule does not apply.",
+            },
+        },
+        "report": {
+            "message": "Review this operation.",
+            "choices": ["defect"],
+            "not_applicable_choices": ["not_applicable"],
+            "levels": {
+                "warning": {"min_probability": 0.5},
+                "error": {"min_probability": 0.95},
+            },
+        },
+    })
+    target = Target("target", "unit", "sample.py", "python", "sample", 0, 10, 1, 1, Kind.FUNCTION)
+    answer = {
+        "type": "choice",
+        "choice": "not_applicable",
+        "confidence": 1.0,
+        "probabilities": {"defect": 0.2, "clean": 0.1, "not_applicable": 0.7},
+    }
+    question = prompt_binder(document["prompt"]["version"], document["prompt"]["policy"]).bind(
+        rule.question, target, document["prompt"]["policy"]
+    )
+    document.update({"rule": rule.model_dump(mode="json"), "answer": answer, "question_wire": question})
+    document["hashes"].update({
+        "question": _hash_bytes(encode(question)),
+        "rule": _hash_bytes(encode(document["rule"])),
+        "report": _hash_bytes(encode(rule.report.model_dump(mode="json"))),
+    })
+    document["comparability"]["question"] = document["hashes"]["question"]
+    document["capture"] = {
+        "phase": "final",
+        "question_wire": question,
+        "evidence": document["evidence"],
+        "answer": answer,
+        "disposition": {"status": "not_applicable", "reason": "rule_not_applicable"},
+        "context_complete": document["context_complete"],
+        "target_complete": document["target_complete"],
+        "returned_model": document["returned_model"],
+        "assessment": {"status": "not_applicable", "reason": "rule_not_applicable"},
+    }
+    return CalibrationCase.model_validate(document)
+
+
 def _set_evidence_spans(document: dict[str, Any], source: str, spans: list[tuple[int, int]]) -> None:
     documents = []
     for start, end in spans:
@@ -306,6 +405,69 @@ def test_jsonl_case_contract_preserves_canonical_material_and_replays_without_a_
         "denominator": 1,
         "fraction": 1.0,
     }
+
+
+def test_rule_not_applicable_capture_must_match_production_noul_assessment() -> None:
+    document = _noul_case_with_capture({"status": "not_applicable", "reason": "rule_not_applicable"})
+
+    with pytest.raises(ValueError, match="final disposition"):
+        CalibrationCase.model_validate(document)
+
+
+def test_ordinary_not_applicable_capture_uses_recomputed_policy_assessment() -> None:
+    case = _ordinary_not_applicable_choice_case()
+    assert replay_case(case).assessment.status == "not_applicable"
+    override = case.rule.report.model_dump(mode="python")
+    override["levels"]["warning"]["min_probability"] = 0.8
+
+    replayed = replay_case(case, override)
+
+    assert replayed.assessment.status == "unknown"
+    assert replayed.assessment.reason == "low_choice_probability"
+
+
+def test_model_routed_not_applicable_capture_uses_canonical_production_route() -> None:
+    document = _noul_case_with_capture({
+        "status": "not_applicable",
+        "reason": "model_routed_not_applicable",
+    })
+    target = Target("target", "unit", "sample.py", "python", "sample", 0, 10, 1, 1, Kind.FUNCTION)
+    rule = Rule.model_validate(document["rule"])
+    check = Check(document["case_id"], target, "renamed-rule", rule)
+    limits = EnrichmentConfig()
+    families = allowed_families(check, limits)
+    questions = routing_questions(check, families)
+    probabilities = dict.fromkeys(DISPOSITIONS, 0.0)
+    probabilities["not_applicable"] = 1.0
+    answers = {
+        "disposition": {
+            "type": "choice",
+            "choice": "not_applicable",
+            "confidence": 1.0,
+            "probabilities": probabilities,
+        },
+        **{name: {"type": "noul", "noul": 0.1} for name in families},
+    }
+    document["capture"]["review"] = {
+        "routing_config": {
+            "allowed_families": list(families),
+            "min_route_confidence": limits.min_route_confidence,
+            "min_route_probability": limits.min_route_probability,
+            "min_evidence_probability": limits.min_evidence_probability,
+        },
+        "predictions": [
+            {
+                "phase": "route",
+                "question_wires": {name: check.auxiliary(question) for name, question in questions.items()},
+                "answers": answers,
+            }
+        ],
+    }
+
+    case = CalibrationCase.model_validate(document)
+    assert case.capture is not None
+    assert case.capture.disposition.reason == "model_routed_not_applicable"
+    assert replay_case(case).assessment == Assessment("not_applicable", "model_routed_not_applicable")
 
 
 def test_fabricated_hashes_and_bare_hash_format_fail() -> None:

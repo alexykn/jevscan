@@ -268,8 +268,8 @@ development winner is frozen; held-out cases cannot select or retune a policy.
 Selection is deterministic: the baseline is always a candidate, then objective
 utility is maximized, ties prefer the baseline, and remaining ties prefer the
 smallest policy change. Cases without both positive (`Agree`) and negative
-(`Disagree`) support retain the baseline with an explicit reason. Provenance
-Only explicit stable provenance fields `source_group`, `scenario_group`, or
+(`Disagree`) support retain the baseline with an explicit reason. Only explicit
+stable provenance fields `source_group`, `scenario_group`, or
 `owner_group` count as support groups. Free-form fields such as `source`,
 `owner`, and `source_hash` are not interpreted as identity. Development cases
 without an explicit support group retain the baseline with a
@@ -285,12 +285,20 @@ utility:
   Disagree: {confirmed: -8, tentative: -2, none: 0}
 min_positive_support: 1
 min_negative_support: 1
+min_review_list_recall: null
 ```
 
 Thus a false confirmed finding costs more than a false tentative finding,
 tentative positive findings remain useful, and `Partial` is not converted to
 half a positive. Pass `--objective objective.yaml` to provide the same
-`utility` matrix or support limits explicitly. The candidate search varies
+`utility` matrix or support limits explicitly. `min_review_list_recall` is an
+optional value from 0 through 1. It constrains candidates by the proportion of
+positive support groups that retain at least one confirmed or tentative
+finding; it is disabled by default so historical objectives do not change
+silently. When no candidate meets a declared floor, the selector retains the
+baseline and records `no_candidate_meets_review_list_recall`.
+
+The candidate search varies
 only reporting thresholds and preserves questions, messages, applicability,
 choices, and uncertain-choice semantics. Noul and Choice searches use bounded
 probability/confidence values observed in the cases. Score scalar searches
@@ -318,6 +326,21 @@ pairwise interactions within the candidate budget. The audit reports budget
 truncation. It does not search higher-order combinations or claim a global
 optimum.
 
+Selection also freezes the concrete `returned_model` and prompt
+version/policy across the complete requested development fit. Requested model
+aliases do not establish compatibility. Missing metadata fails closed; mixed
+concrete models or prompts are rejected by default. The explicit
+`--allow-incompatible-model-prompt` option exists only for audited historical
+experiments and still rejects missing metadata. Held-out records that do not
+match the frozen development authority are excluded and reported. Ordinary
+replay remains permissive because it evaluates each immutable record rather
+than fitting one shared policy.
+
+The selected result is a candidate recommendation under the declared
+objective, not automatic product acceptance or proof of optimal accuracy.
+Held-out results may reject promotion, but must not select a runner-up or tune
+the objective.
+
 Selection previews by default. Add `--apply` to write selected threshold values
 back to the explicitly supplied `--rules` file. The write is atomic, checks
 that the file did not change since it was read, validates the resulting rules
@@ -328,3 +351,8 @@ because targeted write-back would otherwise be ambiguous. The operation
 rechecks the source identity immediately before rename and preserves its mode;
 as with ordinary atomic file replacement, an uncooperating writer can still
 race after that final check.
+
+Replay, import, and selection outputs must be distinct from their inputs and
+metadata sidecars. The CLIs reject lexical aliases, resolved symlinks, and
+existing hard links before writing so a capture, labels file, ruleset,
+objective, or replay input cannot be overwritten through an alternate path.

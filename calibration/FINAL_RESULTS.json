@@ -1,6 +1,15 @@
 {
   "version": 1,
   "model": "jev-1.13.0",
+  "selection_compatibility": {
+    "mode": "strict_model_prompt",
+    "model_identity": "returned_model",
+    "returned_model": "jev-1.13.0",
+    "prompt_version": 5,
+    "prompt_policy_sha256": "d3be6f2eb0690e79af573dee76711f2ffee123adc518a9956e7e43db2815536c",
+    "status": "compatible",
+    "rejected_case_ids": []
+  },
   "source_snapshot": "91f1e9e84c8149f2aa08b5150d8f7d7de4d5f58cb0d6eba9e3af0820a39294aa",
   "freeze": {
     "selected_yaml_sha256": "b7e33930fdeaa5ee72d2b768a3550de7268bda0a474e6bc259c91b4ee5d0e7d4",

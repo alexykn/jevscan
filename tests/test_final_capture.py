@@ -1,7 +1,9 @@
 import json
+import os
 
 import pytest
 
+from jevscan.cli.calibrate import main as calibrate_main
 from jevscan.cli.import_calibration import main as import_main
 from jevscan.core.assessment import Assessment
 from jevscan.core.capture import FinalJudgmentRecorder
@@ -107,6 +109,55 @@ def test_incomplete_capture_requires_explicit_import_acknowledgment(tmp_path, un
     labels.write_text(json.dumps({"cases": []}))
     output = tmp_path / "cases.jsonl"
     assert import_main([str(capture_path), "--labels", str(labels), "-o", str(output)]) == 2
+
+
+@pytest.mark.parametrize("alias_kind", ["same_path", "symlink", "hardlink"])
+def test_import_rejects_capture_alias_without_overwriting_input(tmp_path, alias_kind):
+    capture_path = tmp_path / "capture.jsonl"
+    capture_path.write_text("capture must survive\n")
+    labels = tmp_path / "labels.json"
+    labels.write_text("{}")
+    output = tmp_path / "cases.jsonl"
+    if alias_kind == "same_path":
+        output = capture_path
+    elif alias_kind == "symlink":
+        try:
+            output.symlink_to(capture_path)
+        except OSError as exc:
+            pytest.skip(f"symlinks are unavailable: {exc}")
+    else:
+        try:
+            os.link(capture_path, output)
+        except OSError as exc:
+            pytest.skip(f"hard links are unavailable: {exc}")
+
+    original = capture_path.read_bytes()
+    assert import_main([str(capture_path), "--labels", str(labels), "-o", str(output)]) == 2
+    assert capture_path.read_bytes() == original
+
+
+@pytest.mark.parametrize("protected_name", ["labels.json", "capture.meta.json"])
+def test_import_rejects_output_aliasing_protected_sidecar_inputs(tmp_path, protected_name):
+    capture_path = tmp_path / "capture.jsonl"
+    capture_path.write_text("capture must survive\n")
+    metadata_path = capture_path.with_suffix(".meta.json")
+    metadata_path.write_text("{}")
+    labels = tmp_path / "labels.json"
+    labels.write_text("{}")
+    output = tmp_path / protected_name
+    original = output.read_bytes()
+
+    assert import_main([str(capture_path), "--labels", str(labels), "-o", str(output)]) == 2
+    assert output.read_bytes() == original
+
+
+def test_replay_rejects_output_alias_without_overwriting_input(tmp_path):
+    cases = tmp_path / "cases.jsonl"
+    cases.write_text("not a calibration case\n")
+    original = cases.read_bytes()
+
+    assert calibrate_main([str(cases), "--output", str(cases)]) == 2
+    assert cases.read_bytes() == original
 
 
 def test_routed_not_applicable_requires_canonical_route_wire(tmp_path, basic_rule, unit):

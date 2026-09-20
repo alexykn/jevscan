@@ -203,15 +203,11 @@ def _binding(node: Any, source: bytes) -> tuple[str | None, Kind | None]:
 def _rust_callable_start(node: Any) -> int:
     if node.type not in {"function_item", "function_signature_item"} or node.parent is None:
         return node.start_byte
-    siblings = list(node.parent.named_children)
-    try:
-        position = next(index for index, sibling in enumerate(siblings) if sibling.id == node.id)
-    except StopIteration:
-        return node.start_byte
     start = node.start_byte
-    while position > 0 and siblings[position - 1].type == "attribute_item":
-        position -= 1
-        start = siblings[position].start_byte
+    sibling = node.prev_named_sibling
+    while sibling is not None and sibling.type == "attribute_item":
+        start = sibling.start_byte
+        sibling = sibling.prev_named_sibling
     return start
 
 

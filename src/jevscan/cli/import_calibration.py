@@ -11,6 +11,7 @@ from typing import Any
 
 import yaml
 
+from jevscan.cli.path_identity import paths_alias
 from jevscan.core.protocol import encode
 from jevscan.core.semantic_calibration import CalibrationCase
 
@@ -53,6 +54,17 @@ def _capture_metadata(path: Path) -> dict[str, Any]:
     if not isinstance(metadata, dict):
         raise TypeError("capture metadata must be an object")
     return metadata
+
+
+def _reject_output_collisions(capture: Path, labels: Path, output: Path) -> None:
+    destinations = (output, output.with_suffix(".skips.json"))
+    protected = (capture, labels, capture.with_suffix(".meta.json"))
+    for destination in destinations:
+        for input_path in protected:
+            if paths_alias(destination, input_path):
+                raise ValueError(f"calibration output {destination} aliases protected input {input_path}")
+    if paths_alias(*destinations):
+        raise ValueError(f"calibration outputs {destinations[0]} and {destinations[1]} alias")
 
 
 def _labels(path: Path) -> dict[str, dict[str, Any]]:
@@ -236,6 +248,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
+        _reject_output_collisions(args.capture, args.labels, args.output)
         metadata = _capture_metadata(args.capture)
         _require_complete(metadata, args.allow_incomplete)
         rows = _read_jsonl(args.capture)

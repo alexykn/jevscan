@@ -1,7 +1,7 @@
 # Final built-in warning calibration
 
 The automatic selector's frozen results are applied to the packaged defaults.
-Seven warning policies changed; JEV05 and JEV07 retained their baselines.
+Seven warning policies changed; JEV05 and JEV07 retain their baselines.
 Questions, rule meanings, applicability, and all error thresholds are unchanged.
 No threshold was manually substituted after examining held-out answers.
 
@@ -21,8 +21,10 @@ No threshold was manually substituted after examining held-out answers.
 
 JEV06 stores `0.45999999999999996`, the exact observed floating-point boundary
 selected by the algorithm. Rounding it to `0.46` would change the gate for that
-observation. JEV02 reached the 4096-candidate search limit; its result is the
-best evaluated candidate, not a claim of a global optimum.
+observation. JEV02 records 2,060 generated candidates, a configured limit of
+4,096, and `truncated: true`: separately bounded coordinate and pair streams
+stopped before exhaustive enumeration. Its result is the best evaluated
+candidate under the stated objective, not a claim of global or product optimum.
 
 The pre-heldout selected-YAML SHA-256 was:
 
@@ -47,10 +49,16 @@ gates changed. Original YAML formatting was restored separately for review.
   `expanded-adjudications.json`; these are agent judgments, not human ground truth.
 - The objective, grouping procedure, positive-signal safeguard, baseline tie
   preference, and candidate budget were fixed before expanded measurement.
+- That safeguard required only one positive signal. It was not a recall floor.
+  The utility is an explicit precision/recall product policy, not a discovered
+  definition of accuracy.
 - The 36 expanded held-out cases were captured only after policy freeze.
   Another 44 previously inspected real-project/lookup cases are reported
   separately as supplementary held-out diagnostics.
 - Model: `jev-1.13.0`. Task-wide reserved live cost: **$0.020044794 of $1.00**.
+- The completed fit is compatible under the new strict selection policy:
+  all 289 development cases use returned model `jev-1.13.0`, prompt version 5,
+  and one prompt policy. Requested aliases are not used as model identity.
 
 Expanded source snapshot:
 
@@ -95,6 +103,14 @@ from 6 to 5, and confirmed negatives remain 2. These counts do not establish
 population accuracy. Per the fixed plan, valid tradeoffs were reported rather
 than used to hand-pick replacement thresholds.
 
+The product owner accepted this measured precision/recall tradeoff for the
+packaged defaults. No runner-up was selected after looking at held-out data.
+The evidence does not claim a universal improvement in model discrimination.
+For the next acceptance experiment,
+`calibration/agent-review-objective.yaml` predeclares at least three positive
+and three negative support groups plus 0.80 group-normalized review-list
+recall. It does not retroactively alter this completed run.
+
 ## Development and supplementary results
 
 The largest development changes are precision/recall tradeoffs:
@@ -107,10 +123,35 @@ The largest development changes are precision/recall tradeoffs:
 - JEV03 and JEV09 remove negative tentative signals; JEV08 recovers a tentative
   positive. JEV05 and JEV07 are unchanged.
 
+For JEV01, confirmed precision changes from 7/22 (31.8%) to 5/6 (83.3%),
+while confirmed positive recall changes from 7/10 to 5/10 and review-list
+positive recall from 10/10 to 5/10. For JEV02, confirmed precision changes
+from 16/32 (50.0%) to 12/13 (92.3%), confirmed positive recall from 16/26 to
+12/26, and review-list positive recall from 26/26 to 21/26. This is a large
+noise reduction and a material recall loss.
+
 In the separate supplementary set, JEV01 retains all four positives while
 removing four negative signals. JEV02 removes two negative signals but reduces
 positive signals from 13/14 to 9/14. Those previously inspected cases are not a
 fresh acceptance set.
+
+## Why threshold selection cannot repair every failure
+
+Several held-out answers are misranked for the exact event the rule cares
+about. For JEV04, the negative `quarry.ts` case receives defect probability
+0.65 and confidence 0.48, while the positive `summit.js` case receives 0.50
+and 0.24. No policy requiring minimum probability and confidence can admit the
+positive while rejecting that negative. Lowering JEV04 confidence promoted the
+negative and still missed the positive.
+
+The JEV01 positive in `flint.ts` receives Noul 0.69 and disappears only because
+the selected threshold is 0.71. The JEV02 positive in `raven.rs` has score 1.66,
+confidence 0.64, and 0.70 total probability on levels 2–3; the selected policy
+keeps it tentative through the 0.70 confidence gate. These are reporting
+tradeoffs, not improvements to Jev's underlying distinctions.
+
+Cases with this ordering belong in a separate question/evidence-design
+investigation. Increasing threshold-search effort cannot reverse their scores.
 
 `FINAL_RESULTS.json` contains exact per-rule policies, hashes, objective values,
 support counts, bounded-search metadata, and outcome counts. Private source
@@ -126,7 +167,7 @@ uv run jevscan-calibrate calibration/expanded-cases.jsonl --output replay.json
 ```
 
 That reproduces recorded baseline judgments. To compare the published policies,
-pass a report-override document containing the `selected_policy` values from
+build a report-override document from the `selected_policy` values in
 `FINAL_RESULTS.json`, using the replay CLI's `--report-policy` option.
 Reproducing selection over the complete mixed corpus additionally requires the
 authorized private cases; the public expansion alone is not the complete fit.
@@ -139,7 +180,7 @@ outside this change.
 
 ## Final verification
 
-- Full suite: 370 tests passed.
+- Full suite: 396 tests passed after merge-review corrections.
 - Ruff format/check, type checking, and `git diff --check` passed.
 - Wheel and source archive built successfully.
 - A fresh environment installed the wheel, parsed all 108 expanded sources
@@ -149,6 +190,15 @@ outside this change.
 - The separate-project CLI integration test exercises final capture, label
   import, automatic selection, and actual YAML write-back using mocked transport.
 - The selector's final authority/grouping review found no remaining blocker.
+- The exact frozen policy hashes match the installed packaged defaults.
+- Strict returned-model/prompt compatibility reproduces the original frozen
+  selection exactly; the predeclared future recall objective is separate.
+- Calibration outputs reject input, metadata-sidecar, symlink, and hard-link
+  collisions before writing. Captured not-applicable dispositions must agree
+  with production assessment unless canonical model routing is recorded.
+- Rust callable attribute lookup now walks adjacent preceding siblings instead
+  of rescanning all siblings. At 4,000 ordinary functions, the isolated helper
+  comparison changed from 2.527 s to 0.0041 s; full parsing took 0.100 s.
 
 Live semantic measurements and mocked workflow tests are separate evidence.
 Nothing was published or pushed as part of this verification.

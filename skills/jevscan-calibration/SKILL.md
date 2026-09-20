@@ -94,11 +94,16 @@ Run the selector against the supplied YAML:
 ```sh
 jevscan-calibrate RUN/cases.jsonl --select --rules RULES.yaml \
   --development-split development --heldout-split heldout \
+  --objective OBJECTIVE.yaml \
   --selected-policy RUN/selected.yaml --output RUN/audit.json
 ```
 
 Omit `--heldout-split` when no independent held-out data exists and say so.
 Use `--rule-id` when only particular supplied rules are in scope.
+Write product support and review-list recall requirements into `OBJECTIVE.yaml`
+before measurement. For agent-assisted review, declare
+`min_review_list_recall` rather than relying on the default safeguard that only
+requires one positive signal. Record the objective with the evidence.
 
 Inspect the audit rather than manually choosing a threshold:
 
@@ -107,16 +112,23 @@ Inspect the audit rather than manually choosing a threshold:
 - Report confirmed false positives, tentative label composition, and missed
   positives, not just precision or fewer warnings.
 - Check independent support, incompatible records, and search truncation.
+- Confirm one concrete returned model and prompt version/policy define the fit;
+  do not use the historical mixed-compatibility opt-in for a new calibration.
 - Distinguish a retained baseline from evidence that the baseline is optimal.
 - Do not use held-out results to pick a runner-up or retune the objective.
 
 The search is bounded and is not a global optimization guarantee. Error
 thresholds remain fixed. Changing questions requires fresh model answers and
-a separate experiment.
+a separate experiment. The selected policy is a **candidate recommendation**:
+selection does not imply product acceptance or prove better overall accuracy.
+Decide acceptance against product priorities declared before evaluation.
+Rejecting promotion is not retuning; substituting another threshold after
+seeing held-out results is.
 
 ## 5. Apply and verify
 
-When updating the supplied YAML is authorized, rerun the same selection with
+When the candidate is accepted and updating the supplied YAML is authorized,
+rerun the same selection with
 the same immutable cases and objective, adding `--apply`. Use fresh audit and
 policy output paths. The tool writes selected warning values into that YAML;
 a separate override file is not a substitute.

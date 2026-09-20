@@ -8,7 +8,7 @@ import pytest
 from jevscan.cli.main import main
 from jevscan.core.languages import language_for
 from jevscan.core.models import FileJob, Kind
-from jevscan.core.parser import parse_batch, parse_source
+from jevscan.core.parser import _rust_callable_start, parse_batch, parse_source
 
 pytestmark = [pytest.mark.parser, pytest.mark.usefixtures("grammar_runtime")]
 
@@ -424,6 +424,61 @@ def test_rust_attributes_extend_callable_spans() -> None:
     assert encoded[method.start_byte : method.end_byte].decode() == "#[must_use]\n  fn work(&self) {}"
     assert method.signature == "#[must_use]\n  fn work(&self)"
     assert method.id == f"attributes.rs:{method.start_byte}:method"
+
+
+def test_rust_attribute_attachment_is_local_to_each_callable() -> None:
+    source = (
+        "#[first]\n"
+        "#[second]\n"
+        "fn first() {}\n"
+        "fn adjacent() {}\n"
+        "#[outer]\n"
+        "// comments interrupt attribute attachment\n"
+        "#[inner]\n"
+        "fn commented() {}\n"
+    )
+    encoded = source.encode()
+    parsed = parse_source(encoded, FileJob("adjacent.rs", "adjacent.rs", "rust", "rust"))
+    assert not parsed.failed
+    units = {unit.name: unit for unit in parsed.units}
+
+    assert encoded[units["first"].start_byte : units["first"].end_byte].decode() == (
+        "#[first]\n#[second]\nfn first() {}"
+    )
+    assert encoded[units["adjacent"].start_byte : units["adjacent"].end_byte].decode() == "fn adjacent() {}"
+    assert encoded[units["commented"].start_byte : units["commented"].end_byte].decode() == (
+        "#[inner]\nfn commented() {}"
+    )
+
+
+def test_rust_callable_start_does_not_scan_parent_siblings() -> None:
+    class Parent:
+        @property
+        def named_children(self) -> None:
+            raise AssertionError("_rust_callable_start must not materialize all named siblings")
+
+    parent = Parent()
+
+    class Node:
+        def __init__(self, node_type: str, start_byte: int, previous: "Node | None" = None) -> None:
+            self.type = node_type
+            self.start_byte = start_byte
+            self.parent = parent
+            self._previous = previous
+            self.lookups = 0
+
+        @property
+        def prev_named_sibling(self) -> "Node | None":
+            self.lookups += 1
+            return self._previous
+
+    previous: Node | None = None
+    for position in range(4_000):
+        previous = Node("ordinary_item", position, previous)
+    callable_node = Node("function_item", 4_000, previous)
+
+    assert _rust_callable_start(callable_node) == 4_000
+    assert callable_node.lookups == 1
 
 
 def test_rust_union_and_foreign_functions_keep_distinct_inventory_kinds() -> None:

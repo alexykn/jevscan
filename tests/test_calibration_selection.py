@@ -174,6 +174,36 @@ def test_incompatible_model_opt_in_is_explicitly_audited_and_replay_remains_perm
     assert audit.as_dict()["compatibility"]["mode"] == "allow_incompatible_model_prompt"
 
 
+@pytest.mark.parametrize("allow_incompatible", [False, True])
+def test_selection_rejects_missing_compatibility_metadata_even_with_opt_in(allow_incompatible) -> None:
+    valid = _cases(["Agree"], returned_model="jev-1.13.0")[0]
+    missing = _with_case_id(_cases(["Disagree"], returned_model="jev-1.13.0")[0], "selection-1").model_copy(
+        update={"returned_model": ""}
+    )
+
+    result = select_policies(
+        [valid, missing],
+        allow_incompatible_model_prompt=allow_incompatible,
+    ).rules["custom-rule"]
+
+    assert result.selected_policy is None
+    assert result.reason == "development_compatibility_metadata_missing"
+
+
+def test_complete_requested_fit_rejects_models_that_differ_only_between_rules() -> None:
+    first = _cases(["Agree", "Disagree"], returned_model="jev-1.13.0")
+    second = [
+        case.model_copy(update={"rule_id": "other-rule", "case_id": f"other-{index}"})
+        for index, case in enumerate(_cases(["Agree", "Disagree"], returned_model="jev-1.14.0"))
+    ]
+
+    audit = select_policies(first + second)
+
+    assert set(audit.rules) == {"custom-rule", "other-rule"}
+    assert {result.reason for result in audit.rules.values()} == {"requested_fit_model_mismatch"}
+    assert not audit.selected_policies
+
+
 def test_cli_exposes_incompatible_model_prompt_opt_in(tmp_path: Path) -> None:
     first = _cases(["Agree"], returned_model="jev-1.13.0")[0]
     second = _with_case_id(_cases(["Disagree"], returned_model="jev-1.14.0")[0], "selection-1")
@@ -207,6 +237,28 @@ def test_heldout_must_match_frozen_development_compatibility_authority() -> None
     assert result.heldout is not None
     assert result.heldout["compatibility"]["status"] == "mismatch"
     assert result.heldout["compatibility"]["rejected_case_ids"] == ["heldout-1"]
+    assert result.heldout["rules"] == {}
+
+
+def test_heldout_rejects_missing_metadata_and_other_incompatible_cases_together() -> None:
+    development = _cases(["Agree", "Disagree"], returned_model="model-A")
+    missing = _with_case_id(
+        _cases(["Agree"], split="heldout", source_group="heldout-missing", returned_model="model-A")[0],
+        "heldout-missing",
+    ).model_copy(update={"returned_model": ""})
+    mismatched = _with_case_id(
+        _cases(["Agree"], split="heldout", source_group="heldout-mismatch", returned_model="model-B")[0],
+        "heldout-mismatch",
+    )
+
+    result = select_policies(development + [missing, mismatched], heldout_split="heldout").rules["custom-rule"]
+
+    assert result.heldout is not None
+    assert result.heldout["compatibility"]["status"] == "missing_metadata"
+    assert result.heldout["compatibility"]["rejected_case_ids"] == [
+        "heldout-mismatch",
+        "heldout-missing",
+    ]
     assert result.heldout["rules"] == {}
 
 

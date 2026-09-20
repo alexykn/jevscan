@@ -405,6 +405,20 @@ def _missing_compatibility_mismatches(case: CalibrationCase) -> list[dict[str, A
     return missing
 
 
+def _partition_compatibility_cases(
+    cases: Iterable[CalibrationCase],
+) -> tuple[list[CalibrationCase], tuple[dict[str, Any], ...]]:
+    complete: list[CalibrationCase] = []
+    missing: list[dict[str, Any]] = []
+    for case in cases:
+        case_missing = _missing_compatibility_mismatches(case)
+        if case_missing:
+            missing.extend(case_missing)
+        else:
+            complete.append(case)
+    return complete, tuple(missing)
+
+
 def _compatibility_mismatches(
     authority: _CompatibilityAuthority,
     case: CalibrationCase,
@@ -437,15 +451,18 @@ def _compatibility_check(cases: Iterable[CalibrationCase]) -> CompatibilityCheck
     checked_case_ids = tuple(case.case_id for case in material)
     if not material:
         return CompatibilityCheck("no_cases", None, checked_case_ids)
-    missing = tuple(mismatch for case in material for mismatch in _missing_compatibility_mismatches(case))
-    if missing:
+    complete, missing = _partition_compatibility_cases(material)
+    if not complete:
         return CompatibilityCheck("missing_metadata", None, checked_case_ids, missing)
-    first = material[0]
+    first = complete[0]
     returned_model, prompt_version, prompt_policy = _compatibility_values(first)
     assert returned_model is not None and prompt_version is not None and prompt_policy is not None
     authority = _CompatibilityAuthority(returned_model, prompt_version, prompt_policy)
-    mismatches = tuple(mismatch for case in material for mismatch in _compatibility_mismatches(authority, case))
-    return CompatibilityCheck("compatible" if not mismatches else "mismatch", authority, checked_case_ids, mismatches)
+    mismatches = missing + tuple(
+        mismatch for case in complete for mismatch in _compatibility_mismatches(authority, case)
+    )
+    status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
+    return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
 
 
 def _compatibility_check_against(
@@ -456,11 +473,12 @@ def _compatibility_check_against(
     checked_case_ids = tuple(case.case_id for case in material)
     if authority is None:
         return CompatibilityCheck("no_development_authority", None, checked_case_ids)
-    missing = tuple(mismatch for case in material for mismatch in _missing_compatibility_mismatches(case))
-    if missing:
-        return CompatibilityCheck("missing_metadata", authority, checked_case_ids, missing)
-    mismatches = tuple(mismatch for case in material for mismatch in _compatibility_mismatches(authority, case))
-    return CompatibilityCheck("compatible" if not mismatches else "mismatch", authority, checked_case_ids, mismatches)
+    complete, missing = _partition_compatibility_cases(material)
+    mismatches = missing + tuple(
+        mismatch for case in complete for mismatch in _compatibility_mismatches(authority, case)
+    )
+    status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
+    return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
 
 
 def _outcome(record: ReplayRecord) -> str:
@@ -1151,6 +1169,78 @@ def _evaluate_prepared_rule(prepared: _PreparedRule, objective: SelectionObjecti
     )
 
 
+def _validate_selection_splits(development_split: str, heldout_split: str | None) -> None:
+    if not development_split.strip():
+        raise ValueError("development split must be nonempty")
+    if heldout_split is not None and not heldout_split.strip():
+        raise ValueError("heldout split must be nonempty")
+    if heldout_split == development_split:
+        raise ValueError("development and heldout splits must differ")
+
+
+def _requested_rule_ids(
+    material: list[CalibrationCase],
+    rules: Mapping[str, Rule] | None,
+    rule_ids: Iterable[str] | None,
+) -> list[str]:
+    requested = set(rule_ids or ())
+    available = rules.keys() if rules is not None else (case.rule_id for case in material)
+    return sorted(requested or set(available))
+
+
+def _group_cases_by_rule(
+    material: list[CalibrationCase],
+    identifiers: Iterable[str],
+) -> dict[str, list[CalibrationCase]]:
+    requested = set(identifiers)
+    result: dict[str, list[CalibrationCase]] = {rule_id: [] for rule_id in requested}
+    for case in material:
+        if case.rule_id in requested:
+            result[case.rule_id].append(case)
+    return result
+
+
+def _fit_development_cases(
+    cases_by_rule: Mapping[str, list[CalibrationCase]],
+    identifiers: Iterable[str],
+    rules: Mapping[str, Rule] | None,
+    development_split: str,
+) -> list[CalibrationCase]:
+    result: list[CalibrationCase] = []
+    for rule_id in identifiers:
+        development = [case for case in cases_by_rule[rule_id] if case.split == development_split]
+        authoritative = rules.get(rule_id) if rules is not None else None
+        reference = _reference_rule(development, authoritative)
+        if reference is not None:
+            result.extend(case for case in development if _mismatch(reference, case) is None)
+    return result
+
+
+def _select_prepared_rule(
+    rule_id: str,
+    prepared: _PreparedRule | RuleSelection,
+    fit_compatibility: CompatibilityCheck,
+    objective: SelectionObjective,
+    allow_incompatible_model_prompt: bool,
+) -> RuleSelection:
+    if isinstance(prepared, RuleSelection):
+        return prepared
+    fit_rejected = fit_compatibility.incompatible and (
+        fit_compatibility.has_missing_metadata or not allow_incompatible_model_prompt
+    )
+    if not fit_rejected:
+        return _evaluate_prepared_rule(prepared, objective)
+    return _not_searched_selection(
+        rule_id,
+        prepared.baseline,
+        _compatibility_reason(fit_compatibility, "requested_fit"),
+        prepared.mismatches,
+        objective.max_candidates,
+        retain_baseline=False,
+        compatibility=fit_compatibility,
+    )
+
+
 def select_policies(
     cases: Iterable[CalibrationCase],
     *,
@@ -1169,58 +1259,34 @@ def select_policies(
     never permits missing metadata.
     """
 
-    if not development_split.strip():
-        raise ValueError("development split must be nonempty")
-    if heldout_split is not None and not heldout_split.strip():
-        raise ValueError("heldout split must be nonempty")
-    if heldout_split == development_split:
-        raise ValueError("development and heldout splits must differ")
+    _validate_selection_splits(development_split, heldout_split)
     material = list(cases)
     selection_objective = (
         objective if isinstance(objective, SelectionObjective) else SelectionObjective.from_mapping(objective)
     )
-    requested = set(rule_ids or ())
-    if rules is not None:
-        identifiers = sorted(requested or rules.keys())
-    else:
-        identifiers = sorted(requested or {case.rule_id for case in material})
-
-    fit_development: list[CalibrationCase] = []
-    for rule_id in identifiers:
-        rule_cases = [case for case in material if case.rule_id == rule_id]
-        development = [case for case in rule_cases if case.split == development_split]
-        reference = _reference_rule(development, rules.get(rule_id) if rules is not None else None)
-        if reference is not None:
-            fit_development.extend(case for case in development if _mismatch(reference, case) is None)
-    fit_compatibility = _compatibility_check(fit_development)
+    identifiers = _requested_rule_ids(material, rules, rule_ids)
+    cases_by_rule = _group_cases_by_rule(material, identifiers)
+    fit_compatibility = _compatibility_check(
+        _fit_development_cases(cases_by_rule, identifiers, rules, development_split)
+    )
     selections: dict[str, RuleSelection] = {}
     for rule_id in identifiers:
-        rule_cases = [case for case in material if case.rule_id == rule_id]
         prepared = _prepare_rule(
             rule_id,
-            rule_cases,
+            cases_by_rule[rule_id],
             rules.get(rule_id) if rules is not None else None,
             development_split,
             heldout_split,
             selection_objective.max_candidates,
             allow_incompatible_model_prompt,
         )
-        if isinstance(prepared, RuleSelection):
-            selections[rule_id] = prepared
-        elif fit_compatibility.incompatible and (
-            fit_compatibility.has_missing_metadata or not allow_incompatible_model_prompt
-        ):
-            selections[rule_id] = _not_searched_selection(
-                rule_id,
-                prepared.baseline,
-                _compatibility_reason(fit_compatibility, "requested_fit"),
-                prepared.mismatches,
-                selection_objective.max_candidates,
-                retain_baseline=False,
-                compatibility=fit_compatibility,
-            )
-        else:
-            selections[rule_id] = _evaluate_prepared_rule(prepared, selection_objective)
+        selections[rule_id] = _select_prepared_rule(
+            rule_id,
+            prepared,
+            fit_compatibility,
+            selection_objective,
+            allow_incompatible_model_prompt,
+        )
     return SelectionAudit(
         development_split,
         heldout_split,

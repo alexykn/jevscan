@@ -16,6 +16,7 @@ from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.constructor import DuplicateKeyError
 from ruamel.yaml.error import YAMLError
 
+from jevscan.cli.path_identity import paths_alias as _paths_alias
 from jevscan.core.calibration_selection import (
     SelectionAudit,
     SelectionObjective,
@@ -291,15 +292,6 @@ def _write_selected_policy(audit: SelectionAudit, destination: Path) -> None:
         yaml.safe_dump(selected_policy_document(audit), stream, sort_keys=False, allow_unicode=True)
 
 
-def _paths_alias(first: Path, second: Path) -> bool:
-    try:
-        if first.exists() and second.exists() and first.samefile(second):
-            return True
-    except OSError:
-        pass
-    return first.resolve(strict=False) == second.resolve(strict=False)
-
-
 def _reject_selection_output_collisions(args: Any) -> None:
     destinations = [path for path in (args.output, args.selected_policy) if path is not None]
     protected = [args.input, args.rules_path, args.objective]
@@ -309,6 +301,15 @@ def _reject_selection_output_collisions(args: Any) -> None:
                 raise ValueError(f"selection output {destination} aliases {other}; choose distinct paths")
 
 
+def _reject_replay_output_collisions(args: Any) -> None:
+    if args.output is None:
+        return
+    protected = [args.input, args.report_policy]
+    for other in protected:
+        if other is not None and _paths_alias(args.output, other):
+            raise ValueError(f"replay output {args.output} aliases {other}; choose distinct paths")
+
+
 def _selection_argument_error(message: str) -> None:
     raise ValueError(message)
 
@@ -316,6 +317,8 @@ def _selection_argument_error(message: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
+        if not args.select:
+            _reject_replay_output_collisions(args)
         cases = load_cases(args.input)
         if args.select:
             _reject_selection_output_collisions(args)

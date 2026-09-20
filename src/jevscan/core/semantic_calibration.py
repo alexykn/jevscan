@@ -425,12 +425,11 @@ class CalibrationCase(StrictModel):
             expected = assess(check, self.answer, self.context_complete)
             disposition = self.capture.disposition
             if disposition.status == "not_applicable":
-                if disposition.reason not in {"model_routed_not_applicable", "rule_not_applicable"}:
-                    raise ValueError("unsupported final not-applicable disposition")
-                if disposition.reason == "model_routed_not_applicable" and not _has_canonical_not_applicable_route(
-                    self.capture, check
-                ):
-                    raise ValueError("unsupported final not-applicable disposition")
+                if disposition.reason == "model_routed_not_applicable":
+                    if not _has_canonical_not_applicable_route(self.capture, check):
+                        raise ValueError("unsupported final not-applicable disposition")
+                elif (disposition.status, disposition.reason) != (expected.status, expected.reason):
+                    raise ValueError("final disposition does not match production assessment")
             elif (disposition.status, disposition.reason) != (expected.status, expected.reason):
                 raise ValueError("final disposition does not match production assessment")
         _validate_case_target_material(self)
@@ -666,7 +665,11 @@ def replay_case(
     rule = _report_override(case.rule, report_override)
     check = Check(case.case_id, case.target, case.rule_id, rule)
     assessment = assess(check, case.answer, case.context_complete)
-    if case.capture is not None and case.capture.disposition.status == "not_applicable":
+    if (
+        case.capture is not None
+        and case.capture.disposition.status == "not_applicable"
+        and case.capture.disposition.reason == "model_routed_not_applicable"
+    ):
         assessment = Assessment("not_applicable", case.capture.disposition.reason)
     return ReplayRecord(
         record_index,
