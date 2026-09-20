@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from calibration.focused_experiment import (
+    _PAIR_TASK_MARKER,
     EVOLUTION_CANDIDATES_CONFIG,
     FOCUSED_MANIFEST,
     MODEL,
@@ -21,6 +22,7 @@ from calibration.focused_experiment import (
     _metrics_for_records,
     _offline_composed_metrics,
     _pair_binding,
+    _record_pair_metadata,
     candidate_documents,
     candidate_rule_ids,
     capture_manifest,
@@ -311,6 +313,16 @@ def test_evolution_pair_plan_preserves_exact_metadata_and_fallback() -> None:
             assert record["question_id"] is not None
             assert "intervening_bytes" not in json.dumps(binding)
             assert binding["pair"]["source_path"] == record["target"]["path"]
+    _, requests, _, _, _, _ = _capture_items(
+        FOCUSED_MANIFEST,
+        phase="development",
+        config_path=EVOLUTION_CANDIDATES_CONFIG,
+        freeze_path=None,
+        candidates=["jev04-pair-corrected"],
+    )
+    request_material = b"\n".join(request.body for request in requests).lower()
+    for label in (b"positive", b"negative", b"agree", b"disagree", b"partial", b"ground truth"):
+        assert label not in request_material
 
 
 def test_focused_adjudications_match_the_frozen_source_and_manifest() -> None:
@@ -746,6 +758,14 @@ def _evolution_manifest(tmp_path: Path) -> Path:
     )
     entries = [
         {
+            "id": "e01",
+            "source": str(source),
+            "source_group": "e01",
+            "rule": "EXP_JEV01_RESPONSIBILITIES",
+            "label": "negative",
+            "target": {"scope": "unit", "name": "recover", "kind": "function"},
+        },
+        {
             "id": "e03",
             "source": str(source),
             "source_group": "e03",
@@ -947,7 +967,96 @@ def test_replay_rejects_leaked_or_incomplete_jev01_child_bundles(
     mismatch_path.write_text("\n".join(json.dumps(document) for document in mismatched) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="metadata mismatch"):
         replay_metrics(mismatch_path)
+
+    missing_parent = [json.loads(json.dumps(document)) for document in documents]
+    missing_parent[0]["provenance"].pop("parent_case_id")
+    missing_parent_path = tmp_path / "missing-parent.jsonl"
+    missing_parent_path.write_text(
+        "\n".join(json.dumps(document) for document in missing_parent) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="missing parent_case_id"):
+        replay_metrics(missing_parent_path)
     assert output.is_file()
+
+
+def test_replay_rejects_unexpected_composed_child_and_excludes_generic_single_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = _evolution_manifest(tmp_path)
+    output, documents = _capture_mock_cases(
+        tmp_path,
+        monkeypatch,
+        ["jev01-strict-and", "jev03-concrete-mechanics"],
+        manifest=manifest,
+    )
+    leaked = [json.loads(json.dumps(document)) for document in documents]
+    jev03 = next(document for document in leaked if document["rule_id"] == "EXP_JEV03_CONCRETE_MECHANICS")
+    jev03["provenance"]["candidate"] = "jev01-strict-and"
+    leaked_path = tmp_path / "unexpected-child.jsonl"
+    leaked_path.write_text("\n".join(json.dumps(document) for document in leaked) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="unexpected child rule records"):
+        replay_metrics(leaked_path)
+
+    single_leaked = [json.loads(json.dumps(document)) for document in documents]
+    jev01 = next(document for document in single_leaked if document["rule_id"] == "EXP_JEV01_RESPONSIBILITIES")
+    jev01["provenance"]["candidate"] = "jev03-concrete-mechanics"
+    single_leaked_path = tmp_path / "unexpected-single-child.jsonl"
+    single_leaked_path.write_text(
+        "\n".join(json.dumps(document) for document in single_leaked) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unexpected child rule records"):
+        replay_metrics(single_leaked_path)
+
+    generic = [json.loads(json.dumps(document)) for document in documents]
+    generic_jev03 = next(document for document in generic if document["rule_id"] == "EXP_JEV03_CONCRETE_MECHANICS")
+    generic_jev03["provenance"].pop("candidate")
+    generic_path = tmp_path / "generic-single.jsonl"
+    generic_path.write_text("\n".join(json.dumps(document) for document in generic) + "\n", encoding="utf-8")
+    assert replay_metrics(generic_path)["jev03-concrete-mechanics"]["cases"] == 0
+    assert output.is_file()
+
+
+def test_pair_metadata_requires_the_canonical_location_shape() -> None:
+    span = {"start_byte": 0, "end_byte": 1, "start_line": 1, "end_line": 1}
+    pair = {
+        "pair_id": "pair-1",
+        "source_path": "source.py",
+        "earlier": {
+            "operation_span": span,
+            "callable_boundary": {"owner_kind": "function", "depth": 0},
+        },
+        "later": {
+            "operation_span": {**span, "start_byte": 2, "end_byte": 3},
+            "callable_boundary": {"owner_kind": "function", "depth": 0},
+        },
+        "intervening_span": {**span, "start_byte": 1, "end_byte": 2},
+        "callable_boundary": {"crossed": False},
+    }
+    binding = {"candidate": "jev04-pair-corrected", "pair": pair}
+    task_binding = {"candidate": binding["candidate"], **pair}
+    record = SimpleNamespace(
+        case=SimpleNamespace(
+            case_id="pair-case",
+            target=SimpleNamespace(path="source.py", start_byte=0, end_byte=3, start_line=1, end_line=1),
+            provenance={"pair_binding": binding},
+            question_wire={"instructions": {"task": _PAIR_TASK_MARKER + json.dumps(task_binding)}},
+        )
+    )
+    assert _record_pair_metadata(record) == pair
+
+    pair["unexpected"] = True
+    task_binding["unexpected"] = True
+    with pytest.raises(ValueError, match="canonical shape"):
+        _record_pair_metadata(record)
+
+    pair.pop("unexpected")
+    task_binding.pop("unexpected")
+    pair["source_path"] = "other.py"
+    task_binding["source_path"] = "other.py"
+    with pytest.raises(ValueError, match="bound to the target span"):
+        _record_pair_metadata(record)
 
 
 def test_corrected_pair_replay_keeps_baseline_fallback_assessment_metrics(

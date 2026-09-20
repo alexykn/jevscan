@@ -1666,9 +1666,12 @@ def _bundle_identity(record: Any) -> bytes:
         "label": case.label,
         "target": case.target.metadata(),
         "evidence": case.hashes.evidence,
+        "evidence_identity": case.comparability.evidence,
         "requested_model": case.requested_model,
         "returned_model": case.returned_model,
         "prompt": case.prompt.model_dump(mode="json"),
+        "prompt_hash": case.hashes.prompt,
+        "prompt_identity": case.comparability.prompt.model_dump(mode="json"),
         "source_hashes": case.hashes.source_documents,
     })
 
@@ -1686,7 +1689,9 @@ def _children_by_parent(
     by_case: dict[str, dict[str, Any]] = defaultdict(dict)
     for rule_id, records in child_records.items():
         for record in records:
-            parent_case_id = str(record.case.provenance.get("parent_case_id", record.case.case_id))
+            parent_case_id = record.case.provenance.get("parent_case_id")
+            if not isinstance(parent_case_id, str) or not parent_case_id:
+                raise ValueError(f"{record.case.case_id}: composed child is missing parent_case_id")
             if rule_id in by_case[parent_case_id]:
                 raise ValueError(f"composed candidate has duplicate child records for {parent_case_id}/{rule_id}")
             by_case[parent_case_id][rule_id] = record
@@ -1754,6 +1759,21 @@ def _candidate_matches(case: CalibrationCase, candidate: str) -> bool:
     if declared == candidate:
         return True
     return _historical_baseline_compatible(candidate, declared)
+
+
+def _validate_candidate_rule_membership(
+    cases: Iterable[CalibrationCase],
+    candidate: str,
+    expected_rule_ids: tuple[str, ...],
+) -> None:
+    expected = set(expected_rule_ids)
+    unexpected = sorted({
+        case.rule_id
+        for case in cases
+        if case.provenance.get("candidate", _MISSING_CANDIDATE) == candidate and case.rule_id not in expected
+    })
+    if unexpected:
+        raise ValueError(f"{candidate}: unexpected child rule records: {unexpected}")
 
 
 def _metric_records(
@@ -1856,6 +1876,38 @@ def _metrics_for_records(records: list[Any], signal_by_case: Mapping[str, bool] 
 _PAIR_TASK_MARKER = "Pair binding metadata (machine-readable location metadata only):\n"
 
 
+def _valid_pair_span(value: object) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {"start_byte", "end_byte", "start_line", "end_line"}:
+        return False
+    start_byte, end_byte = value["start_byte"], value["end_byte"]
+    start_line, end_line = value["start_line"], value["end_line"]
+    return (
+        type(start_byte) is int
+        and type(end_byte) is int
+        and type(start_line) is int
+        and type(end_line) is int
+        and 0 <= start_byte <= end_byte
+        and 1 <= start_line <= end_line
+    )
+
+
+def _valid_pair_occurrence(value: object) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {"operation_span", "callable_boundary"}:
+        return False
+    operation_span = value["operation_span"]
+    boundary = value["callable_boundary"]
+    return (
+        _valid_pair_span(operation_span)
+        and operation_span["start_byte"] < operation_span["end_byte"]
+        and isinstance(boundary, Mapping)
+        and set(boundary) == {"owner_kind", "depth"}
+        and isinstance(boundary["owner_kind"], str)
+        and bool(boundary["owner_kind"])
+        and type(boundary["depth"]) is int
+        and boundary["depth"] >= 0
+    )
+
+
 def _record_pair_metadata(record: Any) -> Mapping[str, Any]:
     provenance = record.case.provenance
     binding = provenance.get("pair_binding")
@@ -1871,24 +1923,49 @@ def _record_pair_metadata(record: Any) -> Mapping[str, Any]:
         raise ValueError(f"{record.case.case_id}: question metadata has no pair binding") from exc
     if not isinstance(task_binding, Mapping):
         raise TypeError(f"{record.case.case_id}: question pair binding is not an object")
+    if set(pair) != {
+        "pair_id",
+        "source_path",
+        "earlier",
+        "later",
+        "intervening_span",
+        "callable_boundary",
+    }:
+        raise ValueError(f"{record.case.case_id}: pair metadata does not match the canonical shape")
+    boundary = pair["callable_boundary"]
+    if (
+        not isinstance(pair["pair_id"], str)
+        or not pair["pair_id"]
+        or not isinstance(pair["source_path"], str)
+        or not pair["source_path"]
+        or not _valid_pair_occurrence(pair["earlier"])
+        or not _valid_pair_occurrence(pair["later"])
+        or not _valid_pair_span(pair["intervening_span"])
+        or not isinstance(boundary, Mapping)
+        or set(boundary) != {"crossed"}
+        or type(boundary["crossed"]) is not bool
+    ):
+        raise ValueError(f"{record.case.case_id}: pair metadata does not match the canonical shape")
+    target = record.case.target
+    earlier_span = pair["earlier"]["operation_span"]
+    later_span = pair["later"]["operation_span"]
+    intervening_span = pair["intervening_span"]
+    if (
+        pair["source_path"] != target.path
+        or earlier_span["start_byte"] < target.start_byte
+        or earlier_span["end_byte"] != intervening_span["start_byte"]
+        or intervening_span["end_byte"] != later_span["start_byte"]
+        or later_span["end_byte"] > target.end_byte
+        or earlier_span["start_line"] < target.start_line
+        or later_span["end_line"] > target.end_line
+    ):
+        raise ValueError(f"{record.case.case_id}: pair metadata is not bound to the target span")
     if task_binding.get("candidate") != binding.get("candidate"):
         raise ValueError(f"{record.case.case_id}: question and provenance candidates disagree")
     if task_binding.get("pair_id") != pair.get("pair_id"):
         raise ValueError(f"{record.case.case_id}: question and provenance pair IDs disagree")
     if encode(task_binding) != encode({"candidate": binding.get("candidate"), **pair}):
         raise ValueError(f"{record.case.case_id}: question and provenance pair metadata disagree")
-    if not {
-        "pair_id",
-        "source_path",
-        "earlier",
-        "later",
-        "intervening_span",
-    } <= set(pair):
-        raise ValueError(f"{record.case.case_id}: pair metadata is missing required spans")
-    if any(
-        not isinstance(pair.get(name), Mapping) or "operation_span" not in pair[name] for name in ("earlier", "later")
-    ):
-        raise ValueError(f"{record.case.case_id}: pair metadata is missing operation spans")
     return pair
 
 
@@ -2053,6 +2130,8 @@ def replay_metrics(cases_path: Path) -> dict[str, Any]:
     """Compute declared metrics through production replay, without provider calls."""
     cases = load_cases(cases_path)
     result: dict[str, Any] = {"usage": _usage_metrics(cases)}
+    for candidate, rule_ids in _CANDIDATE_RULES.items():
+        _validate_candidate_rule_membership(cases, candidate, rule_ids)
     for candidate, rule_ids in _CANDIDATE_RULES.items():
         if candidate in _PAIR_FALLBACK_CANDIDATES and candidate != "jev04-pair-corrected":
             pair_records = _metric_records(cases, rule_ids, candidate)
