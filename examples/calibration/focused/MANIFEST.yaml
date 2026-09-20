@@ -25,7 +25,7 @@ coverage:
   affected_rules: [JEV01, JEV02, JEV04]
   heldout_groups_per_rule:
     JEV01: {positive: 3, negative: 3, total: 6}
-    JEV02: {positive: 3, negative: 3, total: 6}
+    JEV02: {positive: 2, negative: 4, total: 6}
     JEV04: {positive: 3, negative: 3, total: 6}
   split_assignment: "all six fresh groups per rule are heldout; development imports every independently adjudicated JEV01/JEV02/JEV04 expanded case"
   feature_coverage:
@@ -155,6 +155,7 @@ heldout:
     label: positive
     target: {scope: unit, name: sync_entry, kind: function}
     features: [interleaved_responsibilities]
+    note: "Blind source review superseded the original linear synchronization annotation with this entangled access, billing, and lifecycle state case."
   - id: focused-jev01-h04
     source: sources/dogwood.py
     group: JEV01-H04
@@ -189,10 +190,10 @@ heldout:
     source: sources/juniper.py
     group: JEV02-H02
     rule: JEV02
-    label: positive
-    expected_score: 2
+    label: negative
+    expected_score: 1
     target: {scope: unit, name: advance_state, kind: function}
-    note: "Blind review replaced the provisional level-1 annotation with a distinct nested state-transition case; expected score is 2."
+    note: "Blind source review retained the original level-1 judgment; the explicit local branches are not warning-worthy."
     features: [obscure_control_flow, interleaved_responsibilities]
   - id: focused-jev02-h03
     source: sources/maple.py
