@@ -94,13 +94,42 @@ def test_production_planner_binds_exact_targets_and_batches_same_evidence(tmp_pa
         plan_manifest(CORPUS / "MANIFEST.yaml", phase="heldout", config_path=config_path, freeze_path=None)
 
 
-def test_production_planner_binds_exact_targets_and_batches_same_evidence_after_freeze(tmp_path: Path) -> None:
+def test_heldout_plan_contains_only_frozen_candidates(tmp_path: Path) -> None:
     config_path = write_candidate_config(tmp_path / "focused.yaml")
     development = plan_manifest(CORPUS / "MANIFEST.yaml", phase="development", config_path=config_path)
     development_path = tmp_path / "development.json"
     development_path.write_text(json.dumps(development), encoding="utf-8")
     freeze_path = tmp_path / "freeze.json"
     freeze_candidates(CORPUS / "MANIFEST.yaml", development_path, ["jev04-focused-joint"], freeze_path)
+    heldout = plan_manifest(
+        CORPUS / "MANIFEST.yaml",
+        phase="heldout",
+        config_path=config_path,
+        freeze_path=freeze_path,
+    )
+    assert {record["candidate"] for record in heldout["cases"]} == {"jev04-focused-joint"}
+
+
+def test_production_planner_binds_exact_targets_and_batches_same_evidence_after_freeze(tmp_path: Path) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    development = plan_manifest(CORPUS / "MANIFEST.yaml", phase="development", config_path=config_path)
+    development_path = tmp_path / "development.json"
+    development_path.write_text(json.dumps(development), encoding="utf-8")
+    freeze_path = tmp_path / "freeze.json"
+    freeze_candidates(
+        CORPUS / "MANIFEST.yaml",
+        development_path,
+        [
+            "jev01-baseline",
+            "jev01-focused",
+            "jev02-baseline",
+            "jev02-presence-gated",
+            "jev04-baseline",
+            "jev04-focused-joint",
+            "jev04-focused-decomposed",
+        ],
+        freeze_path,
+    )
     plan = plan_manifest(
         CORPUS / "MANIFEST.yaml",
         phase="heldout",
