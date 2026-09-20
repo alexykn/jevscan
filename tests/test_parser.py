@@ -230,6 +230,246 @@ def test_syntax_error_is_incomplete_not_clean() -> None:
     assert parsed.diagnostics[0].incomplete
 
 
+@pytest.mark.parametrize(
+    ("source", "name", "kind", "unit_text", "body_text"),
+    [
+        (
+            'declare module "pkg" {\n  export type * from "pkg";\n  export function run(value: number): void { return; }\n}\n',
+            "run",
+            Kind.FUNCTION,
+            "function run(value: number): void { return; }",
+            "{ return; }",
+        ),
+        (
+            (
+                'class Service {\n  run(value: readonly import("./types").Result[]): import("./types").Result {\n'
+                "    return value[0];\n"
+                "  }\n"
+                "}\n"
+            ),
+            "run",
+            Kind.METHOD,
+            'run(value: readonly import("./types").Result[]): import("./types").Result {\n    return value[0];\n  }',
+            "{\n    return value[0];\n  }",
+        ),
+        (
+            (
+                'function execute(value: Parameters<NonNullable<import("pkg").ToolContext["approval"]>>[0]): void {\n'
+                "  return;\n"
+                "}\n"
+            ),
+            "execute",
+            Kind.FUNCTION,
+            (
+                'function execute(value: Parameters<NonNullable<import("pkg").ToolContext["approval"]>>[0]): void {\n'
+                "  return;\n"
+                "}"
+            ),
+            "{\n  return;\n}",
+        ),
+        (
+            (
+                'async function load(): Promise<{ readonly loaded: readonly import("./types").Result[]; '
+                'readonly failures: readonly import("./types").Failure[] }> {\n'
+                '  throw new Error("fixture");\n'
+                "}\n"
+            ),
+            "load",
+            Kind.FUNCTION,
+            (
+                'async function load(): Promise<{ readonly loaded: readonly import("./types").Result[]; '
+                'readonly failures: readonly import("./types").Failure[] }> {\n'
+                '  throw new Error("fixture");\n'
+                "}"
+            ),
+            '{\n  throw new Error("fixture");\n}',
+        ),
+    ],
+)
+def test_typescript_type_only_errors_recover_units_and_spans(
+    source: str, name: str, kind: Kind, unit_text: str, body_text: str
+) -> None:
+    encoded = source.encode()
+    parsed = parse_source(encoded, FileJob("recovered.ts", "recovered.ts", "typescript", "typescript"))
+    assert not parsed.failed
+    assert parsed.source == encoded
+    diagnostic = next(diagnostic for diagnostic in parsed.diagnostics if diagnostic.code == "typescript-type-recovery")
+    assert "type-only syntax was recovered" in diagnostic.message
+    assert "reference/type extraction may be incomplete" in diagnostic.message
+    assert not diagnostic.incomplete
+    unit = next(unit for unit in parsed.units if unit.name == name)
+    assert unit.kind == kind
+    assert unit.start_byte == encoded.index(unit_text.encode())
+    assert unit.end_byte == unit.start_byte + len(unit_text.encode())
+    assert encoded[unit.start_byte : unit.end_byte].decode() == unit_text
+    assert unit.has_body
+    assert encoded[unit.body_start_byte : unit.body_end_byte].decode() == body_text
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "function broken(value: number): void { return value;\n",
+        "function broken(value: Box<): void { return; }\n",
+    ],
+)
+def test_typescript_unrecognized_errors_remain_fatal(source: str) -> None:
+    parsed = parse_source(source.encode(), FileJob("broken.ts", "broken.ts", "typescript", "typescript"))
+    assert parsed.failed
+    assert not parsed.units
+    assert parsed.diagnostics[0].code == "syntax-error"
+    assert parsed.diagnostics[0].incomplete
+
+
+def test_typescript_direct_object_bindings_attribute_arrow_units() -> None:
+    source = "const bashTool = defineTool({ execute: async () => 1 });\nconst editTool = { execute: () => 2 };\n"
+    encoded = source.encode()
+    parsed = parse_source(encoded, FileJob("tools.ts", "tools.ts", "typescript", "typescript"))
+    assert not parsed.failed
+    units = {unit.qualified_name: unit for unit in parsed.units}
+    assert {"bashTool.execute", "editTool.execute"} <= units.keys()
+    assert units["bashTool.execute"].name == units["editTool.execute"].name == "execute"
+    for qualified_name in ("bashTool.execute", "editTool.execute"):
+        unit = units[qualified_name]
+        assert encoded[unit.start_byte : unit.end_byte].decode() in {"async () => 1", "() => 2"}
+        assert unit.display_name == qualified_name
+    assert units["bashTool.execute"].start_byte != units["editTool.execute"].start_byte
+
+
+def test_typescript_nested_object_bindings_compose_lexical_owners() -> None:
+    source = (
+        "function owner() {\n"
+        "  const first = { execute: () => 1 };\n"
+        "  const second = defineTool({ execute: () => 2 });\n"
+        "}\n"
+        "class Service { work() { const local = { execute: () => 3 }; } }\n"
+    )
+    parsed = parse_source(source.encode(), FileJob("nested.ts", "nested.ts", "typescript", "typescript"))
+    assert not parsed.failed
+    units = {unit.qualified_name: unit for unit in parsed.units}
+    assert {"owner.first.execute", "owner.second.execute", "Service.work.local.execute"} <= units.keys()
+    assert all(units[name].name == "execute" for name in units if name.endswith(".execute"))
+
+
+def test_rust_empty_callable_blocks_are_implementations() -> None:
+    source = (
+        "trait Store { fn required(&self); fn defaulted(&self) {} }\n"
+        "struct Boxed<T>(T);\n"
+        "impl<T> Store for Boxed<T> { fn required(&self) {} }\n"
+        "fn empty() {}\n"
+    )
+    parsed = parse_source(source.encode(), FileJob("empty.rs", "empty.rs", "rust", "rust"))
+    assert not parsed.failed
+    units = {unit.qualified_name: unit for unit in parsed.units}
+    assert not units["Store::required"].has_implementation
+    assert units["Store::defaulted"].has_implementation
+    assert units["impl Store for Boxed<T>::required"].has_implementation
+    assert units["empty"].has_implementation
+
+
+def test_rust_tuple_closure_bindings_require_exact_positions() -> None:
+    direct = parse_source(
+        b"fn owner() { let (a, b) = (|| 1, || 2); }",
+        FileJob("tuple.rs", "tuple.rs", "rust", "rust"),
+    )
+    assert not direct.failed
+    units = {unit.qualified_name: unit for unit in direct.units}
+    assert units["owner::a"].name == "a"
+    assert units["owner::b"].name == "b"
+
+    ambiguous = parse_source(
+        b"fn owner() { let (a, b) = (|| 1, || 2, || 3); let (a, ..) = (|| 1, || 2); }",
+        FileJob("ambiguous.rs", "ambiguous.rs", "rust", "rust"),
+    )
+    assert not ambiguous.failed
+    closures = [unit for unit in ambiguous.units if unit.kind == Kind.CLOSURE]
+    assert closures
+    assert all(unit.name.startswith("<anonymous@") for unit in closures)
+
+
+def test_rust_type_cast_closure_binding_is_exact() -> None:
+    parsed = parse_source(
+        b"fn owner() { let f = (|| 1) as fn() -> i32; let value = 1 as i32; }",
+        FileJob("cast.rs", "cast.rs", "rust", "rust"),
+    )
+    assert not parsed.failed
+    assert {unit.qualified_name for unit in parsed.units} >= {"owner", "owner::f"}
+    assert not any(unit.qualified_name == "owner::value" for unit in parsed.units)
+
+
+def test_rust_attributes_extend_callable_spans() -> None:
+    source = (
+        '#[cfg(feature="x")]\n'
+        "#[inline]\n"
+        "pub fn foo() {}\n"
+        "struct Service;\n"
+        "impl Service {\n"
+        "  #[must_use]\n"
+        "  fn work(&self) {}\n"
+        "}\n"
+    )
+    encoded = source.encode()
+    parsed = parse_source(encoded, FileJob("attributes.rs", "attributes.rs", "rust", "rust"))
+    assert not parsed.failed
+    units = {unit.qualified_name: unit for unit in parsed.units}
+    top_level = units["foo"]
+    assert top_level.start_line == 1
+    assert (
+        encoded[top_level.start_byte : top_level.end_byte].decode() == '#[cfg(feature="x")]\n#[inline]\npub fn foo() {}'
+    )
+    assert top_level.signature == '#[cfg(feature="x")]\n#[inline]\npub fn foo()'
+    assert top_level.id == f"attributes.rs:{top_level.start_byte}:function"
+    method = units["impl Service::work"]
+    assert method.start_line == 6
+    assert encoded[method.start_byte : method.end_byte].decode() == "#[must_use]\n  fn work(&self) {}"
+    assert method.signature == "#[must_use]\n  fn work(&self)"
+    assert method.id == f"attributes.rs:{method.start_byte}:method"
+
+
+def test_rust_union_and_foreign_functions_keep_distinct_inventory_kinds() -> None:
+    source = (
+        "union Packet { value: u32, ptr: *const u8 }\n"
+        'extern "C" {\n'
+        '  #[cfg(feature = "ffi")]\n'
+        "  fn ffi(value: i32);\n"
+        "}\n"
+        "trait Store {\n"
+        "  #[must_use]\n"
+        "  fn required(&self);\n"
+        "}\n"
+    )
+    encoded = source.encode()
+    parsed = parse_source(encoded, FileJob("inventory.rs", "inventory.rs", "rust", "rust"))
+    assert not parsed.failed
+    units = {unit.qualified_name: unit for unit in parsed.units}
+    assert units["Packet"].kind == Kind.UNION
+    assert units["ffi"].kind == Kind.FUNCTION
+    assert not units["ffi"].has_body
+    assert not units["ffi"].has_implementation
+    assert units["ffi"].start_line == 3
+    assert encoded[units["ffi"].start_byte : units["ffi"].end_byte].decode().startswith("#[cfg")
+    assert units["ffi"].signature.startswith("#[cfg")
+    assert units["Store::required"].kind == Kind.METHOD
+    assert units["Store::required"].start_line == 7
+    assert (
+        encoded[units["Store::required"].start_byte : units["Store::required"].end_byte]
+        .decode()
+        .startswith("#[must_use]")
+    )
+
+
+def test_rust_async_blocks_are_closures_without_duplicate_async_closures() -> None:
+    parsed = parse_source(
+        b"fn owner() { let assigned = async move { 1 }; async move { 2 }; let closure = async move |x: i32| x; }",
+        FileJob("async.rs", "async.rs", "rust", "rust"),
+    )
+    assert not parsed.failed
+    units = {unit.qualified_name: unit for unit in parsed.units}
+    assert units["owner::assigned"].kind == Kind.CLOSURE
+    assert units["owner::closure"].name == "closure"
+    assert sum(unit.kind == Kind.CLOSURE for unit in parsed.units) == 2
+
+
 def test_oversized_and_non_utf8_files_are_visible(tmp_path: Path) -> None:
     path = tmp_path / "bad.py"
     path.write_bytes(b"\xff\xfe")

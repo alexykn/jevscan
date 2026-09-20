@@ -11,6 +11,7 @@ class Kind(StrEnum):
     CLOSURE = "closure"
     CLASS = "class"
     STRUCT = "struct"
+    UNION = "union"
     ENUM = "enum"
     TRAIT = "trait"
     IMPL = "impl"
@@ -21,7 +22,7 @@ class Kind(StrEnum):
 
 
 CALLABLE_KINDS = frozenset({Kind.FUNCTION, Kind.METHOD, Kind.CLOSURE})
-TYPE_KINDS = frozenset({Kind.CLASS, Kind.STRUCT, Kind.ENUM, Kind.TRAIT, Kind.INTERFACE, Kind.TYPE})
+TYPE_KINDS = frozenset({Kind.CLASS, Kind.STRUCT, Kind.UNION, Kind.ENUM, Kind.TRAIT, Kind.INTERFACE, Kind.TYPE})
 SyntaxFact = Literal[
     "validation_candidate",
     "fallback_candidate",

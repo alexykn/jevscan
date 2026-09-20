@@ -61,6 +61,11 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("-o", "--output", type=Path, help="write report to this file instead of stdout")
     result.add_argument(
+        "--calibration-output",
+        type=Path,
+        help="opt-in final-judgment capture JSONL; source snapshots are included only in this file",
+    )
+    result.add_argument(
         "--fail-on",
         choices=("info", "warning", "error", "never"),
         default="warning",

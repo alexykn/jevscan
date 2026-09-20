@@ -1,0 +1,2512 @@
+{
+  "version": 1,
+  "model": "jev-1.13.0",
+  "source_snapshot": "91f1e9e84c8149f2aa08b5150d8f7d7de4d5f58cb0d6eba9e3af0820a39294aa",
+  "freeze": {
+    "selected_yaml_sha256": "b7e33930fdeaa5ee72d2b768a3550de7268bda0a474e6bc259c91b4ee5d0e7d4",
+    "development_cases_sha256": "62e7eabc42469f40ee2c8f618bbb9776fe29aa9b6146641e2791b0f4d9ef14f8",
+    "policies": {
+      "JEV01": {
+        "hash": "sha256:9555c88c5ab92617c477aa5b0798b210efdcf4aca62fb40fceeebba43d384506",
+        "warning": {
+          "max_score": null,
+          "min_confidence": null,
+          "min_probability": 0.71,
+          "min_score": null,
+          "score_levels": null
+        }
+      },
+      "JEV02": {
+        "hash": "sha256:d56170e93da5081e734740e6bc223ff23f59b9d342cf94eac1d4d63278ff722d",
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": null,
+          "min_score": 1.52,
+          "score_levels": null
+        }
+      },
+      "JEV03": {
+        "hash": "sha256:12620734d173b1c51c665b66e6a71ef0687792e1aa8e8bd0b3199c5c06edc109",
+        "warning": {
+          "max_score": null,
+          "min_confidence": null,
+          "min_probability": 0.56,
+          "min_score": null,
+          "score_levels": null
+        }
+      },
+      "JEV04": {
+        "hash": "sha256:b0658fcc247e3b4734e8ea8a80b1a81fb5168092ad77991090bf5811ddf3cbc6",
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.45,
+          "min_probability": 0.6,
+          "min_score": null,
+          "score_levels": null
+        }
+      },
+      "JEV05": {
+        "hash": "sha256:fe42720f26e8746a5c66727656ae134b1faf71c5ae81d93050efd6475e3208dd",
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.5,
+          "min_probability": 0.6,
+          "min_score": null,
+          "score_levels": null
+        }
+      },
+      "JEV06": {
+        "hash": "sha256:efc8953dc39e8cfa272c69f233760222d4028183fc03002137edc89d0602c100",
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.29,
+          "min_probability": 0.45999999999999996,
+          "min_score": null,
+          "score_levels": null
+        }
+      },
+      "JEV07": {
+        "hash": "sha256:8eb0ff4effa6735ea67322966ad96dbd6c21889c1546c4b94ac120480e8ed18f",
+        "warning": {
+          "max_score": null,
+          "min_confidence": null,
+          "min_probability": 0.5,
+          "min_score": null,
+          "score_levels": null
+        }
+      },
+      "JEV08": {
+        "hash": "sha256:e02d64af79aeaf309a77be7e852377590819751121ccee0b594fa962077dccfc",
+        "warning": {
+          "max_score": null,
+          "min_confidence": null,
+          "min_probability": 0.47,
+          "min_score": null,
+          "score_levels": null
+        }
+      },
+      "JEV09": {
+        "hash": "sha256:a6aad36eef60e0dc0f88e9c0a5801a20a4169d71bd79002784940659500642f9",
+        "warning": {
+          "max_score": null,
+          "min_confidence": null,
+          "min_probability": 0.73,
+          "min_score": null,
+          "score_levels": null
+        }
+      }
+    }
+  },
+  "development_cases": 289,
+  "expanded_heldout_cases": 36,
+  "supplementary_heldout_cases": 44,
+  "total_reserved_usd": 0.020044794,
+  "objective": {
+    "max_candidates": 4096,
+    "min_negative_support": 1,
+    "min_positive_support": 1,
+    "utility": {
+      "Agree": {
+        "confirmed": 4.0,
+        "none": -4.0,
+        "tentative": 2.0
+      },
+      "Disagree": {
+        "confirmed": -8.0,
+        "none": 0.0,
+        "tentative": -2.0
+      },
+      "Partial": {
+        "confirmed": -1.0,
+        "none": 0.0,
+        "tentative": 1.0
+      }
+    }
+  },
+  "rules": {
+    "JEV01": {
+      "reason": "selected",
+      "selected_policy": {
+        "choices": null,
+        "expected": true,
+        "levels": {
+          "error": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.9,
+            "min_score": null,
+            "score_levels": null
+          },
+          "warning": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.71,
+            "min_score": null,
+            "score_levels": null
+          }
+        },
+        "message": "This operation appears to interleave responsibilities that would be clearer as distinct operations.",
+        "not_applicable_choices": [],
+        "uncertain_choices": [],
+        "uncertain_range": [
+          0.4,
+          0.6
+        ]
+      },
+      "selected_policy_hash": "sha256:9555c88c5ab92617c477aa5b0798b210efdcf4aca62fb40fceeebba43d384506",
+      "search": {
+        "generated": 44,
+        "limit": 4096,
+        "strategy": "balanced_coordinate_interleave",
+        "truncated": false
+      },
+      "development": {
+        "comparable_records": 73,
+        "label_counts": {
+          "Agree": 10,
+          "Disagree": 61,
+          "Partial": 2
+        },
+        "objective": -78.66666666666667,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 7,
+            "none": 0,
+            "tentative": 3
+          },
+          "Disagree": {
+            "confirmed": 15,
+            "none": 26,
+            "tentative": 20
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 2,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.9,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.5,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "This operation appears to interleave responsibilities that would be clearer as distinct operations.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:19ea1a1fbd234aae608d0f20e684157ebf5a239b2eab52d39811d8c63195a3ad",
+        "records": 73,
+        "support": {
+          "groups_by_label": {
+            "Agree": 8,
+            "Disagree": 40,
+            "Partial": 1
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 40,
+          "non_comparable": 0,
+          "partial_groups": 1,
+          "positive_groups": 8,
+          "positive_signal": 10
+        }
+      },
+      "selected_development": {
+        "comparable_records": 73,
+        "label_counts": {
+          "Agree": 10,
+          "Disagree": 61,
+          "Partial": 2
+        },
+        "objective": 0.6666666666666667,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 5,
+            "none": 5,
+            "tentative": 0
+          },
+          "Disagree": {
+            "confirmed": 1,
+            "none": 60,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 2,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.9,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.71,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "This operation appears to interleave responsibilities that would be clearer as distinct operations.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:9555c88c5ab92617c477aa5b0798b210efdcf4aca62fb40fceeebba43d384506",
+        "records": 73,
+        "support": {
+          "groups_by_label": {
+            "Agree": 8,
+            "Disagree": 40,
+            "Partial": 1
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 40,
+          "non_comparable": 0,
+          "partial_groups": 1,
+          "positive_groups": 8,
+          "positive_signal": 5
+        }
+      },
+      "heldout": {
+        "non_comparable": [],
+        "rules": {
+          "heldout": {
+            "confirmed_recall": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "confirmed_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "disagree_confirmed": {
+              "count": 0,
+              "denominator": 3,
+              "fraction": 0.0
+            },
+            "label_counts": {
+              "Agree": 1,
+              "Disagree": 3,
+              "Partial": 0
+            },
+            "non_comparable": 0,
+            "partial_any_signal": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "partial_confirmed": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "review_list_recall": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "review_list_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "rule_id": "JEV01",
+            "severity_confusion": {
+              "error": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              },
+              "warning": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              }
+            },
+            "severity_counts": {
+              "error": 0,
+              "not_applicable": 0,
+              "ok": 4,
+              "unknown": 0,
+              "warning": 0
+            },
+            "split": "heldout",
+            "strict_supported_warning": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "tentative_severity_counts": {
+              "error": 0,
+              "warning": 0
+            },
+            "total": 4
+          }
+        },
+        "split": "heldout"
+      }
+    },
+    "JEV02": {
+      "reason": "selected",
+      "selected_policy": {
+        "choices": null,
+        "expected": true,
+        "levels": {
+          "error": {
+            "max_score": null,
+            "min_confidence": 0.7,
+            "min_probability": null,
+            "min_score": 2.0,
+            "score_levels": null
+          },
+          "warning": {
+            "max_score": null,
+            "min_confidence": 0.7,
+            "min_probability": null,
+            "min_score": 1.52,
+            "score_levels": null
+          }
+        },
+        "message": "Interleaved concerns or nesting appear to obscure the main execution path.",
+        "not_applicable_choices": [],
+        "uncertain_choices": [],
+        "uncertain_range": null
+      },
+      "selected_policy_hash": "sha256:d56170e93da5081e734740e6bc223ff23f59b9d342cf94eac1d4d63278ff722d",
+      "search": {
+        "generated": 2060,
+        "limit": 4096,
+        "strategy": "balanced_coordinate_interleave",
+        "truncated": true
+      },
+      "development": {
+        "comparable_records": 117,
+        "label_counts": {
+          "Agree": 26,
+          "Disagree": 90,
+          "Partial": 1
+        },
+        "objective": -65.25952380952381,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 16,
+            "none": 0,
+            "tentative": 10
+          },
+          "Disagree": {
+            "confirmed": 16,
+            "none": 17,
+            "tentative": 57
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 1,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": 0.7,
+              "min_probability": null,
+              "min_score": 2.0,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": 0.6,
+              "min_probability": null,
+              "min_score": 1.0,
+              "score_levels": null
+            }
+          },
+          "message": "Interleaved concerns or nesting appear to obscure the main execution path.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": null
+        },
+        "policy_hash": "sha256:81a66da07a9d967abb9f65a01d8fda11bc4c56f52671214def49cf14a3191b86",
+        "records": 117,
+        "support": {
+          "groups_by_label": {
+            "Agree": 20,
+            "Disagree": 46,
+            "Partial": 1
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 46,
+          "non_comparable": 0,
+          "partial_groups": 1,
+          "positive_groups": 20,
+          "positive_signal": 26
+        }
+      },
+      "selected_development": {
+        "comparable_records": 117,
+        "label_counts": {
+          "Agree": 26,
+          "Disagree": 90,
+          "Partial": 1
+        },
+        "objective": 0.4523809523809524,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 12,
+            "none": 5,
+            "tentative": 9
+          },
+          "Disagree": {
+            "confirmed": 1,
+            "none": 79,
+            "tentative": 10
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 1,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": 0.7,
+              "min_probability": null,
+              "min_score": 2.0,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": 0.7,
+              "min_probability": null,
+              "min_score": 1.52,
+              "score_levels": null
+            }
+          },
+          "message": "Interleaved concerns or nesting appear to obscure the main execution path.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": null
+        },
+        "policy_hash": "sha256:d56170e93da5081e734740e6bc223ff23f59b9d342cf94eac1d4d63278ff722d",
+        "records": 117,
+        "support": {
+          "groups_by_label": {
+            "Agree": 20,
+            "Disagree": 46,
+            "Partial": 1
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 46,
+          "non_comparable": 0,
+          "partial_groups": 1,
+          "positive_groups": 20,
+          "positive_signal": 21
+        }
+      },
+      "heldout": {
+        "non_comparable": [],
+        "rules": {
+          "heldout": {
+            "confirmed_recall": {
+              "count": 0,
+              "denominator": 2,
+              "fraction": 0.0
+            },
+            "confirmed_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "disagree_confirmed": {
+              "count": 0,
+              "denominator": 2,
+              "fraction": 0.0
+            },
+            "label_counts": {
+              "Agree": 2,
+              "Disagree": 2,
+              "Partial": 0
+            },
+            "non_comparable": 0,
+            "partial_any_signal": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "partial_confirmed": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "review_list_recall": {
+              "count": 2,
+              "denominator": 2,
+              "fraction": 1.0
+            },
+            "review_list_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "rule_id": "JEV02",
+            "severity_confusion": {
+              "error": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              },
+              "warning": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              }
+            },
+            "severity_counts": {
+              "error": 0,
+              "not_applicable": 0,
+              "ok": 0,
+              "unknown": 4,
+              "warning": 0
+            },
+            "split": "heldout",
+            "strict_supported_warning": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "tentative_severity_counts": {
+              "error": 0,
+              "warning": 2
+            },
+            "total": 4
+          }
+        },
+        "split": "heldout"
+      }
+    },
+    "JEV03": {
+      "reason": "selected",
+      "selected_policy": {
+        "choices": null,
+        "expected": true,
+        "levels": {
+          "error": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.9,
+            "min_score": null,
+            "score_levels": null
+          },
+          "warning": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.56,
+            "min_score": null,
+            "score_levels": null
+          }
+        },
+        "message": "High-level orchestration appears mixed with substantial low-level implementation detail.",
+        "not_applicable_choices": [],
+        "uncertain_choices": [],
+        "uncertain_range": [
+          0.4,
+          0.6
+        ]
+      },
+      "selected_policy_hash": "sha256:12620734d173b1c51c665b66e6a71ef0687792e1aa8e8bd0b3199c5c06edc109",
+      "search": {
+        "generated": 23,
+        "limit": 4096,
+        "strategy": "balanced_coordinate_interleave",
+        "truncated": false
+      },
+      "development": {
+        "comparable_records": 29,
+        "label_counts": {
+          "Agree": 14,
+          "Disagree": 12,
+          "Partial": 3
+        },
+        "objective": 20.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 11,
+            "none": 0,
+            "tentative": 3
+          },
+          "Disagree": {
+            "confirmed": 1,
+            "none": 5,
+            "tentative": 6
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 3
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.9,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.5,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "High-level orchestration appears mixed with substantial low-level implementation detail.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:7e9987a7f11e4ba7fe36949d14462e14de16ceedf32fcc0d21d2ed540ef00ba7",
+        "records": 29,
+        "support": {
+          "groups_by_label": {
+            "Agree": 14,
+            "Disagree": 12,
+            "Partial": 3
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 12,
+          "non_comparable": 0,
+          "partial_groups": 3,
+          "positive_groups": 14,
+          "positive_signal": 14
+        }
+      },
+      "selected_development": {
+        "comparable_records": 29,
+        "label_counts": {
+          "Agree": 14,
+          "Disagree": 12,
+          "Partial": 3
+        },
+        "objective": 25.5,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 11,
+            "none": 1,
+            "tentative": 2
+          },
+          "Disagree": {
+            "confirmed": 1,
+            "none": 11,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 2,
+            "tentative": 1
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.9,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.56,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "High-level orchestration appears mixed with substantial low-level implementation detail.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:12620734d173b1c51c665b66e6a71ef0687792e1aa8e8bd0b3199c5c06edc109",
+        "records": 29,
+        "support": {
+          "groups_by_label": {
+            "Agree": 14,
+            "Disagree": 12,
+            "Partial": 3
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 12,
+          "non_comparable": 0,
+          "partial_groups": 3,
+          "positive_groups": 14,
+          "positive_signal": 13
+        }
+      },
+      "heldout": {
+        "non_comparable": [],
+        "rules": {
+          "heldout": {
+            "confirmed_recall": {
+              "count": 1,
+              "denominator": 2,
+              "fraction": 0.5
+            },
+            "confirmed_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "disagree_confirmed": {
+              "count": 0,
+              "denominator": 2,
+              "fraction": 0.0
+            },
+            "label_counts": {
+              "Agree": 2,
+              "Disagree": 2,
+              "Partial": 0
+            },
+            "non_comparable": 0,
+            "partial_any_signal": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "partial_confirmed": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "review_list_recall": {
+              "count": 1,
+              "denominator": 2,
+              "fraction": 0.5
+            },
+            "review_list_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "rule_id": "JEV03",
+            "severity_confusion": {
+              "error": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              },
+              "warning": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              }
+            },
+            "severity_counts": {
+              "error": 0,
+              "not_applicable": 0,
+              "ok": 2,
+              "unknown": 1,
+              "warning": 1
+            },
+            "split": "heldout",
+            "strict_supported_warning": {
+              "count": 1,
+              "denominator": 1,
+              "fraction": 1.0
+            },
+            "tentative_severity_counts": {
+              "error": 0,
+              "warning": 0
+            },
+            "total": 4
+          }
+        },
+        "split": "heldout"
+      }
+    },
+    "JEV04": {
+      "reason": "selected",
+      "selected_policy": {
+        "choices": [
+          "demonstrably_redundant"
+        ],
+        "expected": true,
+        "levels": {
+          "error": {
+            "max_score": null,
+            "min_confidence": 0.7,
+            "min_probability": 0.92,
+            "min_score": null,
+            "score_levels": null
+          },
+          "warning": {
+            "max_score": null,
+            "min_confidence": 0.45,
+            "min_probability": 0.6,
+            "min_score": null,
+            "score_levels": null
+          }
+        },
+        "message": "A validation check appears to repeat an invariant explicitly established in the supplied code.",
+        "not_applicable_choices": [],
+        "uncertain_choices": [
+          "insufficient_context"
+        ],
+        "uncertain_range": null
+      },
+      "selected_policy_hash": "sha256:b0658fcc247e3b4734e8ea8a80b1a81fb5168092ad77991090bf5811ddf3cbc6",
+      "search": {
+        "generated": 50,
+        "limit": 4096,
+        "strategy": "balanced_coordinate_interleave",
+        "truncated": false
+      },
+      "development": {
+        "comparable_records": 11,
+        "label_counts": {
+          "Agree": 4,
+          "Disagree": 7,
+          "Partial": 0
+        },
+        "objective": 7.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 3,
+            "none": 0,
+            "tentative": 1
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 7,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": [
+            "demonstrably_redundant"
+          ],
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": 0.7,
+              "min_probability": 0.92,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": 0.5,
+              "min_probability": 0.6,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "A validation check appears to repeat an invariant explicitly established in the supplied code.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [
+            "insufficient_context"
+          ],
+          "uncertain_range": null
+        },
+        "policy_hash": "sha256:2e0d6e0da98ed3423941772b63adb5e8a088ddded436d6cac0e16559886c5c44",
+        "records": 11,
+        "support": {
+          "groups_by_label": {
+            "Agree": 3,
+            "Disagree": 5,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 5,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 3,
+          "positive_signal": 4
+        }
+      },
+      "selected_development": {
+        "comparable_records": 11,
+        "label_counts": {
+          "Agree": 4,
+          "Disagree": 7,
+          "Partial": 0
+        },
+        "objective": 8.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 4,
+            "none": 0,
+            "tentative": 0
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 7,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": [
+            "demonstrably_redundant"
+          ],
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": 0.7,
+              "min_probability": 0.92,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": 0.45,
+              "min_probability": 0.6,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "A validation check appears to repeat an invariant explicitly established in the supplied code.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [
+            "insufficient_context"
+          ],
+          "uncertain_range": null
+        },
+        "policy_hash": "sha256:b0658fcc247e3b4734e8ea8a80b1a81fb5168092ad77991090bf5811ddf3cbc6",
+        "records": 11,
+        "support": {
+          "groups_by_label": {
+            "Agree": 3,
+            "Disagree": 5,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 5,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 3,
+          "positive_signal": 4
+        }
+      },
+      "heldout": {
+        "non_comparable": [],
+        "rules": {
+          "heldout": {
+            "confirmed_recall": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "confirmed_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "disagree_confirmed": {
+              "count": 1,
+              "denominator": 3,
+              "fraction": 0.3333333333333333
+            },
+            "label_counts": {
+              "Agree": 1,
+              "Disagree": 3,
+              "Partial": 0
+            },
+            "non_comparable": 0,
+            "partial_any_signal": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "partial_confirmed": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "review_list_recall": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "review_list_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "rule_id": "JEV04",
+            "severity_confusion": {
+              "error": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              },
+              "warning": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              }
+            },
+            "severity_counts": {
+              "error": 0,
+              "not_applicable": 0,
+              "ok": 0,
+              "unknown": 3,
+              "warning": 1
+            },
+            "split": "heldout",
+            "strict_supported_warning": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "tentative_severity_counts": {
+              "error": 0,
+              "warning": 0
+            },
+            "total": 4
+          }
+        },
+        "split": "heldout"
+      }
+    },
+    "JEV05": {
+      "reason": "selected",
+      "selected_policy": {
+        "choices": [
+          "concealed_bug"
+        ],
+        "expected": true,
+        "levels": {
+          "error": {
+            "max_score": null,
+            "min_confidence": 0.7,
+            "min_probability": 0.92,
+            "min_score": null,
+            "score_levels": null
+          },
+          "warning": {
+            "max_score": null,
+            "min_confidence": 0.5,
+            "min_probability": 0.6,
+            "min_score": null,
+            "score_levels": null
+          }
+        },
+        "message": "A fallback or swallowed failure appears to conceal a violation of an established internal invariant.",
+        "not_applicable_choices": [],
+        "uncertain_choices": [
+          "insufficient_context"
+        ],
+        "uncertain_range": null
+      },
+      "selected_policy_hash": "sha256:fe42720f26e8746a5c66727656ae134b1faf71c5ae81d93050efd6475e3208dd",
+      "search": {
+        "generated": 60,
+        "limit": 4096,
+        "strategy": "balanced_coordinate_interleave",
+        "truncated": false
+      },
+      "development": {
+        "comparable_records": 15,
+        "label_counts": {
+          "Agree": 4,
+          "Disagree": 8,
+          "Partial": 3
+        },
+        "objective": 0.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 2,
+            "none": 2,
+            "tentative": 0
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 8,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 3,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": [
+            "concealed_bug"
+          ],
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": 0.7,
+              "min_probability": 0.92,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": 0.5,
+              "min_probability": 0.6,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "A fallback or swallowed failure appears to conceal a violation of an established internal invariant.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [
+            "insufficient_context"
+          ],
+          "uncertain_range": null
+        },
+        "policy_hash": "sha256:fe42720f26e8746a5c66727656ae134b1faf71c5ae81d93050efd6475e3208dd",
+        "records": 15,
+        "support": {
+          "groups_by_label": {
+            "Agree": 4,
+            "Disagree": 7,
+            "Partial": 3
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 7,
+          "non_comparable": 0,
+          "partial_groups": 3,
+          "positive_groups": 4,
+          "positive_signal": 2
+        }
+      },
+      "selected_development": {
+        "comparable_records": 15,
+        "label_counts": {
+          "Agree": 4,
+          "Disagree": 8,
+          "Partial": 3
+        },
+        "objective": 0.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 2,
+            "none": 2,
+            "tentative": 0
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 8,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 3,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": [
+            "concealed_bug"
+          ],
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": 0.7,
+              "min_probability": 0.92,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": 0.5,
+              "min_probability": 0.6,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "A fallback or swallowed failure appears to conceal a violation of an established internal invariant.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [
+            "insufficient_context"
+          ],
+          "uncertain_range": null
+        },
+        "policy_hash": "sha256:fe42720f26e8746a5c66727656ae134b1faf71c5ae81d93050efd6475e3208dd",
+        "records": 15,
+        "support": {
+          "groups_by_label": {
+            "Agree": 4,
+            "Disagree": 7,
+            "Partial": 3
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 7,
+          "non_comparable": 0,
+          "partial_groups": 3,
+          "positive_groups": 4,
+          "positive_signal": 2
+        }
+      },
+      "heldout": {
+        "non_comparable": [],
+        "rules": {
+          "heldout": {
+            "confirmed_recall": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "confirmed_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "disagree_confirmed": {
+              "count": 0,
+              "denominator": 3,
+              "fraction": 0.0
+            },
+            "label_counts": {
+              "Agree": 1,
+              "Disagree": 3,
+              "Partial": 0
+            },
+            "non_comparable": 0,
+            "partial_any_signal": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "partial_confirmed": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "review_list_recall": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "review_list_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "rule_id": "JEV05",
+            "severity_confusion": {
+              "error": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              },
+              "warning": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              }
+            },
+            "severity_counts": {
+              "error": 0,
+              "not_applicable": 0,
+              "ok": 2,
+              "unknown": 2,
+              "warning": 0
+            },
+            "split": "heldout",
+            "strict_supported_warning": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "tentative_severity_counts": {
+              "error": 0,
+              "warning": 0
+            },
+            "total": 4
+          }
+        },
+        "split": "heldout"
+      }
+    },
+    "JEV06": {
+      "reason": "selected",
+      "selected_policy": {
+        "choices": [
+          "needless_indirection"
+        ],
+        "expected": true,
+        "levels": {
+          "error": {
+            "max_score": null,
+            "min_confidence": 0.7,
+            "min_probability": 0.9,
+            "min_score": null,
+            "score_levels": null
+          },
+          "warning": {
+            "max_score": null,
+            "min_confidence": 0.29,
+            "min_probability": 0.45999999999999996,
+            "min_score": null,
+            "score_levels": null
+          }
+        },
+        "message": "Helper indirection appears to obscure the caller without providing meaningful decomposition.",
+        "not_applicable_choices": [
+          "not_applicable"
+        ],
+        "uncertain_choices": [
+          "insufficient_context"
+        ],
+        "uncertain_range": null
+      },
+      "selected_policy_hash": "sha256:efc8953dc39e8cfa272c69f233760222d4028183fc03002137edc89d0602c100",
+      "search": {
+        "generated": 54,
+        "limit": 4096,
+        "strategy": "balanced_coordinate_interleave",
+        "truncated": false
+      },
+      "development": {
+        "comparable_records": 11,
+        "label_counts": {
+          "Agree": 6,
+          "Disagree": 5,
+          "Partial": 0
+        },
+        "objective": -6.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 1,
+            "none": 5,
+            "tentative": 0
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 5,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": [
+            "needless_indirection"
+          ],
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": 0.7,
+              "min_probability": 0.9,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": 0.5,
+              "min_probability": 0.6,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "Helper indirection appears to obscure the caller without providing meaningful decomposition.",
+          "not_applicable_choices": [
+            "not_applicable"
+          ],
+          "uncertain_choices": [
+            "insufficient_context"
+          ],
+          "uncertain_range": null
+        },
+        "policy_hash": "sha256:27a4510bd65855ece9ff9a85b0d9e80ab93dc9953c48a2fa0d4a5b53c7ea0453",
+        "records": 11,
+        "support": {
+          "groups_by_label": {
+            "Agree": 6,
+            "Disagree": 5,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 5,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 6,
+          "positive_signal": 1
+        }
+      },
+      "selected_development": {
+        "comparable_records": 11,
+        "label_counts": {
+          "Agree": 6,
+          "Disagree": 5,
+          "Partial": 0
+        },
+        "objective": 2.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 3,
+            "none": 3,
+            "tentative": 0
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 5,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": [
+            "needless_indirection"
+          ],
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": 0.7,
+              "min_probability": 0.9,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": 0.29,
+              "min_probability": 0.45999999999999996,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "Helper indirection appears to obscure the caller without providing meaningful decomposition.",
+          "not_applicable_choices": [
+            "not_applicable"
+          ],
+          "uncertain_choices": [
+            "insufficient_context"
+          ],
+          "uncertain_range": null
+        },
+        "policy_hash": "sha256:efc8953dc39e8cfa272c69f233760222d4028183fc03002137edc89d0602c100",
+        "records": 11,
+        "support": {
+          "groups_by_label": {
+            "Agree": 6,
+            "Disagree": 5,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 5,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 6,
+          "positive_signal": 3
+        }
+      },
+      "heldout": {
+        "non_comparable": [],
+        "rules": {
+          "heldout": {
+            "confirmed_recall": {
+              "count": 1,
+              "denominator": 1,
+              "fraction": 1.0
+            },
+            "confirmed_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "disagree_confirmed": {
+              "count": 0,
+              "denominator": 3,
+              "fraction": 0.0
+            },
+            "label_counts": {
+              "Agree": 1,
+              "Disagree": 3,
+              "Partial": 0
+            },
+            "non_comparable": 0,
+            "partial_any_signal": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "partial_confirmed": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "review_list_recall": {
+              "count": 1,
+              "denominator": 1,
+              "fraction": 1.0
+            },
+            "review_list_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "rule_id": "JEV06",
+            "severity_confusion": {
+              "error": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              },
+              "warning": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              }
+            },
+            "severity_counts": {
+              "error": 0,
+              "not_applicable": 0,
+              "ok": 0,
+              "unknown": 3,
+              "warning": 1
+            },
+            "split": "heldout",
+            "strict_supported_warning": {
+              "count": 1,
+              "denominator": 1,
+              "fraction": 1.0
+            },
+            "tentative_severity_counts": {
+              "error": 0,
+              "warning": 0
+            },
+            "total": 4
+          }
+        },
+        "split": "heldout"
+      }
+    },
+    "JEV07": {
+      "reason": "selected",
+      "selected_policy": {
+        "choices": null,
+        "expected": true,
+        "levels": {
+          "error": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.92,
+            "min_score": null,
+            "score_levels": null
+          },
+          "warning": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.5,
+            "min_score": null,
+            "score_levels": null
+          }
+        },
+        "message": "State or lifecycle bookkeeping appears to have competing authoritative owners.",
+        "not_applicable_choices": [],
+        "uncertain_choices": [],
+        "uncertain_range": [
+          0.4,
+          0.6
+        ]
+      },
+      "selected_policy_hash": "sha256:8eb0ff4effa6735ea67322966ad96dbd6c21889c1546c4b94ac120480e8ed18f",
+      "search": {
+        "generated": 12,
+        "limit": 4096,
+        "strategy": "balanced_coordinate_interleave",
+        "truncated": false
+      },
+      "development": {
+        "comparable_records": 10,
+        "label_counts": {
+          "Agree": 3,
+          "Disagree": 7,
+          "Partial": 0
+        },
+        "objective": 5.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 2,
+            "none": 0,
+            "tentative": 1
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 7,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.92,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.5,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "State or lifecycle bookkeeping appears to have competing authoritative owners.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:8eb0ff4effa6735ea67322966ad96dbd6c21889c1546c4b94ac120480e8ed18f",
+        "records": 10,
+        "support": {
+          "groups_by_label": {
+            "Agree": 3,
+            "Disagree": 5,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 5,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 3,
+          "positive_signal": 3
+        }
+      },
+      "selected_development": {
+        "comparable_records": 10,
+        "label_counts": {
+          "Agree": 3,
+          "Disagree": 7,
+          "Partial": 0
+        },
+        "objective": 5.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 2,
+            "none": 0,
+            "tentative": 1
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 7,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.92,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.5,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "State or lifecycle bookkeeping appears to have competing authoritative owners.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:8eb0ff4effa6735ea67322966ad96dbd6c21889c1546c4b94ac120480e8ed18f",
+        "records": 10,
+        "support": {
+          "groups_by_label": {
+            "Agree": 3,
+            "Disagree": 5,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 5,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 3,
+          "positive_signal": 3
+        }
+      },
+      "heldout": {
+        "non_comparable": [],
+        "rules": {
+          "heldout": {
+            "confirmed_recall": {
+              "count": 1,
+              "denominator": 1,
+              "fraction": 1.0
+            },
+            "confirmed_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "disagree_confirmed": {
+              "count": 1,
+              "denominator": 3,
+              "fraction": 0.3333333333333333
+            },
+            "label_counts": {
+              "Agree": 1,
+              "Disagree": 3,
+              "Partial": 0
+            },
+            "non_comparable": 0,
+            "partial_any_signal": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "partial_confirmed": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "review_list_recall": {
+              "count": 1,
+              "denominator": 1,
+              "fraction": 1.0
+            },
+            "review_list_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "rule_id": "JEV07",
+            "severity_confusion": {
+              "error": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              },
+              "warning": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              }
+            },
+            "severity_counts": {
+              "error": 0,
+              "not_applicable": 0,
+              "ok": 2,
+              "unknown": 0,
+              "warning": 2
+            },
+            "split": "heldout",
+            "strict_supported_warning": {
+              "count": 1,
+              "denominator": 2,
+              "fraction": 0.5
+            },
+            "tentative_severity_counts": {
+              "error": 0,
+              "warning": 0
+            },
+            "total": 4
+          }
+        },
+        "split": "heldout"
+      }
+    },
+    "JEV08": {
+      "reason": "selected",
+      "selected_policy": {
+        "choices": null,
+        "expected": true,
+        "levels": {
+          "error": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.9,
+            "min_score": null,
+            "score_levels": null
+          },
+          "warning": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.47,
+            "min_score": null,
+            "score_levels": null
+          }
+        },
+        "message": "This owner appears to combine unrelated state and behavior.",
+        "not_applicable_choices": [],
+        "uncertain_choices": [],
+        "uncertain_range": [
+          0.4,
+          0.6
+        ]
+      },
+      "selected_policy_hash": "sha256:e02d64af79aeaf309a77be7e852377590819751121ccee0b594fa962077dccfc",
+      "search": {
+        "generated": 12,
+        "limit": 4096,
+        "strategy": "balanced_coordinate_interleave",
+        "truncated": false
+      },
+      "development": {
+        "comparable_records": 11,
+        "label_counts": {
+          "Agree": 4,
+          "Disagree": 7,
+          "Partial": 0
+        },
+        "objective": 4.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 3,
+            "none": 1,
+            "tentative": 0
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 7,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.9,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.5,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "This owner appears to combine unrelated state and behavior.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:d7acdcedf31d4e6f0eeb47a44ab650850ff9f4fbcf3b3140872b34efdccb3240",
+        "records": 11,
+        "support": {
+          "groups_by_label": {
+            "Agree": 4,
+            "Disagree": 6,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 6,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 4,
+          "positive_signal": 3
+        }
+      },
+      "selected_development": {
+        "comparable_records": 11,
+        "label_counts": {
+          "Agree": 4,
+          "Disagree": 7,
+          "Partial": 0
+        },
+        "objective": 7.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 3,
+            "none": 0,
+            "tentative": 1
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 7,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.9,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.47,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "This owner appears to combine unrelated state and behavior.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:e02d64af79aeaf309a77be7e852377590819751121ccee0b594fa962077dccfc",
+        "records": 11,
+        "support": {
+          "groups_by_label": {
+            "Agree": 4,
+            "Disagree": 6,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 6,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 4,
+          "positive_signal": 4
+        }
+      },
+      "heldout": {
+        "non_comparable": [],
+        "rules": {
+          "heldout": {
+            "confirmed_recall": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "confirmed_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "disagree_confirmed": {
+              "count": 0,
+              "denominator": 2,
+              "fraction": 0.0
+            },
+            "label_counts": {
+              "Agree": 1,
+              "Disagree": 2,
+              "Partial": 1
+            },
+            "non_comparable": 0,
+            "partial_any_signal": {
+              "count": 1,
+              "denominator": 1,
+              "fraction": 1.0
+            },
+            "partial_confirmed": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "review_list_recall": {
+              "count": 0,
+              "denominator": 1,
+              "fraction": 0.0
+            },
+            "review_list_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "rule_id": "JEV08",
+            "severity_confusion": {
+              "error": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              },
+              "warning": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              }
+            },
+            "severity_counts": {
+              "error": 0,
+              "not_applicable": 0,
+              "ok": 2,
+              "unknown": 2,
+              "warning": 0
+            },
+            "split": "heldout",
+            "strict_supported_warning": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "tentative_severity_counts": {
+              "error": 0,
+              "warning": 1
+            },
+            "total": 4
+          }
+        },
+        "split": "heldout"
+      }
+    },
+    "JEV09": {
+      "reason": "selected",
+      "selected_policy": {
+        "choices": null,
+        "expected": true,
+        "levels": {
+          "error": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.93,
+            "min_score": null,
+            "score_levels": null
+          },
+          "warning": {
+            "max_score": null,
+            "min_confidence": null,
+            "min_probability": 0.73,
+            "min_score": null,
+            "score_levels": null
+          }
+        },
+        "message": "The same owned behavior appears implemented more than once and may need to be maintained in sync.",
+        "not_applicable_choices": [],
+        "uncertain_choices": [],
+        "uncertain_range": [
+          0.4,
+          0.6
+        ]
+      },
+      "selected_policy_hash": "sha256:a6aad36eef60e0dc0f88e9c0a5801a20a4169d71bd79002784940659500642f9",
+      "search": {
+        "generated": 15,
+        "limit": 4096,
+        "strategy": "balanced_coordinate_interleave",
+        "truncated": false
+      },
+      "development": {
+        "comparable_records": 12,
+        "label_counts": {
+          "Agree": 5,
+          "Disagree": 7,
+          "Partial": 0
+        },
+        "objective": 7.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 5,
+            "none": 0,
+            "tentative": 0
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 5,
+            "tentative": 2
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.93,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.5,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "The same owned behavior appears implemented more than once and may need to be maintained in sync.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:a8f358150b0d68fbe8e3fee36904aeeb18bfd999f6b00f2f7caabe5a0326e26b",
+        "records": 12,
+        "support": {
+          "groups_by_label": {
+            "Agree": 5,
+            "Disagree": 7,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 7,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 5,
+          "positive_signal": 5
+        }
+      },
+      "selected_development": {
+        "comparable_records": 12,
+        "label_counts": {
+          "Agree": 5,
+          "Disagree": 7,
+          "Partial": 0
+        },
+        "objective": 10.0,
+        "outcome_counts": {
+          "Agree": {
+            "confirmed": 5,
+            "none": 0,
+            "tentative": 0
+          },
+          "Disagree": {
+            "confirmed": 0,
+            "none": 7,
+            "tentative": 0
+          },
+          "Partial": {
+            "confirmed": 0,
+            "none": 0,
+            "tentative": 0
+          }
+        },
+        "policy": {
+          "choices": null,
+          "expected": true,
+          "levels": {
+            "error": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.93,
+              "min_score": null,
+              "score_levels": null
+            },
+            "warning": {
+              "max_score": null,
+              "min_confidence": null,
+              "min_probability": 0.73,
+              "min_score": null,
+              "score_levels": null
+            }
+          },
+          "message": "The same owned behavior appears implemented more than once and may need to be maintained in sync.",
+          "not_applicable_choices": [],
+          "uncertain_choices": [],
+          "uncertain_range": [
+            0.4,
+            0.6
+          ]
+        },
+        "policy_hash": "sha256:a6aad36eef60e0dc0f88e9c0a5801a20a4169d71bd79002784940659500642f9",
+        "records": 12,
+        "support": {
+          "groups_by_label": {
+            "Agree": 5,
+            "Disagree": 7,
+            "Partial": 0
+          },
+          "missing_support_groups": 0,
+          "negative_groups": 7,
+          "non_comparable": 0,
+          "partial_groups": 0,
+          "positive_groups": 5,
+          "positive_signal": 5
+        }
+      },
+      "heldout": {
+        "non_comparable": [],
+        "rules": {
+          "heldout": {
+            "confirmed_recall": {
+              "count": 2,
+              "denominator": 2,
+              "fraction": 1.0
+            },
+            "confirmed_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "disagree_confirmed": {
+              "count": 0,
+              "denominator": 2,
+              "fraction": 0.0
+            },
+            "label_counts": {
+              "Agree": 2,
+              "Disagree": 2,
+              "Partial": 0
+            },
+            "non_comparable": 0,
+            "partial_any_signal": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "partial_confirmed": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "review_list_recall": {
+              "count": 2,
+              "denominator": 2,
+              "fraction": 1.0
+            },
+            "review_list_severity_agreement": {
+              "count": 0,
+              "denominator": 0,
+              "fraction": null
+            },
+            "rule_id": "JEV09",
+            "severity_confusion": {
+              "error": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              },
+              "warning": {
+                "confirmed_error": 0,
+                "confirmed_warning": 0,
+                "none": 0,
+                "tentative_error": 0,
+                "tentative_warning": 0
+              }
+            },
+            "severity_counts": {
+              "error": 0,
+              "not_applicable": 0,
+              "ok": 2,
+              "unknown": 0,
+              "warning": 2
+            },
+            "split": "heldout",
+            "strict_supported_warning": {
+              "count": 2,
+              "denominator": 2,
+              "fraction": 1.0
+            },
+            "tentative_severity_counts": {
+              "error": 0,
+              "warning": 0
+            },
+            "total": 4
+          }
+        },
+        "split": "heldout"
+      }
+    }
+  },
+  "supplementary_heldout": {
+    "baseline": {
+      "JEV01": {
+        "Disagree": {
+          "confirmed": 2,
+          "tentative": 2,
+          "none": 11
+        },
+        "Agree": {
+          "confirmed": 4,
+          "tentative": 0,
+          "none": 0
+        },
+        "Partial": {
+          "confirmed": 1,
+          "tentative": 1,
+          "none": 1
+        }
+      },
+      "JEV02": {
+        "Disagree": {
+          "confirmed": 0,
+          "tentative": 2,
+          "none": 6
+        },
+        "Agree": {
+          "confirmed": 4,
+          "tentative": 9,
+          "none": 1
+        }
+      }
+    },
+    "selected": {
+      "JEV01": {
+        "Disagree": {
+          "confirmed": 0,
+          "tentative": 0,
+          "none": 15
+        },
+        "Agree": {
+          "confirmed": 4,
+          "tentative": 0,
+          "none": 0
+        },
+        "Partial": {
+          "confirmed": 0,
+          "tentative": 0,
+          "none": 3
+        }
+      },
+      "JEV02": {
+        "Disagree": {
+          "confirmed": 0,
+          "tentative": 0,
+          "none": 8
+        },
+        "Agree": {
+          "confirmed": 2,
+          "tentative": 7,
+          "none": 5
+        }
+      }
+    }
+  }
+}

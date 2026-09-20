@@ -1,0 +1,1532 @@
+{
+  "adjudicated_partial_refinement_view": {
+    "cases": {
+      "baseline-001": {
+        "label": "Disagree",
+        "path": "src/jevscan/cli/terminal.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Terminal._write_styled"
+      },
+      "baseline-005": {
+        "label": "Disagree",
+        "path": "src/jevscan/cli/render.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Reporter._evaluation"
+      },
+      "baseline-007": {
+        "label": "Disagree",
+        "path": "src/jevscan/cli/render.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Reporter._text_event"
+      },
+      "baseline-008": {
+        "label": "Disagree",
+        "path": "src/jevscan/cli/render.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Reporter._summary"
+      },
+      "baseline-009": {
+        "label": "Disagree",
+        "path": "src/jevscan/cli/main.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_git_selected_paths"
+      },
+      "baseline-017": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/compaction.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Compactor._prioritize"
+      },
+      "baseline-021": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/planning.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "Planner.__init__"
+      },
+      "baseline-022": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/planning.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Planner.__init__"
+      },
+      "baseline-026": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/planning.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Planner._pack_group"
+      },
+      "baseline-027": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/syntax.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "callback_label"
+      },
+      "baseline-028": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/inference.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Inference.cached_judgments"
+      },
+      "baseline-033": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/selection.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "rank_candidates"
+      },
+      "baseline-037": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/enrichment.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_augment"
+      },
+      "baseline-040": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/enrichment.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Enricher._routing_answers"
+      },
+      "baseline-042": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/enrichment.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Enricher._candidates"
+      },
+      "baseline-044": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/enrichment.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Enricher._select"
+      },
+      "baseline-046": {
+        "label": "Agree",
+        "path": "src/jevscan/core/enrichment.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Enricher.refine"
+      },
+      "baseline-048": {
+        "label": "Partial",
+        "path": "src/jevscan/core/scanner.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "_produce"
+      },
+      "baseline-049": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/scanner.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_produce"
+      },
+      "baseline-051": {
+        "label": "Agree",
+        "path": "src/jevscan/core/scanner.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_parse_worker"
+      },
+      "baseline-054": {
+        "label": "Agree",
+        "path": "src/jevscan/core/scanner.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "pipeline"
+      },
+      "baseline-061": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/execution.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "FileExecutor._without_cached_judgments"
+      },
+      "baseline-062": {
+        "label": "Partial",
+        "path": "src/jevscan/core/execution.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "FileExecutor._send"
+      },
+      "baseline-063": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/execution.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "FileExecutor._send"
+      },
+      "baseline-064": {
+        "label": "Agree",
+        "path": "src/jevscan/core/execution.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "FileExecutor._recover"
+      },
+      "baseline-067": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/execution.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "FileExecutor._preflight"
+      },
+      "baseline-068": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/execution.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "FileExecutor._process"
+      },
+      "baseline-073": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/config.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "load_config"
+      },
+      "baseline-076": {
+        "label": "Partial",
+        "path": "src/jevscan/core/discovery.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "_walk_target"
+      },
+      "baseline-081": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/client.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_retry_after"
+      },
+      "baseline-082": {
+        "label": "Agree",
+        "path": "src/jevscan/core/client.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "JevClient.evaluate"
+      },
+      "baseline-086": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/evaluation.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "TargetResults.diagnostics"
+      },
+      "baseline-087": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/evaluation.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "TargetResults.emit"
+      },
+      "baseline-088": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/evaluation.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "TargetResults.emit"
+      },
+      "baseline-090": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/evaluation.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "FileResults.__init__"
+      },
+      "baseline-092": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/evaluation.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "FileResults.accept_answer"
+      },
+      "baseline-094": {
+        "label": "Agree",
+        "path": "src/jevscan/core/evaluation.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "FileResults.enrich"
+      },
+      "baseline-095": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/evaluation.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "FileResults._emit_coverage"
+      },
+      "baseline-096": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/evaluation.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "FileResults.finish"
+      },
+      "baseline-097": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/evaluation.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "evaluate_file"
+      },
+      "baseline-099": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/cache.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "AnswerCache._open"
+      },
+      "baseline-101": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/cache.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "AnswerCache.__aenter__"
+      },
+      "baseline-102": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/rules.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Rule.compatible_report"
+      },
+      "baseline-103": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/rules.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Rule._validate_score"
+      },
+      "baseline-104": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/parser.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_binding"
+      },
+      "baseline-105": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/parser.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_symbol"
+      },
+      "baseline-106": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/parser.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_extend_perl_namespaces"
+      },
+      "baseline-107": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/parser.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_callee_name"
+      },
+      "baseline-109": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/parser.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_has_helper_relationship"
+      },
+      "baseline-110": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/parser.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_finalize_units"
+      },
+      "baseline-116": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/retrieval.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_read_source"
+      },
+      "baseline-119": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/retrieval.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "Catalogue.add"
+      },
+      "baseline-120": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/retrieval.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Catalogue.add"
+      },
+      "baseline-121": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/retrieval.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "Catalogue.related"
+      },
+      "baseline-123": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/retrieval.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "_catalogue"
+      },
+      "baseline-124": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/retrieval.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "SourceIndex._load"
+      },
+      "baseline-125": {
+        "label": "Partial",
+        "path": "src/jevscan/core/retrieval.py",
+        "rule_id": "JEV01",
+        "source_fields": [
+          "exact_claim",
+          "warning_worthy"
+        ],
+        "symbol": "SourceIndex.candidates"
+      },
+      "baseline-126": {
+        "label": "Disagree",
+        "path": "src/jevscan/core/retrieval.py",
+        "rule_id": "JEV02",
+        "source_fields": [
+          "level"
+        ],
+        "symbol": "SourceIndex.candidates"
+      }
+    },
+    "description": "Separate exact view over the 48 parent-adjudicated original Partial rows.",
+    "label_mapping": {
+      "JEV01": "Agree when exact_claim and warning_worthy; Partial when only warning_worthy; otherwise Disagree.",
+      "JEV02": "Agree at level 2 or higher; Disagree at levels 0 and 1."
+    },
+    "notes": [
+      "These adjudications supplement, rather than replace, original Partial labels.",
+      "JEV01 exact_claim is distinct from warning_worthy: a related concern is not a correct JEV01 finding.",
+      "JEV02 levels 0 and 1 are not warning-worthy; levels 2 and 3 are warning-worthy.",
+      "All paths and symbols refer to the frozen source commit, not the current working tree."
+    ],
+    "original_label": "Partial",
+    "policies": [
+      {
+        "description": "Existing JEV02 min_score/min_confidence policy; no rule semantics changed.",
+        "metrics": {
+          "cases": 48,
+          "confirmed": 10,
+          "confirmed_exact_positive_recall": {
+            "count": 1,
+            "denominator": 4,
+            "fraction": 0.25
+          },
+          "confirmed_precision": {
+            "count": 1,
+            "denominator": 10,
+            "fraction": 0.1
+          },
+          "label_counts": {
+            "Agree": 4,
+            "Disagree": 44
+          },
+          "review_exact_positive_recall": {
+            "count": 4,
+            "denominator": 4,
+            "fraction": 1.0
+          },
+          "signal": 48,
+          "status_counts": {
+            "unknown": 38,
+            "warning": 10
+          },
+          "tentative": 38,
+          "tentative_label_mix": {
+            "Agree": 3,
+            "Disagree": 35
+          }
+        },
+        "name": "current_expected_score"
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.5,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 48,
+          "confirmed": 3,
+          "confirmed_exact_positive_recall": {
+            "count": 1,
+            "denominator": 4,
+            "fraction": 0.25
+          },
+          "confirmed_precision": {
+            "count": 1,
+            "denominator": 3,
+            "fraction": 0.3333333333333333
+          },
+          "label_counts": {
+            "Agree": 4,
+            "Disagree": 44
+          },
+          "review_exact_positive_recall": {
+            "count": 3,
+            "denominator": 4,
+            "fraction": 0.75
+          },
+          "signal": 15,
+          "status_counts": {
+            "ok": 7,
+            "unknown": 38,
+            "warning": 3
+          },
+          "tentative": 12,
+          "tentative_label_mix": {
+            "Agree": 2,
+            "Disagree": 10
+          }
+        },
+        "name": "probability_mass",
+        "threshold": 0.5,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.5,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.6,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 48,
+          "confirmed": 3,
+          "confirmed_exact_positive_recall": {
+            "count": 1,
+            "denominator": 4,
+            "fraction": 0.25
+          },
+          "confirmed_precision": {
+            "count": 1,
+            "denominator": 3,
+            "fraction": 0.3333333333333333
+          },
+          "label_counts": {
+            "Agree": 4,
+            "Disagree": 44
+          },
+          "review_exact_positive_recall": {
+            "count": 2,
+            "denominator": 4,
+            "fraction": 0.5
+          },
+          "signal": 8,
+          "status_counts": {
+            "ok": 7,
+            "unknown": 38,
+            "warning": 3
+          },
+          "tentative": 5,
+          "tentative_label_mix": {
+            "Agree": 1,
+            "Disagree": 4
+          }
+        },
+        "name": "probability_mass",
+        "threshold": 0.6,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.6,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.7,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 48,
+          "confirmed": 3,
+          "confirmed_exact_positive_recall": {
+            "count": 1,
+            "denominator": 4,
+            "fraction": 0.25
+          },
+          "confirmed_precision": {
+            "count": 1,
+            "denominator": 3,
+            "fraction": 0.3333333333333333
+          },
+          "label_counts": {
+            "Agree": 4,
+            "Disagree": 44
+          },
+          "review_exact_positive_recall": {
+            "count": 1,
+            "denominator": 4,
+            "fraction": 0.25
+          },
+          "signal": 3,
+          "status_counts": {
+            "ok": 7,
+            "unknown": 38,
+            "warning": 3
+          },
+          "tentative": 0,
+          "tentative_label_mix": {}
+        },
+        "name": "probability_mass",
+        "threshold": 0.7,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.7,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.8,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 48,
+          "confirmed": 0,
+          "confirmed_exact_positive_recall": {
+            "count": 0,
+            "denominator": 4,
+            "fraction": 0.0
+          },
+          "confirmed_precision": {
+            "count": 0,
+            "denominator": 0,
+            "fraction": null
+          },
+          "label_counts": {
+            "Agree": 4,
+            "Disagree": 44
+          },
+          "review_exact_positive_recall": {
+            "count": 0,
+            "denominator": 4,
+            "fraction": 0.0
+          },
+          "signal": 0,
+          "status_counts": {
+            "ok": 10,
+            "unknown": 38
+          },
+          "tentative": 0,
+          "tentative_label_mix": {}
+        },
+        "name": "probability_mass",
+        "threshold": 0.8,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.8,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.9,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 48,
+          "confirmed": 0,
+          "confirmed_exact_positive_recall": {
+            "count": 0,
+            "denominator": 4,
+            "fraction": 0.0
+          },
+          "confirmed_precision": {
+            "count": 0,
+            "denominator": 0,
+            "fraction": null
+          },
+          "label_counts": {
+            "Agree": 4,
+            "Disagree": 44
+          },
+          "review_exact_positive_recall": {
+            "count": 0,
+            "denominator": 4,
+            "fraction": 0.0
+          },
+          "signal": 0,
+          "status_counts": {
+            "ok": 10,
+            "unknown": 38
+          },
+          "tentative": 0,
+          "tentative_label_mix": {}
+        },
+        "name": "probability_mass",
+        "threshold": 0.9,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.9,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      }
+    ],
+    "source_commit": "81da41c18a3cff3a394336566e70e1f308e3010d"
+  },
+  "cases_evaluated": 77,
+  "cases_total": 128,
+  "exact_adjudicated_label_view": {
+    "description": "Complete JEV02 view: parent exact labels replace only the 48 original Partial rows.",
+    "label_counts": {
+      "Agree": 18,
+      "Disagree": 59
+    },
+    "policies": [
+      {
+        "description": "Existing JEV02 min_score/min_confidence policy; no rule semantics changed.",
+        "metrics": {
+          "cases": 77,
+          "confirmed": 22,
+          "confirmed_exact_positive_recall": {
+            "count": 10,
+            "denominator": 18,
+            "fraction": 0.5555555555555556
+          },
+          "confirmed_precision": {
+            "count": 10,
+            "denominator": 22,
+            "fraction": 0.45454545454545453
+          },
+          "label_counts": {
+            "Agree": 18,
+            "Disagree": 59
+          },
+          "review_exact_positive_recall": {
+            "count": 18,
+            "denominator": 18,
+            "fraction": 1.0
+          },
+          "signal": 77,
+          "status_counts": {
+            "error": 1,
+            "unknown": 55,
+            "warning": 21
+          },
+          "tentative": 55,
+          "tentative_label_mix": {
+            "Agree": 8,
+            "Disagree": 47
+          }
+        },
+        "name": "current_expected_score"
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.5,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 77,
+          "confirmed": 12,
+          "confirmed_exact_positive_recall": {
+            "count": 10,
+            "denominator": 18,
+            "fraction": 0.5555555555555556
+          },
+          "confirmed_precision": {
+            "count": 10,
+            "denominator": 12,
+            "fraction": 0.8333333333333334
+          },
+          "label_counts": {
+            "Agree": 18,
+            "Disagree": 59
+          },
+          "review_exact_positive_recall": {
+            "count": 16,
+            "denominator": 18,
+            "fraction": 0.8888888888888888
+          },
+          "signal": 32,
+          "status_counts": {
+            "ok": 10,
+            "unknown": 55,
+            "warning": 12
+          },
+          "tentative": 20,
+          "tentative_label_mix": {
+            "Agree": 6,
+            "Disagree": 14
+          }
+        },
+        "name": "probability_mass",
+        "threshold": 0.5,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.5,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.6,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 77,
+          "confirmed": 12,
+          "confirmed_exact_positive_recall": {
+            "count": 10,
+            "denominator": 18,
+            "fraction": 0.5555555555555556
+          },
+          "confirmed_precision": {
+            "count": 10,
+            "denominator": 12,
+            "fraction": 0.8333333333333334
+          },
+          "label_counts": {
+            "Agree": 18,
+            "Disagree": 59
+          },
+          "review_exact_positive_recall": {
+            "count": 14,
+            "denominator": 18,
+            "fraction": 0.7777777777777778
+          },
+          "signal": 21,
+          "status_counts": {
+            "ok": 10,
+            "unknown": 55,
+            "warning": 12
+          },
+          "tentative": 9,
+          "tentative_label_mix": {
+            "Agree": 4,
+            "Disagree": 5
+          }
+        },
+        "name": "probability_mass",
+        "threshold": 0.6,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.6,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.7,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 77,
+          "confirmed": 11,
+          "confirmed_exact_positive_recall": {
+            "count": 9,
+            "denominator": 18,
+            "fraction": 0.5
+          },
+          "confirmed_precision": {
+            "count": 9,
+            "denominator": 11,
+            "fraction": 0.8181818181818182
+          },
+          "label_counts": {
+            "Agree": 18,
+            "Disagree": 59
+          },
+          "review_exact_positive_recall": {
+            "count": 9,
+            "denominator": 18,
+            "fraction": 0.5
+          },
+          "signal": 11,
+          "status_counts": {
+            "ok": 11,
+            "unknown": 55,
+            "warning": 11
+          },
+          "tentative": 0,
+          "tentative_label_mix": {}
+        },
+        "name": "probability_mass",
+        "threshold": 0.7,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.7,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.8,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 77,
+          "confirmed": 8,
+          "confirmed_exact_positive_recall": {
+            "count": 8,
+            "denominator": 18,
+            "fraction": 0.4444444444444444
+          },
+          "confirmed_precision": {
+            "count": 8,
+            "denominator": 8,
+            "fraction": 1.0
+          },
+          "label_counts": {
+            "Agree": 18,
+            "Disagree": 59
+          },
+          "review_exact_positive_recall": {
+            "count": 8,
+            "denominator": 18,
+            "fraction": 0.4444444444444444
+          },
+          "signal": 8,
+          "status_counts": {
+            "ok": 14,
+            "unknown": 55,
+            "warning": 8
+          },
+          "tentative": 0,
+          "tentative_label_mix": {}
+        },
+        "name": "probability_mass",
+        "threshold": 0.8,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.8,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      },
+      {
+        "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+        "error": {
+          "max_score": null,
+          "min_confidence": 0.7,
+          "min_probability": 0.9,
+          "min_score": null,
+          "score_levels": [
+            3
+          ]
+        },
+        "metrics": {
+          "cases": 77,
+          "confirmed": 1,
+          "confirmed_exact_positive_recall": {
+            "count": 1,
+            "denominator": 18,
+            "fraction": 0.05555555555555555
+          },
+          "confirmed_precision": {
+            "count": 1,
+            "denominator": 1,
+            "fraction": 1.0
+          },
+          "label_counts": {
+            "Agree": 18,
+            "Disagree": 59
+          },
+          "review_exact_positive_recall": {
+            "count": 1,
+            "denominator": 18,
+            "fraction": 0.05555555555555555
+          },
+          "signal": 1,
+          "status_counts": {
+            "ok": 21,
+            "unknown": 55,
+            "warning": 1
+          },
+          "tentative": 0,
+          "tentative_label_mix": {}
+        },
+        "name": "probability_mass",
+        "threshold": 0.9,
+        "warning": {
+          "max_score": null,
+          "min_confidence": 0.6,
+          "min_probability": 0.9,
+          "min_score": null,
+          "score_levels": [
+            2,
+            3
+          ]
+        }
+      }
+    ]
+  },
+  "mode": "reporting-only",
+  "original_label_view": [
+    {
+      "description": "Existing JEV02 min_score/min_confidence policy; no rule semantics changed.",
+      "metrics": {
+        "cases": 77,
+        "confirmed": 22,
+        "confirmed_exact_positive_recall": {
+          "count": 9,
+          "denominator": 14,
+          "fraction": 0.6428571428571429
+        },
+        "confirmed_precision": {
+          "count": 9,
+          "denominator": 22,
+          "fraction": 0.4090909090909091
+        },
+        "label_counts": {
+          "Agree": 14,
+          "Disagree": 15,
+          "Partial": 48
+        },
+        "review_exact_positive_recall": {
+          "count": 14,
+          "denominator": 14,
+          "fraction": 1.0
+        },
+        "signal": 77,
+        "status_counts": {
+          "error": 1,
+          "unknown": 55,
+          "warning": 21
+        },
+        "tentative": 55,
+        "tentative_label_mix": {
+          "Agree": 5,
+          "Disagree": 12,
+          "Partial": 38
+        }
+      },
+      "name": "current_expected_score"
+    },
+    {
+      "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+      "error": {
+        "max_score": null,
+        "min_confidence": 0.7,
+        "min_probability": 0.5,
+        "min_score": null,
+        "score_levels": [
+          3
+        ]
+      },
+      "metrics": {
+        "cases": 77,
+        "confirmed": 12,
+        "confirmed_exact_positive_recall": {
+          "count": 9,
+          "denominator": 14,
+          "fraction": 0.6428571428571429
+        },
+        "confirmed_precision": {
+          "count": 9,
+          "denominator": 12,
+          "fraction": 0.75
+        },
+        "label_counts": {
+          "Agree": 14,
+          "Disagree": 15,
+          "Partial": 48
+        },
+        "review_exact_positive_recall": {
+          "count": 13,
+          "denominator": 14,
+          "fraction": 0.9285714285714286
+        },
+        "signal": 32,
+        "status_counts": {
+          "ok": 10,
+          "unknown": 55,
+          "warning": 12
+        },
+        "tentative": 20,
+        "tentative_label_mix": {
+          "Agree": 4,
+          "Disagree": 4,
+          "Partial": 12
+        }
+      },
+      "name": "probability_mass",
+      "threshold": 0.5,
+      "warning": {
+        "max_score": null,
+        "min_confidence": 0.6,
+        "min_probability": 0.5,
+        "min_score": null,
+        "score_levels": [
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+      "error": {
+        "max_score": null,
+        "min_confidence": 0.7,
+        "min_probability": 0.6,
+        "min_score": null,
+        "score_levels": [
+          3
+        ]
+      },
+      "metrics": {
+        "cases": 77,
+        "confirmed": 12,
+        "confirmed_exact_positive_recall": {
+          "count": 9,
+          "denominator": 14,
+          "fraction": 0.6428571428571429
+        },
+        "confirmed_precision": {
+          "count": 9,
+          "denominator": 12,
+          "fraction": 0.75
+        },
+        "label_counts": {
+          "Agree": 14,
+          "Disagree": 15,
+          "Partial": 48
+        },
+        "review_exact_positive_recall": {
+          "count": 12,
+          "denominator": 14,
+          "fraction": 0.8571428571428571
+        },
+        "signal": 21,
+        "status_counts": {
+          "ok": 10,
+          "unknown": 55,
+          "warning": 12
+        },
+        "tentative": 9,
+        "tentative_label_mix": {
+          "Agree": 3,
+          "Disagree": 1,
+          "Partial": 5
+        }
+      },
+      "name": "probability_mass",
+      "threshold": 0.6,
+      "warning": {
+        "max_score": null,
+        "min_confidence": 0.6,
+        "min_probability": 0.6,
+        "min_score": null,
+        "score_levels": [
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+      "error": {
+        "max_score": null,
+        "min_confidence": 0.7,
+        "min_probability": 0.7,
+        "min_score": null,
+        "score_levels": [
+          3
+        ]
+      },
+      "metrics": {
+        "cases": 77,
+        "confirmed": 11,
+        "confirmed_exact_positive_recall": {
+          "count": 8,
+          "denominator": 14,
+          "fraction": 0.5714285714285714
+        },
+        "confirmed_precision": {
+          "count": 8,
+          "denominator": 11,
+          "fraction": 0.7272727272727273
+        },
+        "label_counts": {
+          "Agree": 14,
+          "Disagree": 15,
+          "Partial": 48
+        },
+        "review_exact_positive_recall": {
+          "count": 8,
+          "denominator": 14,
+          "fraction": 0.5714285714285714
+        },
+        "signal": 11,
+        "status_counts": {
+          "ok": 11,
+          "unknown": 55,
+          "warning": 11
+        },
+        "tentative": 0,
+        "tentative_label_mix": {}
+      },
+      "name": "probability_mass",
+      "threshold": 0.7,
+      "warning": {
+        "max_score": null,
+        "min_confidence": 0.6,
+        "min_probability": 0.7,
+        "min_score": null,
+        "score_levels": [
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+      "error": {
+        "max_score": null,
+        "min_confidence": 0.7,
+        "min_probability": 0.8,
+        "min_score": null,
+        "score_levels": [
+          3
+        ]
+      },
+      "metrics": {
+        "cases": 77,
+        "confirmed": 8,
+        "confirmed_exact_positive_recall": {
+          "count": 8,
+          "denominator": 14,
+          "fraction": 0.5714285714285714
+        },
+        "confirmed_precision": {
+          "count": 8,
+          "denominator": 8,
+          "fraction": 1.0
+        },
+        "label_counts": {
+          "Agree": 14,
+          "Disagree": 15,
+          "Partial": 48
+        },
+        "review_exact_positive_recall": {
+          "count": 8,
+          "denominator": 14,
+          "fraction": 0.5714285714285714
+        },
+        "signal": 8,
+        "status_counts": {
+          "ok": 14,
+          "unknown": 55,
+          "warning": 8
+        },
+        "tentative": 0,
+        "tentative_label_mix": {}
+      },
+      "name": "probability_mass",
+      "threshold": 0.8,
+      "warning": {
+        "max_score": null,
+        "min_confidence": 0.6,
+        "min_probability": 0.8,
+        "min_score": null,
+        "score_levels": [
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "description": "warning score_levels=[2,3], error score_levels=[3], probability-mass threshold.",
+      "error": {
+        "max_score": null,
+        "min_confidence": 0.7,
+        "min_probability": 0.9,
+        "min_score": null,
+        "score_levels": [
+          3
+        ]
+      },
+      "metrics": {
+        "cases": 77,
+        "confirmed": 1,
+        "confirmed_exact_positive_recall": {
+          "count": 1,
+          "denominator": 14,
+          "fraction": 0.07142857142857142
+        },
+        "confirmed_precision": {
+          "count": 1,
+          "denominator": 1,
+          "fraction": 1.0
+        },
+        "label_counts": {
+          "Agree": 14,
+          "Disagree": 15,
+          "Partial": 48
+        },
+        "review_exact_positive_recall": {
+          "count": 1,
+          "denominator": 14,
+          "fraction": 0.07142857142857142
+        },
+        "signal": 1,
+        "status_counts": {
+          "ok": 21,
+          "unknown": 55,
+          "warning": 1
+        },
+        "tentative": 0,
+        "tentative_label_mix": {}
+      },
+      "name": "probability_mass",
+      "threshold": 0.9,
+      "warning": {
+        "max_score": null,
+        "min_confidence": 0.6,
+        "min_probability": 0.9,
+        "min_score": null,
+        "score_levels": [
+          2,
+          3
+        ]
+      }
+    }
+  ],
+  "rule_id": "JEV02",
+  "version": 1
+}

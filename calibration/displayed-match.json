@@ -1,0 +1,8 @@
+{
+  "answer_matches": 128,
+  "cases": 128,
+  "evidence_note": "The persisted displayed transcripts expose target identity and answer/status summaries, not the complete final encoded evidence state. Case validation proves every stored evidence slice against the frozen source; it does not claim final enrichment-state identity.",
+  "mismatches": [],
+  "status_matches": 128,
+  "version": 1
+}

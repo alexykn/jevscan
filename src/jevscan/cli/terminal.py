@@ -17,6 +17,7 @@ KIND_STYLE = {
     "closure": ("L", MAGENTA),
     "class": ("C", CYAN),
     "struct": ("S", CYAN),
+    "union": ("U", CYAN),
     "enum": ("E", CYAN),
     "trait": ("T", CYAN),
     "impl": ("I", CYAN),

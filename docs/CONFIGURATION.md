@@ -82,6 +82,8 @@ Effective selection is: enabled rule, enabled ruleset, matched by `select`, and 
 
 `target: unit` (default) or `"file"` determines attribution. Unit rules require nonempty `applies_to`; file rules require file context, no `applies_to`, and no body/member requirements. `module` and `tree` are not supported.
 
+`applies_to` accepts extracted unit kinds: `function`, `method`, `closure`, `class`, `struct`, `union`, `enum`, `trait`, `impl`, `interface`, `type`, `module`, and `package`. Language frontends emit only the kinds their grammars support.
+
 `context` is `unit`, `owner`, or `file`. Defaults are owner for units and file for files. Owner context uses the lexical owner, or the file for top-level functions; Rust owner context starts with the file. `languages` defaults to the five supported languages. `require_body: true` excludes declarations and obvious stub implementations. `require_members: true` requires implemented callable members for owner-level checks. No heuristic claims compiler-level call resolution.
 
 `applicability` is optional. It can declare `requires_any` and/or `requires_all` from the exact syntax-fact vocabulary
@@ -144,7 +146,19 @@ rules:
 
 ### Score
 
-Score uses an ordered array of criterion descriptions and a zero-based numeric scale. Levels use exactly one of `min_score` or `max_score`, with the same direction at both levels, and optional `min_confidence`. Levels must lie inside the rubric. Score reports cannot use `min_probability`, Choice labels, or `expected: false`.
+Score uses an ordered array of criterion descriptions and a zero-based numeric scale. Scalar levels use exactly one of `min_score` or `max_score`, with the same direction at both levels, and optional `min_confidence`. Alternatively, both levels can use probability mass over ordered `score_levels`:
+
+```yaml
+levels:
+  warning:
+    score_levels: [2, 3]
+    min_probability: 0.50
+  error:
+    score_levels: [3]
+    min_probability: 0.80
+```
+
+Mass levels must be nonempty, unique, in-range, and use the same mode at warning and error. Error levels must be a subset of warning levels, and its probability/confidence gates cannot be weaker. Mass is the raw sum of the provider probabilities for the listed levels; it is not normalized and does not require an exact distribution sum. Scalar and mass modes cannot be mixed. Score reports cannot use Choice labels or `expected: false`.
 
 ### Confirmation and tentative severity
 

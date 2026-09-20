@@ -323,6 +323,10 @@ uv run jevscan --list-rules
 ## Further documentation
 
 - [Configuration reference](docs/CONFIGURATION.md)
+- [Offline semantic calibration replay](docs/SEMANTIC_CALIBRATION.md)
+- [Portable calibration agent skill and installation](skills/README.md)
+- [Public calibration source examples](examples/calibration/README.md)
+- [Built-in warning calibration results and limitations](calibration/FINAL_RESULTS.md)
 - [Jev request and response contract](docs/JEV_API.md)
 - [Context recovery](docs/CONTEXT_RECOVERY.md)
 - [Evidence enrichment](docs/ENRICHMENT.md)
@@ -405,7 +409,7 @@ JSON/JSONL **schema 8** includes all raw answers, stable rule IDs, `rule_metadat
 
 ## Extraction, execution, and privacy
 
-The five language frontends extract lexical classes, functions/methods, supported declarations, and assigned closures. Native grammars and fixtures cover Python decorators/nesting, Rust impls/traits, TS/JS arrows and JSX/TSX, and Perl packages/classes/subroutines. Source must be UTF-8. Unsupported syntax, parse/read limits, and missing parsers produce explicit diagnostics. Ordinary Perl subs are not assumed to be runtime methods. Branch-node counts are not language-independent cyclomatic complexity.
+The five language frontends extract lexical classes, functions/methods, supported declarations, and assigned closures. Native grammars and fixtures cover Python decorators/nesting, Rust structs/unions/impls/traits, TS/JS arrows and JSX/TSX, and Perl packages/classes/subroutines. Source must be UTF-8. Unsupported syntax, parse/read limits, and missing parsers produce explicit diagnostics. Ordinary Perl subs are not assumed to be runtime methods. Branch-node counts are not language-independent cyclomatic complexity.
 
 ```text
 discovery → spawned Tree-sitter parsers → bounded file queue
