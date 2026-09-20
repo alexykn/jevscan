@@ -78,26 +78,20 @@ Completed supplementary evidence includes the
 [lookup-daemon evaluation](LOOKUP_RESULTS.md) and the
 [baseline-only real-project assembly](BASELINE_ASSEMBLY.md).
 
-## Round-2 JEV04 pair experiment
+## Focused-question experiment
 
-The predeclared round-2 plan is
-[FOCUSED_QUESTIONS_PLAN.md](FOCUSED_QUESTIONS_PLAN.md). It adds
-`jev04-pair-joint` and `jev04-pair-decomposed` to the existing
-`focused_experiment.py` pipeline without changing packaged production rules or
-calling a provider during planning and replay.
+The predeclared plan is
+[FOCUSED_QUESTIONS_PLAN.md](FOCUSED_QUESTIONS_PLAN.md). It compared
+whole-target and pair-bound candidates without changing packaged production
+rules.
 
-Use repeatable `--candidate` filters on `plan` and `capture` to purchase only
-selected pair candidates. Held-out planning and capture still require the
-development freeze and reject candidates not frozen. A pair question is paid
-only for a target with exactly one bounded extractor pair whose operation and
-intervening spans are covered by the unchanged requested evidence. Zero,
-multiple, capped, unsupported, ambiguous, and incomplete cases are recorded as
-explicit whole-target fallbacks with reasons; they are not silently counted as
-clean pair judgments.
+The completed development results are in
+[FOCUSED_QUESTIONS_RESULTS.md](FOCUSED_QUESTIONS_RESULTS.md), with
+machine-readable aggregates in `FOCUSED_QUESTIONS_RESULTS.json`. No candidate
+met the predeclared acceptance rules, so packaged rules remain unchanged and
+the held-out split was not executed.
 
-Pair-level replay combines eligible pair records with already captured
-`jev04-baseline` whole-target records for ineligible parents. The output
-reports fallback coverage and remains incomplete when required baseline
-fallback records are absent. Decomposed pair children must carry matching pair
-IDs and question metadata before their diagnostic conservative AND is
-calculated; probabilities are never combined.
+The one-off live runner and candidate extractor were removed after the negative
+result rather than retained as a second calibration framework. The public
+fixtures, source-only adjudications, predeclared contracts, and aggregate
+results remain as evidence for future experiments.

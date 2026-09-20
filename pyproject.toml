@@ -53,8 +53,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Include repository-only calibration utilities in focused contract tests.
-pythonpath = ["src", "."]
+pythonpath = ["src"]
 asyncio_mode = "auto"
 markers = ["parser: requires the real Tree-sitter runtime and bundled grammars"]
 

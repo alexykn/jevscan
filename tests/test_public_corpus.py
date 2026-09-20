@@ -17,6 +17,7 @@ pytestmark = [pytest.mark.parser, pytest.mark.usefixtures("grammar_runtime")]
 
 CORPUS = Path(__file__).parents[1] / "examples" / "calibration"
 EXPANDED = CORPUS / "expanded"
+FOCUSED = CORPUS / "focused"
 
 
 def _manifest() -> dict:
@@ -26,6 +27,11 @@ def _manifest() -> dict:
 
 def _expanded_manifest() -> dict:
     with (EXPANDED / "MANIFEST.yaml").open(encoding="utf-8") as stream:
+        return yaml.safe_load(stream)
+
+
+def _focused_manifest() -> dict:
+    with (FOCUSED / "MANIFEST.yaml").open(encoding="utf-8") as stream:
         return yaml.safe_load(stream)
 
 
@@ -218,3 +224,57 @@ def test_expanded_sources_do_not_contain_mapping_labels() -> None:
         text = path.read_text(encoding="utf-8")
         assert "provisional_label" not in text
         assert "scenario_group" not in text
+
+
+def test_focused_manifest_and_adjudications_cover_neutral_sources() -> None:
+    manifest = _focused_manifest()
+    with (FOCUSED / "ADJUDICATIONS.yaml").open(encoding="utf-8") as stream:
+        adjudications = yaml.safe_load(stream)
+
+    source_root = FOCUSED / manifest["source_root"]
+    digest = sha256()
+    for path in sorted(path for path in source_root.rglob("*") if path.is_file()):
+        digest.update(path.relative_to(source_root).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+
+    cases = manifest["heldout"]
+    case_ids = {entry["id"] for entry in cases}
+    actual_sources = {path.relative_to(FOCUSED).as_posix() for path in source_root.iterdir() if path.is_file()}
+    assert len(cases) == 18
+    assert {entry["rule"] for entry in cases} == {"JEV01", "JEV02", "JEV04"}
+    assert {entry["source"] for entry in cases} == actual_sources
+    assert {entry["case_id"] for entry in adjudications["cases"]} == case_ids
+    assert adjudications["source_snapshot_sha256"] == digest.hexdigest()
+    assert manifest["source_snapshot"]["digest"] == digest.hexdigest()
+
+    forbidden = ("positive", "negative", "clean", "bad", "good", "defect", "violation")
+    for path in source_root.iterdir():
+        assert not any(token in path.name.lower() for token in forbidden)
+        text = path.read_text(encoding="utf-8")
+        assert not any(token in text for token in ("provisional_label", "scenario_group", "expected_score"))
+
+
+def test_focused_targets_match_production_parser_and_planner() -> None:
+    manifest = _focused_manifest()
+    source_root = FOCUSED / manifest["source_root"]
+    config = load_config([source_root], cwd=source_root).config
+
+    for scenario in manifest["heldout"]:
+        source = FOCUSED / scenario["source"]
+        spec = language_for(source)
+        assert spec is not None, scenario
+        parsed = parse_source(source.read_bytes(), FileJob(str(source), source.name, spec.grammar, spec.language))
+        assert not parsed.failed, (scenario, parsed.diagnostics)
+        planner = Planner(ContextBuilder(parsed), config)
+        target = scenario["target"]
+        matches = [
+            check
+            for check in planner.checks
+            if check.rule_id == scenario["rule"]
+            and check.target.scope == target["scope"]
+            and check.target.qualified_name == target["name"]
+        ]
+        assert len(matches) == 1, (scenario, [check.target.metadata() for check in planner.checks])
+        assert matches[0].target.kind is not None
+        assert matches[0].target.kind.value == target["kind"]
