@@ -49,7 +49,12 @@ rules:
   - name: JEV04
     title: redundant-validation
     target: unit
-    candidate_support: [jev04-baseline, jev04-focused-joint, jev04-focused-decomposed]
+    candidate_support:
+      - jev04-baseline
+      - jev04-focused-joint
+      - jev04-focused-decomposed
+      - jev04-pair-joint
+      - jev04-pair-decomposed
 
 development_references:
   - id: expanded:e009

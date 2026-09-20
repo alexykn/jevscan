@@ -4,6 +4,8 @@ This is the predeclared plan for the repository-only focused-question
 experiment. It records the procedure and candidate definitions before any new
 provider measurement. It is not a result report, and the fixture annotations
 are provisional synthetic review labels rather than human ground truth.
+Round 2 adds isolated JEV04 pair-bound candidates; it does not replace or
+modify the packaged JEV04 rule.
 
 ## Fixed inputs and guardrails
 
@@ -49,12 +51,42 @@ applicability and report policy.
 | --- | --- | --- |
 | `jev04-baseline` | `FOCUS_JEV04_BASELINE` | Packaged JEV04 Choice question and report policy unchanged. It asks for `demonstrably_redundant`, `justified_or_absent`, or `insufficient_context`. |
 | `jev04-focused-joint` | `FOCUS_JEV04_JOINT` | The same Choice contract, with this task text: “Select exactly one outcome for repeated validation in the target. Choose demonstrably_redundant only when the same invariant is visibly established and checked again without a new boundary, mutation, or concurrency risk. An await, callback, external call, mutation, or possible aliasing boundary can invalidate an invariant; immutable captured values and sequential cohesive lifecycle phases do not create a boundary. Choose insufficient_context only when the repeated check is visible but the missing guarantee determines the result.” Criteria and report gates remain the packaged JEV04 criteria and gates. |
-| `jev04-focused-decomposed` | `FOCUS_JEV04_DECOMPOSED_GUARANTEE`, `FOCUS_JEV04_DECOMPOSED_PRESERVATION` | Two ordinary Noul children, both retaining JEV04 applicability. The guarantee child asks whether the same validation invariant is visibly established before the later validation. The preservation child asks whether the invariant remains preserved between checks without await, callback, external call, mutation, aliasing, or concurrency risk. The analysis composition is conservative AND: both child review signals are required; probabilities are never multiplied. This candidate is diagnostic-only unless both children are bound to one locally identified earlier/later pair and its intervening source locations. No permanent pair extraction is implemented. |
+| `jev04-focused-decomposed` | `FOCUS_JEV04_DECOMPOSED_GUARANTEE`, `FOCUS_JEV04_DECOMPOSED_PRESERVATION` | Two ordinary Noul children, both retaining JEV04 applicability. The guarantee child asks whether the same validation invariant is visibly established before the later validation. The preservation child asks whether the invariant remains preserved between checks without await, callback, external call, mutation, aliasing, or concurrency risk. The analysis composition is conservative AND: both child review signals are required; probabilities are never multiplied. |
+| `jev04-pair-joint` | `FOCUS_JEV04_PAIR_JOINT` | Round-2 ordinary Choice rule using the focused joint meanings and the packaged JEV04 report policy. The task is dynamically bound to exactly one bounded `ValidationPair` extracted from the original unit target. It explicitly asks the model to judge only that pair and the same value/state relation. |
+| `jev04-pair-decomposed` | `FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE`, `FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION` | Round-2 ordinary Noul children using the corrected guarantee and preservation criteria above. Both children receive the exact same pair binding and are composed only as a diagnostic conservative AND; probabilities are never combined. |
 
-The decomposed candidate must not be promoted from two unrelated “most
-relevant” answers. The model-visible state must carry exact pair metadata in a
-future capture (earlier location, later location, and intervening range) before
-the AND result is considered an attributable JEV04 judgment.
+Pair metadata is question/provenance metadata only. It contains the candidate
+and pair IDs, source path, exact earlier/later operation line and byte spans,
+the exact intervening line and byte span, and callable-boundary annotations.
+It points into the complete unchanged production evidence and does not copy
+predicate or intervening source bytes, invent a rationale, or create a new
+target.
+
+### Round-2 eligibility, fallback, and composition
+
+The `plan` and `capture` commands accept repeatable `--candidate` filters.
+Development may select only the pair candidates for a round-2 purchase. A
+held-out invocation still requires the development freeze and rejects any
+candidate that is not frozen. Selected candidates are recorded in plans and
+capture ledgers, so a pair-only capture cannot silently repurchase baseline
+questions.
+
+Pair questions are purchased only when extraction returns exactly one bounded
+pair and every pair location is covered by the unchanged requested evidence.
+Zero pairs, multiple pairs, occurrence/group/pair caps, parse recovery,
+unsupported grammar or validation shape, ambiguous ownership, invalid target,
+and incomplete evidence are explicit `whole_target_fallback` outcomes with a
+stable reason. They are not omitted and are never interpreted as a clean
+pair result. The extractor outcome record is written alongside capture output.
+
+For candidate-level evaluation, replay combines pair-bound records for eligible
+parents with already captured `jev04-baseline` records for ineligible parents.
+The combined result reports eligible and fallback counts and is incomplete when
+the required baseline fallback records are unavailable. The focused joint
+question is used only for eligible pair records; whole-target fallback keeps
+the deployed JEV04 Choice/report behavior. Pair-decomposed composition remains
+diagnostic and requires matching pair IDs and matching question metadata in
+both children before applying conservative AND.
 
 ### JEV01 mixed responsibilities
 

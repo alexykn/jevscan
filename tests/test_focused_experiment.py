@@ -16,6 +16,7 @@ from calibration.focused_experiment import (
     MODEL,
     PROJECT_ROOT,
     _metrics_for_records,
+    _pair_binding,
     candidate_documents,
     capture_manifest,
     freeze_candidates,
@@ -25,6 +26,7 @@ from calibration.focused_experiment import (
     source_snapshot,
     write_candidate_config,
 )
+from calibration.validation_candidates import ExtractionLimits, FallbackReason
 from jevscan.core.config import load_config
 from jevscan.core.rules import ChoiceQuestion, NoulQuestion, ScoreQuestion
 from jevscan.core.semantic_calibration import load_cases
@@ -128,6 +130,131 @@ def test_candidate_definitions_preserve_baselines_and_use_mixed_question_types()
     assert isinstance(packaged["JEV04"].question, ChoiceQuestion)
 
 
+def test_pair_candidate_definitions_have_stable_ordinary_child_rules() -> None:
+    documents = candidate_documents()
+
+    assert documents["FOCUS_JEV04_PAIR_JOINT"]["question"]["type"] == "choice"
+    assert documents["FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE"]["question"]["type"] == "noul"
+    assert documents["FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION"]["question"]["type"] == "noul"
+    assert (
+        documents["FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE"]["report"]
+        == documents["FOCUS_JEV04_DECOMPOSED_GUARANTEE"]["report"]
+    )
+    assert (
+        documents["FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION"]["report"]
+        == documents["FOCUS_JEV04_DECOMPOSED_PRESERVATION"]["report"]
+    )
+
+
+def test_pair_plan_binds_quarry_and_summit_without_changing_target_or_evidence(tmp_path: Path) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    baseline = plan_manifest(
+        CORPUS / "MANIFEST.yaml",
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-baseline"],
+    )
+    pair = plan_manifest(
+        CORPUS / "MANIFEST.yaml",
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-pair-joint"],
+    )
+    baseline_by_case = {record["case_id"]: record for record in baseline["cases"]}
+    pair_by_case = {record["case_id"]: record for record in pair["cases"]}
+
+    assert pair["selected_candidates"] == ["jev04-pair-joint"]
+    assert len(pair["batches"]) == 8
+    assert sum(record["question_id"] is not None for record in pair["cases"]) == 8
+    assert pair["accounting"]["whole_target_fallbacks"] == 4
+    assert {record["pair_binding"]["status"] for record in pair["cases"]} == {
+        "bound",
+        "whole_target_fallback",
+    }
+    for case_id, record in pair_by_case.items():
+        assert record["target"] == baseline_by_case[case_id]["target"]
+        assert record["evidence_sha256"] == baseline_by_case[case_id]["evidence_sha256"]
+        binding = record["pair_binding"]
+        assert "intervening_bytes" not in json.dumps(binding)
+        if binding["status"] == "whole_target_fallback":
+            assert record["question_id"] is None
+            assert record["fallback"]["reason"]
+            continue
+        pair_metadata = binding["pair"]
+        assert pair_metadata["source_path"] == record["target"]["path"]
+        assert (
+            pair_metadata["earlier"]["operation_span"]["start_byte"]
+            < pair_metadata["later"]["operation_span"]["start_byte"]
+        )
+        assert pair_metadata["intervening_span"]["start_byte"] == pair_metadata["earlier"]["operation_span"]["end_byte"]
+        assert pair_metadata["intervening_span"]["end_byte"] == pair_metadata["later"]["operation_span"]["start_byte"]
+
+    quarry = pair_by_case["expanded:e046"]["pair_binding"]["pair"]
+    assert quarry["earlier"]["operation_span"]["start_line"] == 3
+    assert quarry["later"]["operation_span"]["start_line"] == 7
+    summit = pair_by_case["expanded:e048"]["pair_binding"]["pair"]
+    assert summit["callable_boundary"]["crossed"] is True
+    assert summit["later"]["callable_boundary"]["owner_kind"] == "closure"
+
+
+def test_pair_decomposed_plan_reuses_exact_pair_binding_for_both_children(tmp_path: Path) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    plan = plan_manifest(
+        CORPUS / "MANIFEST.yaml",
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-pair-decomposed"],
+    )
+    by_case: dict[str, list[dict]] = {}
+    for record in plan["cases"]:
+        by_case.setdefault(record["case_id"], []).append(record)
+
+    assert plan["selected_candidates"] == ["jev04-pair-decomposed"]
+    assert all(len(records) == 2 for records in by_case.values())
+    for records in by_case.values():
+        bound = [record for record in records if record["pair_binding"]["status"] == "bound"]
+        fallback = [record for record in records if record["pair_binding"]["status"] != "bound"]
+        if fallback:
+            assert len(fallback) == 2
+            assert all(record["question_id"] is None for record in fallback)
+            continue
+        assert len(bound) == 2
+        assert bound[0]["pair_binding"]["pair"] == bound[1]["pair_binding"]["pair"]
+
+
+def test_pair_binding_records_zero_multiple_cap_and_unsupported_as_fallbacks() -> None:
+    from jevscan.core.languages import language_for
+    from jevscan.core.models import FileJob, Target
+    from jevscan.core.parser import parse_source
+
+    def binding(source: bytes, filename: str, limits: ExtractionLimits | None = None):
+        path = Path(filename)
+        spec = language_for(path)
+        assert spec is not None
+        parsed = parse_source(source, FileJob(f"/tmp/{filename}", filename, spec.grammar, spec.language))
+        target = Target.from_unit(parsed.units[0])
+        return _pair_binding(parsed, target, limits=limits or ExtractionLimits())
+
+    zero = binding(b"def f(value):\n    if value:\n        return value\n", "zero.py")
+    assert zero.reason == FallbackReason.NO_EXACT_PREDICATE_GROUP.value
+    multiple = binding(
+        b"def f(value):\n    if value:\n        return 1\n    if value:\n        return 2\n    if value:\n        return 3\n",
+        "multiple.py",
+    )
+    assert multiple.reason == FallbackReason.MULTIPLE_PAIRS.value
+    capped = binding(
+        b"def f(value):\n    if value:\n        return 1\n    if value:\n        return 2\n",
+        "capped.py",
+        ExtractionLimits(max_occurrences=1),
+    )
+    assert capped.reason == FallbackReason.OCCURRENCE_CAP.value
+    unsupported = binding(
+        b"def f(value):\n    while value:\n        return 1\n    while value:\n        return 2\n",
+        "unsupported.py",
+    )
+    assert unsupported.reason == FallbackReason.UNSUPPORTED_VALIDATION_SHAPE.value
+
+
 def test_production_planner_binds_exact_targets_and_batches_same_evidence(tmp_path: Path) -> None:
     config_path = write_candidate_config(tmp_path / "focused.yaml")
     with pytest.raises(ValueError, match="frozen"):
@@ -148,6 +275,29 @@ def test_heldout_plan_contains_only_frozen_candidates(tmp_path: Path) -> None:
         freeze_path=freeze_path,
     )
     assert {record["candidate"] for record in heldout["cases"]} == {"jev04-focused-joint"}
+
+
+def test_heldout_candidate_filter_cannot_escape_freeze(tmp_path: Path) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    development = plan_manifest(
+        CORPUS / "MANIFEST.yaml",
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-pair-joint"],
+    )
+    development_path = tmp_path / "development.json"
+    development_path.write_text(json.dumps(development), encoding="utf-8")
+    freeze_path = tmp_path / "freeze.json"
+    freeze_candidates(CORPUS / "MANIFEST.yaml", development_path, ["jev04-pair-joint"], freeze_path)
+
+    with pytest.raises(ValueError, match="not frozen"):
+        plan_manifest(
+            CORPUS / "MANIFEST.yaml",
+            phase="heldout",
+            config_path=config_path,
+            freeze_path=freeze_path,
+            candidates=["jev04-baseline"],
+        )
 
 
 def test_production_planner_binds_exact_targets_and_batches_same_evidence_after_freeze(tmp_path: Path) -> None:
@@ -316,6 +466,108 @@ def test_capture_batches_mixed_questions_and_deduplicates_shared_score(
         "jev02-presence-gated",
     }
     assert "test-key-not-persisted" not in (tmp_path / "ledger.json").read_text(encoding="utf-8")
+
+
+def test_pair_capture_filter_binds_complete_source_and_preserves_pair_attribution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    requests: list[dict] = []
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "model": MODEL,
+                "usage": {"input_tokens": 10, "output_tokens": 3},
+                "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+            },
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    output = tmp_path / "pair.jsonl"
+    summary = capture_manifest(
+        FOCUSED_MANIFEST,
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-pair-joint"],
+        output=output,
+        ledger_path=tmp_path / "ledger.json",
+        transport=httpx.MockTransport(transport),
+    )
+    cases = load_cases(output)
+
+    assert summary["selected_candidates"] == ["jev04-pair-joint"]
+    assert (
+        json.loads((tmp_path / "ledger.json").read_text(encoding="utf-8"))["invocations"][0]["parent_opportunities"]
+        == 12
+    )
+    assert len(cases) == 8
+    assert len(requests) == 8
+    assert {case.provenance["candidate"] for case in cases} == {"jev04-pair-joint"}
+    for case in cases:
+        binding = case.provenance["pair_binding"]
+        assert binding["status"] == "bound"
+        assert case.provenance["validation_pair"] == binding["pair"]
+        assert case.target.scope == "unit"
+        assert case.target.path in case.evidence.source_documents
+        assert any(
+            document["path"] == case.target.path
+            and document["start_byte"] <= case.target.start_byte
+            and document["end_byte"] >= case.target.end_byte
+            for document in case.evidence.state["documents"]
+        )
+        assert case.question_wire is not None
+        task = case.question_wire["instructions"]["task"]
+        task_metadata = json.loads(
+            task.split("Pair binding metadata (machine-readable location metadata only):\n", 1)[1]
+        )
+        assert task_metadata["candidate"] == "jev04-pair-joint"
+        assert task_metadata["pair_id"] == binding["pair_id"]
+        assert "intervening_bytes" not in task
+        assert "raw_predicate" not in task
+    extractor_path = Path(summary["extractor_outcomes_path"])
+    assert extractor_path.is_file()
+    assert len(extractor_path.read_text(encoding="utf-8").splitlines()) == 12
+
+
+def test_pair_metrics_combine_only_deployed_baseline_fallback_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": MODEL,
+                "usage": {"input_tokens": 10, "output_tokens": 3},
+                "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+            },
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    output = tmp_path / "combined.jsonl"
+    capture_manifest(
+        FOCUSED_MANIFEST,
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-baseline", "jev04-pair-joint"],
+        output=output,
+        ledger_path=tmp_path / "ledger.json",
+        transport=httpx.MockTransport(transport),
+    )
+    combined = replay_metrics(output)["jev04-pair-joint"]["combined"]
+
+    assert combined["eligible_pair_cases"] == 8
+    assert combined["whole_target_fallback_cases"] == 4
+    assert combined["fallback_records_available"] is True
+    assert combined["missing_fallback_cases"] == []
+    assert combined["complete"] is True
+    assert combined["metrics"]["cases"] == 12
 
 
 def test_capture_preserves_missing_usage_and_retries_in_ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

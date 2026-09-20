@@ -150,6 +150,7 @@ class FallbackReason(StrEnum):
     OCCURRENCE_CAP = "occurrence_cap"
     GROUP_CAP = "group_cap"
     PAIR_CAP = "pair_cap"
+    MULTIPLE_PAIRS = "multiple_pairs"
     NO_EXACT_PREDICATE_GROUP = "no_exact_predicate_group"
 
 
@@ -325,6 +326,46 @@ class ValidationPair:
     @property
     def metadata(self) -> dict[str, Any]:
         return self.as_dict()
+
+
+def pair_binding_metadata(pair: ValidationPair) -> dict[str, Any]:
+    """Return source-location-only metadata suitable for a model task.
+
+    ``ValidationPair.as_dict`` is a complete offline diagnostic record and
+    includes the repeated predicate and intervening source bytes. Those
+    snippets are already present in evidence and must not be copied into a
+    question task or capture provenance.
+    """
+
+    def occurrence_metadata(occurrence: ValidationOccurrence) -> dict[str, Any]:
+        return {
+            "occurrence": occurrence.occurrence,
+            "operation_type": occurrence.operation_type,
+            "operation_span": occurrence.operation_span.as_dict(),
+            "callable_boundary": occurrence.callable_boundary.as_dict(),
+        }
+
+    earlier = occurrence_metadata(pair.earlier)
+    later = occurrence_metadata(pair.later)
+    earlier_owner = pair.earlier.callable_boundary.owner_id
+    later_owner = pair.later.callable_boundary.owner_id
+    return {
+        "pair_id": pair.id,
+        "group_id": pair.group_id,
+        "target_id": pair.target_id,
+        "source_path": pair.source_path,
+        "predicate_sha256": pair.predicate_sha256,
+        "earlier": earlier,
+        "later": later,
+        "intervening_span": pair.intervening_span.as_dict(),
+        "callable_boundary": {
+            "crossed": earlier_owner != later_owner,
+            "owner_changed": earlier_owner != later_owner,
+            "earlier_owner": pair.earlier.callable_boundary.as_dict(),
+            "later_owner": pair.later.callable_boundary.as_dict(),
+            "invalidates_guarantee": None,
+        },
+    }
 
 
 @dataclass(frozen=True, slots=True)
