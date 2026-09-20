@@ -143,9 +143,8 @@ _FOCUSED_JEV04_PRESERVATION_CRITERIA = NoulCriteria(
     false="A visible await, callback, external call, mutation, aliasing, or concurrency boundary can invalidate the invariant.",
 )
 _PAIR_TASK_PREFIX = (
-    "Judge only this one bound validation pair and the same value/state relation between its earlier and later "
-    "validation operations. Do not judge any other check or the whole target. Use the complete supplied source "
-    "evidence; the location metadata below identifies the pair and contains no source text."
+    "Judge only the bound earlier/later operations below as one same-value/state relationship. "
+    "Their locations refer to the complete supplied target; do not assess other checks."
 )
 _PAIR_CANDIDATES = frozenset({"jev04-pair-joint", "jev04-pair-decomposed"})
 

@@ -338,11 +338,13 @@ def pair_binding_metadata(pair: ValidationPair) -> dict[str, Any]:
     """
 
     def occurrence_metadata(occurrence: ValidationOccurrence) -> dict[str, Any]:
+        boundary = occurrence.callable_boundary
         return {
-            "occurrence": occurrence.occurrence,
-            "operation_type": occurrence.operation_type,
             "operation_span": occurrence.operation_span.as_dict(),
-            "callable_boundary": occurrence.callable_boundary.as_dict(),
+            "callable_boundary": {
+                "owner_kind": boundary.owner_kind,
+                "depth": boundary.depth,
+            },
         }
 
     earlier = occurrence_metadata(pair.earlier)
@@ -351,19 +353,12 @@ def pair_binding_metadata(pair: ValidationPair) -> dict[str, Any]:
     later_owner = pair.later.callable_boundary.owner_id
     return {
         "pair_id": pair.id,
-        "group_id": pair.group_id,
-        "target_id": pair.target_id,
         "source_path": pair.source_path,
-        "predicate_sha256": pair.predicate_sha256,
         "earlier": earlier,
         "later": later,
         "intervening_span": pair.intervening_span.as_dict(),
         "callable_boundary": {
             "crossed": earlier_owner != later_owner,
-            "owner_changed": earlier_owner != later_owner,
-            "earlier_owner": pair.earlier.callable_boundary.as_dict(),
-            "later_owner": pair.later.callable_boundary.as_dict(),
-            "invalidates_guarantee": None,
         },
     }
 
