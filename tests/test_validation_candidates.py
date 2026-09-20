@@ -41,7 +41,7 @@ def _unit_target(parsed, name: str) -> Target:
 @pytest.mark.parametrize(
     ("filename", "target_name", "raw_predicate", "earlier_lines", "later_lines"),
     [
-        ("acorn.py", "store_record", 'record["version"] < 1', (2, 3), (5, 6)),
+        ("acorn.py", "capture_version", 'record["version"] < 1', (2, 3), (5, 6)),
         ("ash.py", "verify_item", "captured is None", (3, 4), (6, 7)),
         ("beech.py", "accept_value", "not isinstance(value, int)", (2, 3), (6, 7)),
         ("cedar_red.py", "write_record", 'record["version"] < 1', (2, 3), (5, 6)),
