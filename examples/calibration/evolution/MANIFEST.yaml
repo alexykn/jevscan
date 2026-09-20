@@ -1,0 +1,346 @@
+schema_version: 1
+corpus: public-synthetic-development-unaccounted-partial-state-transition
+corpus_revision: 1
+provenance: "synthetic, public development fixtures; adjudications are working review annotations, not independent ground truth"
+source_root: sources
+source_snapshot:
+  algorithm: sha256
+  canonicalization: "sorted relative source filenames, each followed by NUL and raw UTF-8 bytes"
+  digest: 42ca29d2297e1036071a8045521b386ac5205647bb2dc1661e4f28a9a9bc6779
+source_contract:
+  evidence_files_are_neutral: true
+  labels_are_outside_source_root: true
+  one_exact_target_per_case: true
+  translated_designs_share_support_group: true
+  no_provider_calls: true
+  development_only: true
+  validation: "real Tree-sitter parse_source followed by exact target lookup"
+  source_only_policy: "Agree and Disagree labels must follow the supplied owner/file evidence; manifest metadata never supplies an omitted durability, coupling, or atomicity contract."
+  comparison_scope_policy: "A baseline relation at file scope is recorded explicitly in compared_rule_scope and is never attributed to the unit target."
+  live_measurement_policy: "do not treat provisional or adjudicated labels as human ground truth"
+
+dimension:
+  id: unaccounted-partial-state-transition
+  title: unaccounted-partial-state-transition
+  target: unit
+  context: owner
+  label_vocabulary: [Agree, Partial, Disagree]
+  proposition: "Does the target perform semantically coupled persistent state transitions in sequence without accounting for a failure after an earlier effect?"
+  exact_condition: "Agree requires visible coupled durable effects where a later failure can leave the logical state inconsistent, and no atomic transaction, rollback, explicit partial-result contract, or valid progressive/restartable contract accounts for that outcome."
+  criteria:
+    Agree: "The target performs two or more semantically coupled persistent effects, or destroys old durable state before new state is durable, and a later failure can expose an inconsistent transition or a propagated failure after partial commit."
+    Partial: "A sequence of effects is visible, but an omitted helper or resource contract determines whether the effects are atomic or semantically coupled."
+    Disagree: "The target uses one atomic publication, temp/sync/rename, transaction rollback, an explicit partial-result contract, a valid progressive/restartable workflow, or an independent best-effort side effect; no unaccounted coupled partial transition is shown."
+  exclusions:
+    - "A failure in an independent audit or telemetry side effect does not make the primary publication partial."
+    - "A partial result is not a defect when the return value identifies completion and restart state."
+    - "Similar names or sequential calls do not establish coupling or atomicity when the relevant helper/resource contract is omitted."
+
+coverage:
+  total_cases: 22
+  total_support_groups: 15
+  languages: [python, rust, javascript, typescript, perl]
+  partitions:
+    development: 22
+  fixture_classes:
+    true_defect: 9
+    clean_control: 9
+    insufficient_context: 4
+  comparison_buckets:
+    jev05_only: 1
+    jev07_only: 1
+    both_overlap: 1
+    neither: 19
+  true_defect_families:
+    sequential_coupled_persistent_effects: [T01]
+    destructive_before_new_state_durable: [T02]
+    authoritative_state_and_required_bookkeeping: [T03]
+    propagated_error_after_partial_commit: [T01]
+  clean_control_families:
+    complete_local_build_then_atomic_publication: [C01]
+    atomic_temp_sync_rename: [C02]
+    explicit_transaction_and_rollback: [C03]
+    explicit_partial_result_contract: [C04]
+    progressive_restartable_workflow: [C05]
+    independent_best_effort_audit_or_telemetry: [C06]
+    isolated_invariant_fallback: [C07]
+    competing_owner_without_partial_transition: [C08]
+  insufficient_context_families:
+    helper_contract_atomicity: [P01]
+    resource_contract_atomicity: [P02]
+    helper_contract_coupling: [P03]
+    resource_contract_coupling: [P04]
+  support_group_policy: "A support group is one independent mechanism; language translations and near-duplicate counterparts share one group and count once for independent evidence."
+  grouping_review:
+    translation_pairs: [T01, T02, T03, C01]
+    retained_distinctions:
+      T01: "Unhandled and explicitly propagated later failures are one sequential coupled-effect mechanism, not independent support."
+      T03: "Authoritative bookkeeping and the swallowed/file-owner overlap share one state-transition invariant."
+
+cases:
+  - id: evo-001
+    support_group: T01
+    partition: development
+    fixture_class: true_defect
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/copper.py
+    language: python
+    target: {scope: unit, name: apply_change, kind: function}
+    mechanism: sequential_coupled_persistent_effects
+    provisional_label: Agree
+    context_requirements: [source-local Store methods mutate values and history, fail_history and fail_sync expose later failure, no rollback]
+  - id: evo-002
+    support_group: T01
+    partition: development
+    fixture_class: true_defect
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/copper.js
+    language: javascript
+    target: {scope: unit, name: applyChange, kind: function}
+    mechanism: sequential_coupled_persistent_effects
+    provisional_label: Agree
+    context_requirements: [source-local Store methods mutate values and history, failHistory and failSync expose later failure, no rollback]
+  - id: evo-003
+    support_group: T02
+    partition: development
+    fixture_class: true_defect
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/granite.rs
+    language: rust
+    target: {scope: unit, name: replace_entry, kind: function}
+    mechanism: destructive_before_new_state_durable
+    provisional_label: Agree
+    context_requirements: [source-local remove clears present, write and sync can fail before replacement is published, no restoration]
+  - id: evo-004
+    support_group: T02
+    partition: development
+    fixture_class: true_defect
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/granite.ts
+    language: typescript
+    target: {scope: unit, name: replaceEntry, kind: function}
+    mechanism: destructive_before_new_state_durable
+    provisional_label: Agree
+    context_requirements: [source-local remove clears present, write and sync can fail before replacement is published, no restoration]
+  - id: evo-005
+    support_group: T03
+    partition: development
+    fixture_class: true_defect
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/harvest.pl
+    language: perl
+    target: {scope: unit, name: Marker::apply, kind: function}
+    mechanism: authoritative_state_and_required_bookkeeping
+    provisional_label: Agree
+    context_requirements: [source-local Marker methods write current and history, advance_cursor can fail, no rollback]
+  - id: evo-006
+    support_group: T03
+    partition: development
+    fixture_class: true_defect
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/harvest.py
+    language: python
+    target: {scope: unit, name: advance_record, kind: function}
+    mechanism: authoritative_state_and_required_bookkeeping
+    provisional_label: Agree
+    context_requirements: [source-local Ledger methods write current, index, and history, later writes can fail]
+  - id: evo-007
+    support_group: T01
+    partition: development
+    fixture_class: true_defect
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/linen.js
+    language: javascript
+    target: {scope: unit, name: finishEntry, kind: function}
+    mechanism: propagated_error_after_partial_commit
+    provisional_label: Agree
+    context_requirements: [source-local Store commits primary and index before a failing history commit, target rethrows, no rollback]
+  - id: evo-008
+    support_group: T01
+    partition: development
+    fixture_class: true_defect
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/linen.rs
+    language: rust
+    target: {scope: unit, name: finish_entry, kind: function}
+    mechanism: propagated_error_after_partial_commit
+    provisional_label: Agree
+    context_requirements: [source-local Store commits primary and index before a failing history commit, Result error propagates, no rollback]
+  - id: evo-009
+    support_group: C01
+    partition: development
+    fixture_class: clean_control
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/marble.ts
+    language: typescript
+    target: {scope: unit, name: publishBatch, kind: function}
+    mechanism: complete_local_build_then_atomic_publication
+    provisional_label: Disagree
+    context_requirements: [source-local toView builds values, Writer.publish assigns published once after the complete batch is built]
+  - id: evo-010
+    support_group: C01
+    partition: development
+    fixture_class: clean_control
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/marble.rs
+    language: rust
+    target: {scope: unit, name: publish_batch, kind: function}
+    mechanism: complete_local_build_then_atomic_publication
+    provisional_label: Disagree
+    context_requirements: [source-local to_view builds values, Writer.publish assigns published once after the complete batch is built]
+  - id: evo-011
+    support_group: C02
+    partition: development
+    fixture_class: clean_control
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/needle.py
+    language: python
+    target: {scope: unit, name: publish, kind: function}
+    mechanism: atomic_temp_sync_rename
+    provisional_label: Disagree
+    context_requirements: [temporary is not the live path, fsync completes before replace, replace is atomic]
+  - id: evo-012
+    support_group: C03
+    partition: development
+    fixture_class: clean_control
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/opal.js
+    language: javascript
+    target: {scope: unit, name: applyTransaction, kind: function}
+    mechanism: explicit_transaction_and_rollback
+    provisional_label: Disagree
+    context_requirements: [source-local Transaction stages writes, commit makes one published assignment, rollback clears staged writes]
+  - id: evo-013
+    support_group: C04
+    partition: development
+    fixture_class: clean_control
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/pebble.pl
+    language: perl
+    target: {scope: unit, name: Batch::convert, kind: function}
+    mechanism: explicit_partial_result_contract
+    provisional_label: Disagree
+    context_requirements: [returned complete flag and next_index are the caller contract]
+  - id: evo-014
+    support_group: C05
+    partition: development
+    fixture_class: clean_control
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/quartz.ts
+    language: typescript
+    target: {scope: unit, name: resume, kind: function}
+    mechanism: progressive_restartable_workflow
+    provisional_label: Disagree
+    context_requirements: [source-local Checkpoint updates cursor and completed ids after each item, restart begins at that cursor]
+  - id: evo-015
+    support_group: C06
+    partition: development
+    fixture_class: clean_control
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/ripple.py
+    language: python
+    target: {scope: unit, name: publish, kind: function}
+    mechanism: independent_best_effort_audit_or_telemetry
+    provisional_label: Disagree
+    context_requirements: [source-local Store.write mutates entries, Audit.record has an independent fail path and does not mutate Store]
+  - id: evo-016
+    support_group: C07
+    partition: development
+    fixture_class: clean_control
+    comparison_bucket: jev05_only
+    baseline_comparison: {JEV05: Agree, JEV07: Disagree}
+    source: sources/satin.py
+    language: python
+    target: {scope: unit, name: read_value, kind: function}
+    mechanism: isolated_invariant_fallback
+    provisional_label: Disagree
+    context_requirements: [the fallback concerns one value, no persistent transition or coupled effect is present]
+  - id: evo-017
+    support_group: C08
+    partition: development
+    fixture_class: clean_control
+    comparison_bucket: jev07_only
+    baseline_comparison: {JEV05: Disagree, JEV07: Agree}
+    source: sources/thicket.pl
+    language: perl
+    target: {scope: unit, name: Mark::set_first, kind: function}
+    mechanism: competing_owner_without_partial_transition
+    provisional_label: Disagree
+    compared_rule_scope: {JEV07: file}
+    context_requirements: [set_first and set_second are competing owners, each target operation has one visible assignment]
+  - id: evo-018
+    support_group: T03
+    partition: development
+    fixture_class: true_defect
+    comparison_bucket: both_overlap
+    baseline_comparison: {JEV05: Agree, JEV07: Agree}
+    source: sources/umber.ts
+    language: typescript
+    target: {scope: unit, name: applyEntry, kind: function}
+    mechanism: coupled_transition_with_swallowed_partial_failure
+    provisional_label: Agree
+    compared_rule_scope: {JEV07: file}
+    context_requirements: [source-local State saves publishedCurrent before a failing publishedHistory save, false omits partial state, reviseEntry is a second current owner]
+  - id: evo-019
+    support_group: P01
+    partition: development
+    fixture_class: insufficient_context
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/velvet.py
+    language: python
+    target: {scope: unit, name: apply_change, kind: function}
+    mechanism: helper_contract_atomicity
+    provisional_label: Partial
+    context_requirements: [write, update_index, and finish implementations are omitted; their atomicity and coupling decide the outcome]
+  - id: evo-020
+    support_group: P02
+    partition: development
+    fixture_class: insufficient_context
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/walnut.rs
+    language: rust
+    target: {scope: unit, name: move_entry, kind: function}
+    mechanism: resource_contract_atomicity
+    provisional_label: Partial
+    context_requirements: [Resource may provide a transaction around remove and insert, or may expose separate visible operations]
+  - id: evo-021
+    support_group: P03
+    partition: development
+    fixture_class: insufficient_context
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/xenon.js
+    language: javascript
+    target: {scope: unit, name: applyChange, kind: function}
+    mechanism: helper_contract_coupling
+    provisional_label: Partial
+    context_requirements: [publish and record implementations are omitted; whether they are one logical shared transition is unknown]
+  - id: evo-022
+    support_group: P04
+    partition: development
+    fixture_class: insufficient_context
+    comparison_bucket: neither
+    baseline_comparison: {JEV05: Disagree, JEV07: Disagree}
+    source: sources/yarrow.pl
+    language: perl
+    target: {scope: unit, name: Trail::advance, kind: function}
+    mechanism: resource_contract_coupling
+    provisional_label: Partial
+    context_requirements: [replace and advance implementations are omitted; their relationship and atomicity are unknown]
