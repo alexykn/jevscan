@@ -5,21 +5,28 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
+import httpx
 import pytest
 import yaml
 
 from calibration.focused_experiment import (
     FOCUSED_MANIFEST,
+    MODEL,
+    _metrics_for_records,
     candidate_documents,
+    capture_manifest,
     freeze_candidates,
     load_manifest,
     plan_manifest,
+    replay_metrics,
     source_snapshot,
     write_candidate_config,
 )
 from jevscan.core.config import load_config
 from jevscan.core.rules import ChoiceQuestion, NoulQuestion, ScoreQuestion
+from jevscan.core.semantic_calibration import load_cases
 
 pytestmark = [pytest.mark.parser, pytest.mark.usefixtures("grammar_runtime")]
 
@@ -80,9 +87,18 @@ def test_candidate_definitions_preserve_baselines_and_use_mixed_question_types()
     assert documents["FOCUS_JEV01_BASELINE"]["question"] == packaged["JEV01"].question.model_dump(mode="json")
     assert documents["FOCUS_JEV02_SCORE"]["question"] == packaged["JEV02"].question.model_dump(mode="json")
     assert documents["FOCUS_JEV04_BASELINE"]["question"] == packaged["JEV04"].question.model_dump(mode="json")
+    assert documents["FOCUS_JEV02_PRESENCE"]["question"]["criteria"] == {
+        "true": "The target contains a concrete control-flow structure that obscures an important execution transition.",
+        "false": "The target does not show that traceability problem; local guards, cohesive lifecycles, and immutable captures do not qualify.",
+    }
     assert documents["FOCUS_JEV04_JOINT"]["question"]["type"] == "choice"
     assert documents["FOCUS_JEV04_DECOMPOSED_GUARANTEE"]["question"]["type"] == "noul"
     assert documents["FOCUS_JEV04_DECOMPOSED_PRESERVATION"]["question"]["type"] == "noul"
+    assert documents["FOCUS_JEV04_DECOMPOSED_GUARANTEE"]["question"]["criteria"] != packaged["JEV01"].question.criteria
+    assert (
+        documents["FOCUS_JEV04_DECOMPOSED_PRESERVATION"]["question"]["criteria"] != packaged["JEV01"].question.criteria
+    )
+    assert documents["FOCUS_JEV02_PRESENCE"]["report"] == packaged["JEV01"].report.model_dump(mode="json")
     assert isinstance(packaged["JEV01"].question, NoulQuestion)
     assert isinstance(packaged["JEV02"].question, ScoreQuestion)
     assert isinstance(packaged["JEV04"].question, ChoiceQuestion)
@@ -179,3 +195,233 @@ def test_development_references_preserve_score_and_optional_documents(tmp_path: 
 def test_source_hash_is_independent_of_manifest_annotations() -> None:
     manifest = load_manifest()
     assert manifest["source_snapshot"]["digest"] == source_snapshot(SOURCE_ROOT)
+
+
+def _write_freeze(path: Path, candidates: list[str]) -> Path:
+    path.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "phase": "frozen",
+            "manifest_sha256": hashlib.sha256(FOCUSED_MANIFEST.read_bytes()).hexdigest(),
+            "candidates": candidates,
+        }),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _mock_answer(question: dict) -> dict:
+    if question["type"] == "noul":
+        return {"type": "noul", "noul": 0.8}
+    if question["type"] == "score":
+        return {
+            "type": "score",
+            "score": 2,
+            "confidence": 0.8,
+            "probabilities": {"0": 0.05, "1": 0.1, "2": 0.8, "3": 0.05},
+        }
+    labels = list(question["criteria"])
+    return {
+        "type": "choice",
+        "choice": labels[0],
+        "confidence": 0.8,
+        "probabilities": {label: 0.8 if index == 0 else 0.1 for index, label in enumerate(labels)},
+    }
+
+
+def test_capture_batches_mixed_questions_and_deduplicates_shared_score(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    freeze_path = _write_freeze(tmp_path / "freeze.json", ["jev02-baseline", "jev02-presence-gated"])
+    requests: list[dict] = []
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "model": MODEL,
+                "usage": {"input_tokens": 10, "output_tokens": 3},
+                "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+            },
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key-not-persisted")
+    output = tmp_path / "cases.jsonl"
+    summary = capture_manifest(
+        FOCUSED_MANIFEST,
+        phase="heldout",
+        config_path=config_path,
+        freeze_path=freeze_path,
+        output=output,
+        ledger_path=tmp_path / "ledger.json",
+        transport=httpx.MockTransport(transport),
+    )
+    cases = load_cases(output)
+    metrics = replay_metrics(output)
+    receipts = json.loads((tmp_path / "cases.receipts.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert summary["model"] == MODEL
+    assert len(cases) == 18
+    assert metrics["jev02-baseline"]["cases"] == 6
+    assert metrics["usage"]["reported_input_tokens"] == 60
+    assert metrics["usage"]["reported_output_tokens"] == 18
+    assert len(requests) == 6
+    assert all(
+        {question["type"] for question in payload["questions"].values()} == {"score", "noul"} for payload in requests
+    )
+    assert receipts["question_count"] == 2
+    assert receipts["parent_opportunity_count"] == 3
+    assert {case.provenance["candidate"] for case in cases} == {
+        "jev02-baseline",
+        "jev02-presence-gated",
+    }
+    assert "test-key-not-persisted" not in (tmp_path / "ledger.json").read_text(encoding="utf-8")
+
+
+def test_capture_preserves_missing_usage_and_retries_in_ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    freeze_path = _write_freeze(tmp_path / "freeze.json", ["jev01-baseline"])
+    attempts = 0
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(500)
+        payload = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": MODEL,
+                "usage": {},
+                "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+            },
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    ledger_path = tmp_path / "ledger.json"
+    output = tmp_path / "cases.jsonl"
+    capture_manifest(
+        FOCUSED_MANIFEST,
+        phase="heldout",
+        config_path=config_path,
+        freeze_path=freeze_path,
+        output=output,
+        ledger_path=ledger_path,
+        transport=httpx.MockTransport(transport),
+    )
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    first_receipt = ledger["invocations"][0]["receipts"][0]
+    assert attempts == 7
+    assert first_receipt["attempts"] == 2
+    assert first_receipt["retry_attempts"] == 1
+    assert first_receipt["reported_input_tokens"] is None
+    assert first_receipt["reported_output_tokens"] is None
+    assert first_receipt["attempts_reserved_input_tokens"] > first_receipt["request_body_reserved_input_tokens"]
+    assert all(case.provenance["usage"]["reported_input_tokens"] is None for case in load_cases(output))
+
+
+def test_capture_batches_choice_and_noul_children(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    freeze_path = _write_freeze(tmp_path / "freeze.json", ["jev04-baseline", "jev04-focused-decomposed"])
+    requests: list[dict] = []
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "model": MODEL,
+                "usage": {"input_tokens": 10, "output_tokens": 3},
+                "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+            },
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    output = tmp_path / "cases.jsonl"
+    capture_manifest(
+        FOCUSED_MANIFEST,
+        phase="heldout",
+        config_path=config_path,
+        freeze_path=freeze_path,
+        output=output,
+        ledger_path=tmp_path / "ledger.json",
+        transport=httpx.MockTransport(transport),
+    )
+    cases = load_cases(output)
+    assert len(cases) == 18
+    assert len(requests) == 6
+    assert all(
+        {question["type"] for question in payload["questions"].values()} == {"choice", "noul"} for payload in requests
+    )
+    assert {case.provenance["candidate"] for case in cases} == {
+        "jev04-baseline",
+        "jev04-focused-decomposed",
+    }
+
+
+def test_capture_rejects_wrong_model_and_cumulative_ledger_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    freeze_path = _write_freeze(tmp_path / "freeze.json", ["jev01-baseline"])
+    calls = 0
+
+    async def wrong_model(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        payload = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": "jev-latest",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+            },
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    ledger_path = tmp_path / "ledger.json"
+    with pytest.raises(RuntimeError, match="pinned"):
+        capture_manifest(
+            FOCUSED_MANIFEST,
+            phase="heldout",
+            config_path=config_path,
+            freeze_path=freeze_path,
+            output=tmp_path / "wrong.jsonl",
+            ledger_path=ledger_path,
+            transport=httpx.MockTransport(wrong_model),
+        )
+    assert calls == 1
+    failed = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert failed["invocations"][0]["status"] == "failed"
+    failed["reserved_cost"] = 0.1
+    ledger_path.write_text(json.dumps(failed), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="cumulative cap"):
+        capture_manifest(
+            FOCUSED_MANIFEST,
+            phase="heldout",
+            config_path=config_path,
+            freeze_path=freeze_path,
+            output=tmp_path / "capped.jsonl",
+            ledger_path=ledger_path,
+            transport=httpx.MockTransport(wrong_model),
+        )
+
+
+def test_missing_finding_is_not_exact_target_attribution() -> None:
+    target = object()
+    record = SimpleNamespace(
+        signal=True,
+        case=SimpleNamespace(
+            case_id="missing",
+            rule_id="JEV01",
+            label="Agree",
+            target=target,
+            provenance={"source_group": "g"},
+        ),
+        assessment=SimpleNamespace(finding=None, tentative_finding=None),
+    )
+    metrics = _metrics_for_records([record])
+    assert metrics["target_attribution"] == {"exact": 0, "signals": 1, "fraction": 0.0}

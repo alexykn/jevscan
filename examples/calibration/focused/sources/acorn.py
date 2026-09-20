@@ -1,7 +1,7 @@
-def store_record(record, store):
+def capture_version(record):
     if record["version"] < 1:
         raise ValueError("version")
-    store.write(record)
+    version = record["version"]
     if record["version"] < 1:
         raise ValueError("version")
-    return record["version"]
+    return version

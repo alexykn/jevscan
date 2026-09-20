@@ -6,7 +6,7 @@ source_root: sources
 source_snapshot:
   algorithm: sha256
   canonicalization: "sorted relative source filenames, each followed by NUL and raw UTF-8 bytes"
-  digest: fa46b4dbf9db761264ab5d67961e5653aa3a818a368f50f1698adccffc100056
+  digest: 20810613ebdea6743a47417492743c45ad3a19893156e440eb5cf851ec41a837
 source_contract:
   evidence_files_are_neutral: true
   labels_are_outside_source_root: true
@@ -27,7 +27,7 @@ coverage:
     JEV01: {positive: 3, negative: 3, total: 6}
     JEV02: {positive: 3, negative: 3, total: 6}
     JEV04: {positive: 3, negative: 3, total: 6}
-  split_assignment: "all six fresh groups per rule are heldout; development uses references to already reviewed public expanded cases"
+  split_assignment: "all six fresh groups per rule are heldout; development imports every independently adjudicated JEV01/JEV02/JEV04 expanded case"
   feature_coverage:
     - callback and await boundary
     - immutable captured values
@@ -126,6 +126,13 @@ development_references:
       later: {start_line: 23, end_line: 25}
       intervening: {start_line: 21, end_line: 22}
 
+development_import:
+  source: calibration/expanded-cases.jsonl
+  source_root: examples/calibration/expanded/sources
+  source_commit: b13bb159c62d688b6248773b2e858fa3c02cf98
+  rules: [JEV01, JEV02, JEV04]
+  treat_all_as_development: true
+
 heldout:
   - id: focused-jev01-h01
     source: sources/alder.py
@@ -175,6 +182,7 @@ heldout:
     group: JEV02-H01
     rule: JEV02
     label: positive
+    expected_score: 3
     target: {scope: unit, name: route_message, kind: function}
     features: [callback_boundary, await_boundary, obscure_control_flow]
   - id: focused-jev02-h02
@@ -182,13 +190,16 @@ heldout:
     group: JEV02-H02
     rule: JEV02
     label: positive
+    expected_score: 2
     target: {scope: unit, name: advance_state, kind: function}
+    note: "Blind review replaced the provisional level-1 annotation with a distinct nested state-transition case; expected score is 2."
     features: [obscure_control_flow, interleaved_responsibilities]
   - id: focused-jev02-h03
     source: sources/maple.py
     group: JEV02-H03
     rule: JEV02
     label: positive
+    expected_score: 2
     target: {scope: unit, name: drain_queue, kind: function}
     features: [obscure_control_flow]
   - id: focused-jev02-h04
@@ -196,6 +207,7 @@ heldout:
     group: JEV02-H04
     rule: JEV02
     label: negative
+    expected_score: 0
     target: {scope: unit, name: check_ready, kind: function}
     features: [merely_local_control_flow]
   - id: focused-jev02-h05
@@ -203,6 +215,7 @@ heldout:
     group: JEV02-H05
     rule: JEV02
     label: negative
+    expected_score: 0
     target: {scope: unit, name: run_steps, kind: function}
     features: [cohesive_lifecycle, merely_local_control_flow]
   - id: focused-jev02-h06
@@ -210,6 +223,7 @@ heldout:
     group: JEV02-H06
     rule: JEV02
     label: negative
+    expected_score: 0
     target: {scope: unit, name: make_filter, kind: function}
     features: [immutable_captured_value, merely_local_control_flow]
 
@@ -218,12 +232,13 @@ heldout:
     group: JEV04-H01
     rule: JEV04
     label: positive
-    target: {scope: unit, name: store_record, kind: function}
+    target: {scope: unit, name: capture_version, kind: function}
     features: [redundant_validation]
     validation_pair:
       earlier: {start_line: 2, end_line: 3}
       later: {start_line: 5, end_line: 6}
       intervening: {start_line: 4, end_line: 4}
+    note: "Blind source review corrected the provisional target from store_record; this neutral local-only capture_version target is development evidence."
   - id: focused-jev04-h02
     source: sources/ash.py
     group: JEV04-H02

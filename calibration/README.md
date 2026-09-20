@@ -60,9 +60,11 @@ adjudication is used when measuring that rule.
   from the same owner between development and held-out sets.
 - Compare candidates on identical evidence and record exact source, question,
   prompt, and model identities. Never put adjudicated labels in model input.
-- Pin live experiments to `jev-1.13.0`. The task-wide live spending ceiling is
-  USD 1.00, using USD 0.042 per million input tokens and free output tokens.
-  Account for all attempts, including unsuccessful requests and retries.
+- Pin live experiments to `jev-1.13.0`. The focused-question capture path is
+  capped cumulatively at USD 0.10, using USD 0.042 per million input tokens and
+  free output tokens; other historical utilities retain their own explicit
+  limits. Account for all attempts, including unsuccessful requests and
+  retries.
 - Keep private source, raw private responses, and private manifests outside
   committed artifacts. Public summaries may report aggregate results without
   disclosing private source.
