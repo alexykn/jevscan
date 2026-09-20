@@ -1,5 +1,11 @@
 # Focused-question experiment plan
 
+> This predeclared plan is retained as an experiment record. The completed
+> development results are in
+> [FOCUSED_QUESTIONS_RESULTS.md](FOCUSED_QUESTIONS_RESULTS.md). No candidate
+> passed, the held-out split was not executed, and the one-off runner was
+> removed rather than retained as a second calibration framework.
+
 This is the predeclared plan for the repository-only focused-question
 experiment. It records the procedure and candidate definitions before any new
 provider measurement. It is not a result report, and the fixture annotations

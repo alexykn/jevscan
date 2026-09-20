@@ -1,4 +1,5 @@
 {
+  "aggregate_scope": "Promotion-relevant candidate aggregates; diagnostic child results are documented in FOCUSED_QUESTIONS_RESULTS.md.",
   "decision": {
     "heldout_executed": false,
     "packaged_rules_changed": false,
