@@ -12,10 +12,12 @@ callback and `await` boundaries, immutable captured values, cohesive lifecycle
 orchestration, interleaved responsibilities, obscure and merely local control
 flow, and redundant versus boundary-justified validation.
 
-The smaller development set is represented by references to already reviewed
-public expanded cases. In particular, `quarry.ts` and `summit.js` are
-development-only diagnostics despite their old expanded-corpus partition; they
-are not fresh held-out evidence for this experiment.
+Development imports every independently adjudicated JEV01, JEV02, and JEV04
+case from `calibration/expanded-cases.jsonl`, including the reviewed
+`quarry.ts` and `summit.js` snapshots. All imported cases are development-only
+metadata; their stored answers are never reused for focused candidate variants.
+Additional documents that are not already part of production evidence are
+rejected rather than recorded as if supplied.
 
 Generate ordinary custom project rules and make an offline plan from the
 repository root:
@@ -38,7 +40,21 @@ uv run python calibration/focused_experiment.py plan \
   --output .jevscan-calibration/focused-heldout-plan.json
 ```
 
-The utility never sends a request and records both reserved and actual input
-token fields. Captured cases are replayed through the production assessment
-contract by the `metrics` command; no provider answer is asserted by corpus
-tests.
+Planning and replay are offline. A live capture is explicit, requires
+`TYPESAFE_API_KEY`, and is pinned to `jev-1.13.0`:
+
+```bash
+uv run python calibration/focused_experiment.py capture \
+  --phase development \
+  --config .jevscan-calibration/focused.yaml \
+  --output .jevscan-calibration/focused-dev.jsonl \
+  --ledger .jevscan-calibration/focused-ledger.json
+```
+
+The capture reserves every request and retry plus a 25% localization/follow-up
+margin against the cumulative USD 0.10 cap before dispatch. Repeated
+invocations use the same ledger. It records planned estimates, body
+reservations, provider usage when reported, model and identity hashes, and
+client attempt counters. Tests use mock transports only and never contact a
+provider. Captured cases are replayed through the production assessment
+contract by the `metrics` command.

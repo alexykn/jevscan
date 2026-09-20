@@ -1,8 +1,18 @@
-def sync_entry(entry, cache, audit, send):
-    value = entry["value"]
-    if value < 0:
-        raise ValueError("range")
-    cache.put(entry["key"], value)
-    audit.write(entry["key"], value)
-    send(entry["key"])
-    return value
+def sync_entry(entry, account, ledger, notify):
+    if entry["role"] == "owner":
+        account["access"] = "full"
+        ledger.append(("access", entry["user"]))
+    elif entry["role"] == "viewer":
+        account["access"] = "read"
+        if entry["expired"]:
+            account["suspended"] = True
+            notify("expired")
+    if entry["amount"] > 0:
+        account["balance"] -= entry["amount"]
+        ledger.append(("charge", entry["amount"]))
+        if account["balance"] < 0:
+            notify("payment-failed")
+    elif entry["cancel"]:
+        account["status"] = "cancelled"
+        notify("cancelled")
+    return account

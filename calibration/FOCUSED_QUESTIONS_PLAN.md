@@ -68,7 +68,7 @@ the AND result is considered an attributable JEV04 judgment.
 | Candidate | Ordinary rule IDs | Definition |
 | --- | --- | --- |
 | `jev02-baseline` | `FOCUS_JEV02_SCORE` | Packaged JEV02 Score question and report policy unchanged. The score remains an extent signal; expected scores are not reinterpreted as a binary category. |
-| `jev02-presence-gated` | `FOCUS_JEV02_SCORE`, `FOCUS_JEV02_PRESENCE` | Retains the existing Score child as the extent signal and adds a separate Noul gate: “Is there a concrete control-flow structure in the target that obscures an important execution transition? Answer true only for an actual traceability problem. A merely local guard, one uncomplicated nesting level, a cohesive lifecycle, or an immutable captured value is false; the separate score question measures extent.” A candidate review signal requires the explicit presence gate and the existing Score assessment; no score-to-category conversion is used. |
+| `jev02-presence-gated` | `FOCUS_JEV02_SCORE`, `FOCUS_JEV02_PRESENCE` | Retains the existing Score child as the extent signal and adds a separate Noul gate: “Is there a concrete control-flow structure in the target that obscures an important execution transition? Answer true only for an actual traceability problem. A merely local guard, one uncomplicated nesting level, a cohesive lifecycle, or an immutable captured value is false; the separate score question measures extent.” The gate has explicit true/false criteria matching that task and intentionally reuses the packaged JEV01 Noul report thresholds (warning at minimum probability `0.5`, error at `0.9`) because it is a binary JEV01-shaped review signal. A candidate review signal requires the explicit presence gate and the existing Score assessment; no score-to-category conversion is used. |
 
 ## Corpus and split
 
@@ -99,6 +99,11 @@ captured values, cohesive lifecycle orchestration, truly interleaved
 responsibilities, obscure versus merely local control flow, and redundant
 versus boundary-justified validation. These are controlled synthetic
 diagnostics, not a population sample.
+
+The focused JEV02 held-out annotations retain the reviewed expected levels:
+Hazel `3`, Juniper `2`, Maple `2`, Oak `0`, Pine `0`, and Spruce `0`. JEV02
+positive/negative coverage is defined by expected level `>= 2`, not by a
+generic label; the presence child is expected true only for those same levels.
 
 ## Metrics
 
