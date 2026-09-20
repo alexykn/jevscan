@@ -77,6 +77,7 @@ _CANDIDATE_RULES: dict[str, tuple[str, ...]] = {
         "FOCUS_JEV04_DECOMPOSED_PRESERVATION",
     ),
     "jev04-pair-joint": ("FOCUS_JEV04_PAIR_JOINT",),
+    "jev04-pair-preservation": ("FOCUS_JEV04_PAIR_PRESERVATION",),
     "jev04-pair-decomposed": (
         "FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE",
         "FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION",
@@ -93,6 +94,7 @@ _RULE_BASES = {
     "FOCUS_JEV04_DECOMPOSED_GUARANTEE": "JEV04",
     "FOCUS_JEV04_DECOMPOSED_PRESERVATION": "JEV04",
     "FOCUS_JEV04_PAIR_JOINT": "JEV04",
+    "FOCUS_JEV04_PAIR_PRESERVATION": "JEV04",
     "FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE": "JEV04",
     "FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION": "JEV04",
 }
@@ -124,6 +126,14 @@ _FOCUSED_JEV04_JOINT = (
     "immutable captured values and sequential cohesive lifecycle phases do not create a boundary. Choose "
     "insufficient_context only when the repeated check is visible but the missing guarantee determines the result."
 )
+_FOCUSED_JEV04_PAIR_PRESERVATION = (
+    f"{_FOCUSED_JEV04_JOINT} "
+    "A callback, closure, or surrounding call does not by itself invalidate the pair when the later predicate reads "
+    "a captured primitive `const`/immutable value that is never reassigned. Classify it demonstrably_redundant unless "
+    "the supplied code changes, aliases, or can replace the checked value/state. A callback that mutates the checked "
+    "value or state remains invalidating. Do not make filename- or language-specific exemptions; retain the exact "
+    "same-value/state binding and use only the supplied code."
+)
 _FOCUSED_JEV04_GUARANTEE = (
     "Does the target visibly establish the same validation invariant before the later validation? Answer true only "
     "when both validation operations and their equivalent predicate or value invariant are present. Answer false "
@@ -146,7 +156,8 @@ _PAIR_TASK_PREFIX = (
     "Judge only the bound earlier/later operations below as one same-value/state relationship. "
     "Their locations refer to the complete supplied target; do not assess other checks."
 )
-_PAIR_CANDIDATES = frozenset({"jev04-pair-joint", "jev04-pair-decomposed"})
+_PAIR_CANDIDATES = frozenset({"jev04-pair-joint", "jev04-pair-preservation", "jev04-pair-decomposed"})
+_PAIR_FALLBACK_CANDIDATES = frozenset({"jev04-pair-joint", "jev04-pair-preservation"})
 
 
 def candidate_rule_ids(candidate: str) -> tuple[str, ...]:
@@ -230,6 +241,11 @@ def candidate_documents() -> dict[str, dict[str, Any]]:
         ),
         "FOCUS_JEV04_PAIR_JOINT": _rule_document(
             rules["JEV04"], title="focused-jev04-pair-joint", instructions=_FOCUSED_JEV04_JOINT
+        ),
+        "FOCUS_JEV04_PAIR_PRESERVATION": _rule_document(
+            rules["JEV04"],
+            title="focused-jev04-pair-preservation",
+            instructions=_FOCUSED_JEV04_PAIR_PRESERVATION,
         ),
         "FOCUS_JEV04_DECOMPOSED_GUARANTEE": noul_rule(
             rules["JEV04"],
@@ -1791,11 +1807,15 @@ def replay_metrics(cases_path: Path) -> dict[str, Any]:
     cases = load_cases(cases_path)
     result: dict[str, Any] = {"usage": _usage_metrics(cases)}
     for candidate, rule_ids in _CANDIDATE_RULES.items():
-        if candidate == "jev04-pair-joint":
+        if candidate in _PAIR_FALLBACK_CANDIDATES:
             pair_records = _metric_records(cases, rule_ids, candidate)
             fallback_records = _metric_records(cases, ("FOCUS_JEV04_BASELINE",), "jev04-baseline")
             result[candidate] = {
-                "composition": "pair-bound focused joint signal with deployed whole-target JEV04 fallback for ineligible cases",
+                "composition": (
+                    "pair-bound focused preservation signal with deployed whole-target JEV04 fallback for ineligible cases"
+                    if candidate == "jev04-pair-preservation"
+                    else "pair-bound focused joint signal with deployed whole-target JEV04 fallback for ineligible cases"
+                ),
                 "eligible": _metrics_for_records(pair_records),
                 "combined": _combined_pair_metrics(pair_records, fallback_records),
             }

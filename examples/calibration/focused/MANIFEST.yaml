@@ -54,6 +54,7 @@ rules:
       - jev04-focused-joint
       - jev04-focused-decomposed
       - jev04-pair-joint
+      - jev04-pair-preservation
       - jev04-pair-decomposed
 
 development_references:

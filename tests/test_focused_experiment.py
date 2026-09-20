@@ -18,6 +18,7 @@ from calibration.focused_experiment import (
     _metrics_for_records,
     _pair_binding,
     candidate_documents,
+    candidate_rule_ids,
     capture_manifest,
     freeze_candidates,
     load_manifest,
@@ -134,6 +135,7 @@ def test_pair_candidate_definitions_have_stable_ordinary_child_rules() -> None:
     documents = candidate_documents()
 
     assert documents["FOCUS_JEV04_PAIR_JOINT"]["question"]["type"] == "choice"
+    assert documents["FOCUS_JEV04_PAIR_PRESERVATION"]["question"]["type"] == "choice"
     assert documents["FOCUS_JEV04_PAIR_DECOMPOSED_GUARANTEE"]["question"]["type"] == "noul"
     assert documents["FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION"]["question"]["type"] == "noul"
     assert (
@@ -144,6 +146,27 @@ def test_pair_candidate_definitions_have_stable_ordinary_child_rules() -> None:
         documents["FOCUS_JEV04_PAIR_DECOMPOSED_PRESERVATION"]["report"]
         == documents["FOCUS_JEV04_DECOMPOSED_PRESERVATION"]["report"]
     )
+
+
+def test_pair_preservation_emits_distinct_identity_and_packaged_choice_report() -> None:
+    documents = candidate_documents()
+    packaged = load_config([], cwd=PROJECT_ROOT).config.rules["JEV04"]
+    preservation = documents["FOCUS_JEV04_PAIR_PRESERVATION"]
+    joint = documents["FOCUS_JEV04_PAIR_JOINT"]
+
+    assert candidate_rule_ids("jev04-pair-preservation") == ("FOCUS_JEV04_PAIR_PRESERVATION",)
+    assert preservation["title"] == "focused-jev04-pair-preservation"
+    assert preservation["question"]["type"] == "choice"
+    assert preservation["question"]["criteria"] == packaged.question.model_dump(mode="json")["criteria"]
+    assert preservation["report"] == packaged.report.model_dump(mode="json")
+    assert preservation["question"]["instructions"] != joint["question"]["instructions"]
+    for phrase in (
+        "callback, closure, or surrounding call does not by itself invalidate the pair",
+        "captured primitive `const`/immutable value that is never reassigned",
+        "changes, aliases, or can replace the checked value/state",
+        "callback that mutates the checked value or state remains invalidating",
+    ):
+        assert phrase in preservation["question"]["instructions"]
 
 
 def test_pair_plan_binds_quarry_and_summit_without_changing_target_or_evidence(tmp_path: Path) -> None:
@@ -193,6 +216,48 @@ def test_pair_plan_binds_quarry_and_summit_without_changing_target_or_evidence(t
     assert quarry["earlier"]["operation_span"]["start_line"] == 3
     assert quarry["later"]["operation_span"]["start_line"] == 7
     summit = pair_by_case["expanded:e048"]["pair_binding"]["pair"]
+    assert summit["callable_boundary"]["crossed"] is True
+    assert summit["later"]["callable_boundary"]["owner_kind"] == "closure"
+
+
+def test_pair_preservation_plan_keeps_exact_binding_and_records_fallback(tmp_path: Path) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+    baseline = plan_manifest(
+        CORPUS / "MANIFEST.yaml",
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-baseline"],
+    )
+    preservation = plan_manifest(
+        CORPUS / "MANIFEST.yaml",
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-pair-preservation"],
+    )
+    baseline_by_case = {record["case_id"]: record for record in baseline["cases"]}
+    preservation_by_case = {record["case_id"]: record for record in preservation["cases"]}
+
+    assert preservation["selected_candidates"] == ["jev04-pair-preservation"]
+    assert preservation["accounting"]["whole_target_fallbacks"] == 4
+    assert sum(record["question_id"] is not None for record in preservation["cases"]) == 8
+    for case_id, record in preservation_by_case.items():
+        assert record["rule_id"] == "FOCUS_JEV04_PAIR_PRESERVATION"
+        assert record["target"] == baseline_by_case[case_id]["target"]
+        assert record["evidence_sha256"] == baseline_by_case[case_id]["evidence_sha256"]
+        binding = record["pair_binding"]
+        assert binding["candidate"] == "jev04-pair-preservation"
+        if binding["status"] == "whole_target_fallback":
+            assert record["question_id"] is None
+            assert binding["reason"]
+        else:
+            assert binding["status"] == "bound"
+            assert record["question_id"] is not None
+            pair = binding["pair"]
+            assert "intervening_bytes" not in json.dumps(binding)
+            assert pair["source_path"] == record["target"]["path"]
+            assert pair["earlier"]["operation_span"]["start_byte"] < pair["later"]["operation_span"]["start_byte"]
+
+    summit = preservation_by_case["expanded:e048"]["pair_binding"]["pair"]
     assert summit["callable_boundary"]["crossed"] is True
     assert summit["later"]["callable_boundary"]["owner_kind"] == "closure"
 
@@ -562,6 +627,46 @@ def test_pair_metrics_combine_only_deployed_baseline_fallback_records(
     )
     combined = replay_metrics(output)["jev04-pair-joint"]["combined"]
 
+    assert combined["eligible_pair_cases"] == 8
+    assert combined["whole_target_fallback_cases"] == 4
+    assert combined["fallback_records_available"] is True
+    assert combined["missing_fallback_cases"] == []
+    assert combined["complete"] is True
+    assert combined["metrics"]["cases"] == 12
+
+
+def test_pair_preservation_metrics_use_deployed_whole_target_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = write_candidate_config(tmp_path / "focused.yaml")
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": MODEL,
+                "usage": {"input_tokens": 10, "output_tokens": 3},
+                "answers": {name: _mock_answer(question) for name, question in payload["questions"].items()},
+            },
+        )
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
+    output = tmp_path / "preservation-combined.jsonl"
+    capture_manifest(
+        FOCUSED_MANIFEST,
+        phase="development",
+        config_path=config_path,
+        candidates=["jev04-baseline", "jev04-pair-preservation"],
+        output=output,
+        ledger_path=tmp_path / "ledger.json",
+        transport=httpx.MockTransport(transport),
+    )
+    candidate_metrics = replay_metrics(output)["jev04-pair-preservation"]
+    combined = candidate_metrics["combined"]
+
+    assert candidate_metrics["composition"].startswith("pair-bound focused preservation signal")
+    assert candidate_metrics["eligible"]["cases"] == 8
     assert combined["eligible_pair_cases"] == 8
     assert combined["whole_target_fallback_cases"] == 4
     assert combined["fallback_records_available"] is True
