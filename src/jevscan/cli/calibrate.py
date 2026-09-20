@@ -78,6 +78,13 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="atomically write selected threshold fields back to --rules after validation",
     )
+    parser.add_argument(
+        "--allow-incompatible-model-prompt",
+        action="store_true",
+        help=(
+            "allow mixed returned models and prompt contracts during selection; for audited historical experiments only"
+        ),
+    )
     return parser
 
 
@@ -331,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
                 objective=objective,
                 rules=rules,
                 rule_ids=args.rule_ids or None,
+                allow_incompatible_model_prompt=args.allow_incompatible_model_prompt,
             )
             if args.selected_policy:
                 _write_selected_policy(audit, args.selected_policy)
@@ -354,6 +362,8 @@ def main(argv: list[str] | None = None) -> int:
                 },
             )
             return 0
+        if args.allow_incompatible_model_prompt:
+            _selection_argument_error("--allow-incompatible-model-prompt requires --select")
         global_policy, per_rule = _load_policy(args.report_policy) if args.report_policy else (None, None)
         overrides = None
         if global_policy is not None:

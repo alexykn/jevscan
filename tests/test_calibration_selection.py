@@ -10,9 +10,9 @@ from test_semantic_calibration import case_document
 from jevscan.cli.calibrate import main
 from jevscan.core.calibration_selection import SelectionObjective, candidate_policies, policy_hash, select_policies
 from jevscan.core.models import Kind, Target
-from jevscan.core.protocol import encode, prompt_binder
+from jevscan.core.protocol import QUESTION_POLICY_V4, encode, prompt_binder
 from jevscan.core.rules import Rule
-from jevscan.core.semantic_calibration import load_cases
+from jevscan.core.semantic_calibration import CalibrationCase, load_cases, replay_cases
 
 
 def _cases(
@@ -23,6 +23,10 @@ def _cases(
     error: int = 3,
     scores: list[float] | None = None,
     source_group: str = "development-source",
+    requested_model: str = "requested-model",
+    returned_model: str = "concrete-model",
+    prompt_version: int | None = None,
+    prompt_policy: str | None = None,
 ):
     documents = []
     for index, label in enumerate(labels):
@@ -31,6 +35,10 @@ def _cases(
             label=label,
             warning={"min_score": warning},
             error={"min_score": error},
+            requested_model=requested_model,
+            returned_model=returned_model,
+            **({"prompt_version": prompt_version} if prompt_version is not None else {}),
+            **({"prompt_policy": prompt_policy} if prompt_policy is not None else {}),
         )
         document["rule_id"] = "custom-rule"
         document["split"] = split
@@ -49,6 +57,10 @@ def _score_rule(warning: int = 2, error: int = 3) -> Rule:
             "levels": {"warning": {"min_score": warning}, "error": {"min_score": error}},
         },
     })
+
+
+def _with_case_id(case: CalibrationCase, case_id: str) -> CalibrationCase:
+    return case.model_copy(update={"case_id": case_id})
 
 
 def _typed_case(
@@ -89,6 +101,137 @@ def _typed_case(
     document["hashes"]["report"] = f"sha256:{sha256(encode(rule.report.model_dump(mode='json'))).hexdigest()}"
     document["comparability"]["question"] = document["hashes"]["question"]
     return document
+
+
+def test_selection_rejects_mixed_returned_models_across_distinct_cases() -> None:
+    first = _cases(["Agree"], requested_model="jev-latest", returned_model="jev-1.13.0")[0]
+    second = _with_case_id(
+        _cases(["Disagree"], requested_model="jev-latest", returned_model="jev-1.14.0")[0],
+        "selection-1",
+    )
+
+    audit = select_policies([first, second])
+    result = audit.rules["custom-rule"]
+
+    assert result.selected_policy is None
+    assert result.reason == "development_model_mismatch"
+    assert audit.compatibility.as_dict()["model_identity"] == "returned_model"
+    assert audit.compatibility.as_dict()["development"]["status"] == "mismatch"
+    assert result.compatibility is not None
+    assert {item["field"] for item in result.compatibility.mismatches} == {"returned_model"}
+
+
+def test_selection_rejects_prompt_version_and_policy_mismatch() -> None:
+    first = _cases(["Agree"], returned_model="jev-1.13.0")[0]
+    second = _with_case_id(
+        _cases(
+            ["Disagree"],
+            returned_model="jev-1.13.0",
+            prompt_version=4,
+            prompt_policy=QUESTION_POLICY_V4,
+        )[0],
+        "selection-1",
+    )
+
+    result = select_policies([first, second]).rules["custom-rule"]
+
+    assert result.selected_policy is None
+    assert result.reason == "development_prompt_mismatch"
+    assert result.compatibility is not None
+    assert {item["field"] for item in result.compatibility.mismatches} == {
+        "prompt.version",
+        "prompt.policy",
+    }
+
+
+def test_selection_pins_returned_model_and_allows_requested_aliases_to_differ() -> None:
+    first = _cases(["Agree"], requested_model="jev-latest", returned_model="jev-1.13.0")[0]
+    second = _with_case_id(
+        _cases(["Disagree"], requested_model="jev-1.13.0", returned_model="jev-1.13.0")[0],
+        "selection-1",
+    )
+
+    audit = select_policies([first, second])
+
+    assert audit.rules["custom-rule"].selected_policy is not None
+    assert audit.compatibility.development.status == "compatible"
+    assert audit.compatibility.development.authority is not None
+    assert audit.compatibility.development.authority.returned_model == "jev-1.13.0"
+
+
+def test_incompatible_model_opt_in_is_explicitly_audited_and_replay_remains_permissive() -> None:
+    first = _cases(["Agree"], returned_model="jev-1.13.0")[0]
+    second = _with_case_id(_cases(["Disagree"], returned_model="jev-1.14.0")[0], "selection-1")
+
+    replay = replay_cases([first, second])
+    audit = select_policies([first, second], allow_incompatible_model_prompt=True)
+
+    assert all(record.comparable for record in replay.records)
+    assert not replay.non_comparable
+    assert audit.rules["custom-rule"].selected_policy is not None
+    assert audit.compatibility.allow_incompatible_model_prompt
+    assert audit.compatibility.development.status == "mismatch"
+    assert audit.as_dict()["compatibility"]["mode"] == "allow_incompatible_model_prompt"
+
+
+def test_cli_exposes_incompatible_model_prompt_opt_in(tmp_path: Path) -> None:
+    first = _cases(["Agree"], returned_model="jev-1.13.0")[0]
+    second = _with_case_id(_cases(["Disagree"], returned_model="jev-1.14.0")[0], "selection-1")
+    cases_path = tmp_path / "cases.jsonl"
+    audit_path = tmp_path / "audit.json"
+    cases_path.write_text("\n".join(json.dumps(case.model_dump(mode="json")) for case in (first, second)) + "\n")
+
+    assert (
+        main([
+            str(cases_path),
+            "--select",
+            "--allow-incompatible-model-prompt",
+            "--output",
+            str(audit_path),
+        ])
+        == 0
+    )
+    assert json.loads(audit_path.read_text())["compatibility"]["mode"] == "allow_incompatible_model_prompt"
+
+
+def test_heldout_must_match_frozen_development_compatibility_authority() -> None:
+    development = _cases(["Agree", "Disagree"], returned_model="jev-1.13.0")
+    heldout = _with_case_id(
+        _cases(["Agree"], split="heldout", source_group="heldout-source", returned_model="jev-1.14.0")[0],
+        "heldout-1",
+    )
+
+    result = select_policies(development + [heldout], heldout_split="heldout").rules["custom-rule"]
+
+    assert result.selected_policy is not None
+    assert result.heldout is not None
+    assert result.heldout["compatibility"]["status"] == "mismatch"
+    assert result.heldout["compatibility"]["rejected_case_ids"] == ["heldout-1"]
+    assert result.heldout["rules"] == {}
+
+
+def test_optional_review_list_recall_constraint_is_group_normalized_and_audited() -> None:
+    retained = _cases(["Agree"], scores=[3], source_group="positive-a")[0]
+    missed = _with_case_id(_cases(["Agree"], scores=[1], source_group="positive-b")[0], "selection-1")
+    negative = _with_case_id(_cases(["Disagree"], scores=[1], source_group="negative")[0], "selection-2")
+
+    audit = select_policies(
+        [retained, missed, negative],
+        objective={"min_review_list_recall": 1.0, "max_candidates": 1},
+    )
+    result = audit.rules["custom-rule"]
+
+    assert result.reason == "no_candidate_meets_review_list_recall"
+    assert result.selected_policy is not None
+    assert result.selected_development is not None
+    assert result.selected_development.support["review_list_recall"] == pytest.approx(0.5)
+    assert audit.as_dict()["objective"]["min_review_list_recall"] == 1.0
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.1, True, "1"])
+def test_review_list_recall_constraint_requires_a_finite_fraction(value) -> None:
+    with pytest.raises((TypeError, ValueError), match="min_review_list_recall"):
+        SelectionObjective.from_mapping({"min_review_list_recall": value})
 
 
 def test_selection_freezes_development_winner_before_heldout() -> None:
