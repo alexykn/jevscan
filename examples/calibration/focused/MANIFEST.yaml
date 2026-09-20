@@ -155,6 +155,7 @@ heldout:
     label: positive
     target: {scope: unit, name: sync_entry, kind: function}
     features: [interleaved_responsibilities]
+    note: "Blind source review superseded the original linear synchronization annotation with this entangled access, billing, and lifecycle state case."
   - id: focused-jev01-h04
     source: sources/dogwood.py
     group: JEV01-H04
@@ -238,7 +239,7 @@ heldout:
       earlier: {start_line: 2, end_line: 3}
       later: {start_line: 5, end_line: 6}
       intervening: {start_line: 4, end_line: 4}
-    note: "Blind source review corrected the provisional target from store_record; this neutral local-only capture_version target is development evidence."
+    note: "Blind source review rejected store_record because its opaque call could mutate the checked alias; this replacement was re-reviewed as redundant held-out evidence."
   - id: focused-jev04-h02
     source: sources/ash.py
     group: JEV04-H02

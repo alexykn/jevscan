@@ -411,8 +411,11 @@ def _additional_source_records(entry: Mapping[str, Any], primary_source: Path) -
             )
         if not local.is_file():
             raise ValueError(f"{entry['id']}: additional source does not exist: {local}")
-        if record["source_sha256"] is None and local.is_file():
-            record["source_sha256"] = hashlib.sha256(local.read_bytes()).hexdigest()
+        actual_hash = hashlib.sha256(local.read_bytes()).hexdigest()
+        if record["source_sha256"] is None:
+            record["source_sha256"] = actual_hash
+        elif record["source_sha256"] not in {actual_hash, f"sha256:{actual_hash}"}:
+            raise ValueError(f"{entry['id']}: additional source hash does not match {local}")
         result.append(record)
     return result
 

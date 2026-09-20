@@ -48,6 +48,27 @@ def test_focused_source_snapshot_and_manifest_contract() -> None:
     assert "Partial" in manifest["source_contract"]["label_vocabulary"]
 
 
+def test_focused_adjudications_match_the_frozen_source_and_manifest() -> None:
+    manifest = _manifest()
+    adjudications = yaml.safe_load((CORPUS / "ADJUDICATIONS.yaml").read_text(encoding="utf-8"))
+    assert adjudications["source_snapshot_sha256"] == manifest["source_snapshot"]["digest"]
+
+    expected = {entry["id"]: entry for entry in manifest["heldout"]}
+    reviewed = {entry["case_id"]: entry for entry in adjudications["cases"]}
+    assert reviewed.keys() == expected.keys()
+    for case_id, review in reviewed.items():
+        manifest_case = expected[case_id]
+        expected_label = {"positive": "Agree", "negative": "Disagree", "Partial": "Partial"}[manifest_case["label"]]
+        assert review["label"] == expected_label
+        if manifest_case["rule"] == "JEV02":
+            assert review["expected_score"] == manifest_case["expected_score"]
+    assert {entry["case_id"] for entry in adjudications["corrections"]} == {
+        "focused-jev01-h03",
+        "focused-jev02-h02",
+        "focused-jev04-h01",
+    }
+
+
 def test_focused_groups_have_isolated_split_and_required_support() -> None:
     manifest = _manifest()
     groups = {}
