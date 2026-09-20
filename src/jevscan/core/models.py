@@ -26,6 +26,7 @@ TYPE_KINDS = frozenset({Kind.CLASS, Kind.STRUCT, Kind.UNION, Kind.ENUM, Kind.TRA
 SyntaxFact = Literal[
     "validation_candidate",
     "fallback_candidate",
+    "state_transition_candidate",
     "helper_relationship",
     "executable_behavior",
 ]

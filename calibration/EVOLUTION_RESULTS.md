@@ -1,7 +1,10 @@
 # Semantic rule evolution results
 
-No candidate in this experiment met its predeclared promotion conditions.
-The packaged JEV01–JEV09 rules and production reporting policies are unchanged.
+No candidate met every predeclared promotion condition. After reviewing the
+measured tradeoff, the product owner accepted the partial-transition wording-v2
+result for production as JEV10: it retained 9/9 development positives, removed
+both clean false reviews, and retained one tentative signal on an intentionally
+unresolved case. JEV01–JEV09 and their reporting policies remain unchanged.
 
 The work produced two reusable, non-production assets:
 
@@ -23,8 +26,9 @@ ledger remain under ignored `.jevscan-calibration/evolution/private/`.
   were never multiplied.
 - JEV01 and JEV04 were evaluated only through their deterministic parent
   compositions; child findings were not promoted.
-- Fresh held-out data would be created only after a candidate passed
-  development and was frozen. No candidate reached that stage.
+- The strict plan would create fresh held-out data only after a candidate passed
+  development and was frozen. No candidate passed that gate; the later product
+  decision to ship JEV10 therefore has no fresh held-out result.
 
 The first live round used 22 JEV01 parents, 14 JEV03 cases, 19 JEV05 cases,
 15 JEV08 cases, 22 partial-transition cases, and 21 JEV04 parents. These are
@@ -102,9 +106,14 @@ Round 2:
 | Exact attribution | 10/10 |
 
 The frozen gate required zero signal, tentative or confirmed, on every Partial
-case. `evo-020` still produced a tentative signal, so the candidate failed.
-No further wording or threshold adjustment was made after seeing that result.
-Selected-real and fresh-held-out evaluation were not run.
+case. `evo-020` still produced a tentative signal, so the candidate failed that
+strict gate. No further wording or threshold adjustment was made after seeing
+that result. The product owner subsequently accepted this measured tradeoff:
+JEV10 uses wording v2 and keeps the tested probability/confidence gates. A
+static admission fact limits it to callables with multiple visible
+effect-shaped operations; Jev still decides whether those operations are
+externally observable, coupled, and failure-exposed. Fresh held-out evaluation
+was not run before this production decision.
 
 ### Other proposed dimensions
 
