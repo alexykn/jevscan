@@ -39,6 +39,7 @@ from jevscan.core.protocol import (
     encode,
     prompt_binder,
     validate_answer,
+    validate_prompt_registry,
 )
 from jevscan.core.rules import ReportPolicy, Rule, StrictModel
 
@@ -445,6 +446,8 @@ class CalibrationCase(StrictModel):
         check = Check(self.case_id, self.target, self.rule_id, self.rule)
         binder = prompt_binder(self.prompt.version, self.prompt.policy)
         canonical_wire = binder.bind(self.rule.question, self.target, self.prompt.policy)
+        if self.prompt.version == 6:
+            validate_prompt_registry(self.evidence.state, self.rule.question)
         if self.question_wire is not None and self.question_wire != canonical_wire:
             raise ValueError("question_wire must match the canonical primary binding")
         computed_hashes = _computed_hashes(

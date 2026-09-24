@@ -10,7 +10,7 @@ from test_semantic_calibration import case_document
 from jevscan.cli.calibrate import main
 from jevscan.core.calibration_selection import SelectionObjective, candidate_policies, policy_hash, select_policies
 from jevscan.core.models import Kind, Target
-from jevscan.core.protocol import QUESTION_POLICY_V4, encode, prompt_binder
+from jevscan.core.protocol import QUESTION_POLICY_V4, PromptRegistry, encode, prompt_binder
 from jevscan.core.rules import Rule
 from jevscan.core.semantic_calibration import CalibrationCase, load_cases, replay_cases
 
@@ -93,6 +93,11 @@ def _typed_case(
         target_doc.get("display_name", ""),
     )
     document["rule"] = rule.model_dump(mode="json")
+    state = document["evidence"]["state"]
+    state.pop("jevscan_prompt", None)
+    state.update(PromptRegistry.for_question(rule.question).bind_state(state))
+    document["hashes"]["evidence"] = f"sha256:{sha256(encode(state)).hexdigest()}"
+    document["comparability"]["evidence"] = document["hashes"]["evidence"]
     bound = prompt_binder(document["prompt"]["version"], document["prompt"]["policy"]).bind(
         rule.question, target, document["prompt"]["policy"]
     )

@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -16,10 +17,10 @@ from jevscan.core.config import Config, EnrichmentConfig, EvaluationConfig, JevC
 from jevscan.core.context import ContextBuilder
 from jevscan.core.enrichment import DISPOSITIONS, EVIDENCE_FAMILIES
 from jevscan.core.evaluation import evaluate_file
-from jevscan.core.models import FileJob, Kind, Summary
+from jevscan.core.models import FileJob, Kind, Summary, Target
 from jevscan.core.parser import parse_source
 from jevscan.core.planning import Planner
-from jevscan.core.protocol import JevError, NoulAnswer
+from jevscan.core.protocol import Check, JevError, NoulAnswer
 from jevscan.core.retrieval import SourceIndex
 from jevscan.core.rules import ChoiceQuestion, Rule, TargetedEnrichmentPolicy
 from jevscan.core.semantic_calibration import load_cases, replay_case
@@ -250,7 +251,7 @@ async def test_final_capture_uses_enriched_cached_judgment_and_imports(tmp_path:
     assert len(row["evidence"]["state"]["documents"]) == 2
     assert row["review"]["initial_answer"]["choice"] == "missing"
     assert any(
-        question["instructions"]["policy"] == row["prompt"]["policy"]
+        question["instructions"]["rubric"] in row["evidence"]["state"]["jevscan_prompt"]["rubrics"]
         for prediction in row["review"]["predictions"]
         for question in prediction.get("question_wires", {}).values()
         if isinstance(question, dict) and "instructions" in question
@@ -598,7 +599,7 @@ async def test_evidence_gaps_win_the_budget_before_earlier_optional_reviews(tmp_
             return responses(request)
         answers = {}
         for key, question in body["questions"].items():
-            target = question["instructions"]["target"]["qualified_name"]
+            target = question["instructions"]["target"]["name"]
             answers[key] = choice(labels, "missing" if target == "last_gap" else "na", 0.3)
         return httpx.Response(200, json={"model": "test", "answers": answers})
 
@@ -608,7 +609,7 @@ async def test_evidence_gaps_win_the_budget_before_earlier_optional_reviews(tmp_
     )
     assert len(responses.requests) == 1
     route = responses.requests[0]["questions"]["disposition"]["instructions"]
-    assert route["target"]["qualified_name"] == "last_gap"
+    assert route["target"]["name"] == "last_gap"
     assert [event["target"]["qualified_name"] for event in events] == ["first", "second", "last_gap"]
     assert [event["reviews"]["contract"]["outcome"] for event in events] == [
         "check_budget",
@@ -617,6 +618,21 @@ async def test_evidence_gaps_win_the_budget_before_earlier_optional_reviews(tmp_
     ]
     assert events[-1]["reviews"]["contract"]["trigger"] == "missing_evidence"
     assert summary.enrichment_reviewed == 1
+
+
+def test_auxiliary_target_locator_keeps_same_named_cross_file_targets_distinct(basic_rule, unit) -> None:
+    first_target = Target.from_unit(unit)
+    second_target = replace(first_target, id="other.py:0:function", path="other.py")
+    first = Check("first", first_target, "contract", basic_rule).auxiliary(basic_rule.question)
+    second = Check("second", second_target, "contract", basic_rule).auxiliary(basic_rule.question)
+
+    first_target_wire = first["instructions"]["target"]
+    second_target_wire = second["instructions"]["target"]
+    assert first_target_wire["name"] == second_target_wire["name"] == "work"
+    assert first_target_wire["path"] == "sample.py"
+    assert second_target_wire["path"] == "other.py"
+    assert first_target_wire["start_line"] == second_target_wire["start_line"]
+    assert not {"scope", "language"} & first_target_wire.keys()
 
 
 async def test_reduced_context_is_actionable_even_when_reason_is_low_confidence(tmp_path, evidence_rule):

@@ -1220,7 +1220,8 @@ def test_pair_capture_filter_binds_complete_source_and_preserves_pair_attributio
             for document in case.evidence.state["documents"]
         )
         assert case.question_wire is not None
-        task = case.question_wire["instructions"]["task"]
+        rubric_ref = case.question_wire["instructions"]["rubric"]
+        task = case.evidence.state["jevscan_prompt"]["rubrics"][rubric_ref]["instructions"]
         task_metadata = json.loads(
             task.split("Pair binding metadata (machine-readable location metadata only):\n", 1)[1]
         )

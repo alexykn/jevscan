@@ -8,7 +8,7 @@ from jevscan.core.config import Config, EvaluationConfig
 from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.model_limits import TokenCalibration, limits_for_model
 from jevscan.core.models import CALLABLE_KINDS, Target
-from jevscan.core.protocol import Check, encode
+from jevscan.core.protocol import Check, PromptRegistry, encode
 from jevscan.core.rules import Question, Rule
 
 
@@ -17,6 +17,8 @@ class Request:
     evidence: Evidence
     checks: tuple[Check, ...]
     body: bytes
+    state: bytes
+    question_wires: dict[str, bytes]
 
     @property
     def questions(self) -> dict[str, Question]:
@@ -108,6 +110,7 @@ class Planner:
         self.limits = config.evaluation
         self.compaction = config.compaction
         self.budget = RequestBudget(config.evaluation, config.jev.model, calibration)
+        self.rubric = PromptRegistry.from_rules(config.selected_rules())
         self.targets = (self.context.file, *(Target.from_unit(unit) for unit in self.context.parsed.units))
         self.applicability_skips: dict[str, dict[str, str]] = {}
         checks = self._checks(config)
@@ -133,7 +136,7 @@ class Planner:
             checks = tuple(kept)
             self.omissions = tuple(omitted)
         self.checks = checks
-        self.questions = {check.id: encode(check.question()) for check in self.checks}
+        self.question_wires = {check.id: encode(check.question()) for check in self.checks}
 
     def _facts(self, target: Target) -> frozenset[str]:
         if target.scope == "file":
@@ -196,21 +199,26 @@ class Planner:
             return self.context.envelope(check.target.start_byte, check.target.end_byte)
         return self.context.requested(check)
 
+    def state(self, evidence: Evidence) -> bytes:
+        return self.rubric.state_bytes(evidence.state)
+
     def _encoded_questions(self, checks: tuple[Check, ...]) -> dict[str, bytes]:
-        return {check.id: self.questions[check.id] for check in checks}
+        return {check.id: self.question_wires[check.id] for check in checks}
 
     def estimate(self, evidence: Evidence, checks: tuple[Check, ...]) -> tuple[int, int, int]:
-        return self.budget.estimate(evidence.encoded, self._encoded_questions(checks))
+        return self.budget.estimate(self.state(evidence), self._encoded_questions(checks))
 
     def fits(self, evidence: Evidence, checks: tuple[Check, ...]) -> bool:
-        return self.budget.fits(evidence.encoded, self._encoded_questions(checks))
+        return self.budget.fits(self.state(evidence), self._encoded_questions(checks))
 
     def violations(self, evidence: Evidence, checks: tuple[Check, ...]) -> frozenset[str]:
-        return self.budget.violations(evidence.encoded, self._encoded_questions(checks))
+        return self.budget.violations(self.state(evidence), self._encoded_questions(checks))
 
     def request(self, evidence: Evidence, checks: tuple[Check, ...]) -> Request:
-        body = self.budget.body(evidence.encoded, self._encoded_questions(checks))
-        return Request(evidence, checks, body)
+        state = self.state(evidence)
+        question_wires = self._encoded_questions(checks)
+        body = self.budget.body(state, question_wires)
+        return Request(evidence, checks, body, state, question_wires)
 
     def _evidence_groups(self) -> list[tuple[Evidence, list[Check]]]:
         groups: dict[str, tuple[Evidence, list[Check]]] = {}

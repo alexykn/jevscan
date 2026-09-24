@@ -12,7 +12,7 @@ from jevscan.core.context import Evidence
 from jevscan.core.enrichment import DISPOSITIONS, allowed_families, routing_questions
 from jevscan.core.evaluation import Judgment, TargetResults
 from jevscan.core.models import Target
-from jevscan.core.protocol import Check, NoulAnswer, encode
+from jevscan.core.protocol import Check, NoulAnswer, PromptRegistry, encode
 from jevscan.core.semantic_calibration import (
     FinalCaptureMaterial,
     _has_canonical_not_applicable_route,
@@ -38,6 +38,10 @@ def test_final_capture_preserves_final_evidence_review_and_imports(tmp_path, bas
         "coverage": {"file_complete": True},
     }
     check = Check("final-case", target, "cohesion", basic_rule)
+    sibling_rule = basic_rule.model_copy(
+        update={"question": basic_rule.question.model_copy(update={"instructions": "A sibling rule question."})}
+    )
+    rubric = PromptRegistry.from_rules({"cohesion": basic_rule, "sibling": sibling_rule})
     judgment = Judgment(
         check,
         NoulAnswer(type="noul", noul=0.99),
@@ -59,6 +63,8 @@ def test_final_capture_preserves_final_evidence_review_and_imports(tmp_path, bas
                 }
             ],
         },
+        rubric.state_bytes(state),
+        check.question(),
     )
     event = TargetResults(target, judgments={"cohesion": judgment}).event()
     assert "initial_evidence_state" not in json.dumps(event)
@@ -97,6 +103,7 @@ def test_final_capture_preserves_final_evidence_review_and_imports(tmp_path, bas
     assert case.capture.review["initial_cached"] is True
     assert case.capture.review["predictions"][0]["question_wires"]["disposition"]["type"] == "choice"
     assert case.evidence.source_documents["sample.py"] == source
+    assert len(case.evidence.state["jevscan_prompt"]["rubrics"]) == 2
     assert case.question_wire == check.question()
 
 

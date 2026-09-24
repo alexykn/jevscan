@@ -1,5 +1,7 @@
 """Execute file-local plans, reclassify cached answers, and retain target attribution."""
 
+import hashlib
+import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -28,6 +30,8 @@ class Judgment:
     context: Evidence
     inference: dict[str, Any] = field(default_factory=dict)
     review: dict[str, Any] = field(default_factory=dict)
+    wire_state: bytes = b""
+    question_wire: dict[str, Any] = field(default_factory=dict)
 
     @property
     def fully_cached(self) -> bool:
@@ -200,7 +204,7 @@ class FileResults:
                 {
                     **metadata,
                     "request_bytes": len(request.body),
-                    "state_sha256": request.evidence.key,
+                    "state_sha256": hashlib.sha256(request.state).hexdigest(),
                     "questions": len(request.checks),
                 },
             ]
@@ -217,6 +221,8 @@ class FileResults:
         inference: dict[str, Any] | None = None,
         *,
         shared_request: bool = False,
+        wire_state: bytes = b"",
+        question_wire: dict[str, Any] | None = None,
     ) -> None:
         record = self.records[check.target.id]
         assert check.rule_id not in record.judgments
@@ -232,7 +238,7 @@ class FileResults:
         metrics: dict[str, Any] = {
             "phase": phase,
             "question_id": check.id,
-            "question_bytes": len(self.planner.questions[check.id]),
+            "question_bytes": len(self.planner.question_wires[check.id]),
             "shared_request": shared_request,
             "cached": cached,
         }
@@ -246,6 +252,9 @@ class FileResults:
             fully_cached,
             evidence_state,
             metrics,
+            {},
+            wire_state,
+            question_wire or check.question(),
         )
 
     def accept(
@@ -265,6 +274,8 @@ class FileResults:
                 cached,
                 inference,
                 shared_request=len(request.checks) > 1,
+                wire_state=request.state,
+                question_wire=json.loads(request.question_wires[check.id]),
             )
 
     def _review_queue(self) -> list[tuple[int, str, Judgment]]:
@@ -290,8 +301,10 @@ class FileResults:
             })
             if capture is not None:
                 self._capture_reviews[(initial.check.target.id, name)] = {
-                    "initial_evidence_state": initial.context.state,
-                    "initial_question_wire": initial.check.question(),
+                    "initial_evidence_state": json.loads(initial.wire_state)
+                    if initial.wire_state
+                    else initial.context.state,
+                    "initial_question_wire": initial.question_wire or initial.check.question(),
                 }
             result = await enricher.refine(initial.check, initial.answer, initial.context, initial.review)
             if result is not None:
@@ -306,12 +319,14 @@ class FileResults:
                     {
                         "phase": "reassess",
                         "question_id": initial.check.id,
-                        "question_bytes": len(self.planner.questions[initial.check.id]),
+                        "question_bytes": len(self.planner.question_wires[initial.check.id]),
                         "shared_request": False,
                         "cached": result.prediction.cached,
                         "request": result.prediction.metrics,
                     },
                     initial.review,
+                    result.wire_state,
+                    result.question_wire,
                 )
             final = record.judgments[name].assessment()
             initial.review["final_status"] = final.status
@@ -404,7 +419,7 @@ async def evaluate_file(
     try:
         await FileExecutor(planner, inference, results).run()
         if index is not None:
-            enricher = Enricher(planner.context, planner.budget, index.limits, index, inference)
+            enricher = Enricher(planner.context, planner.budget, index.limits, index, inference, planner.rubric)
             await results.enrich(enricher, capture)
         if capture is not None:
             source_documents = (

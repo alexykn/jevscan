@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Self
 
 import pytest
 
-from calibration import capture
+from calibration import capture, import_cases
 from calibration.capture import (
     MODEL,
     PreparedScenario,
@@ -24,7 +24,15 @@ from jevscan.core.config import Config
 from jevscan.core.context import Evidence
 from jevscan.core.models import Kind, ParsedFile, Target, Unit
 from jevscan.core.planning import RequestBudget
-from jevscan.core.protocol import Check, JevResponse, encode
+from jevscan.core.protocol import (
+    QUESTION_POLICY_V5,
+    Check,
+    JevResponse,
+    PromptRegistry,
+    encode,
+    prompt_binder,
+)
+from jevscan.core.semantic_calibration import CalibrationCase, replay_case
 
 SOURCE = b"def work():\n    return 1\n"
 
@@ -117,6 +125,98 @@ def _evaluation_config(config: Config, **updates: Any) -> Config:
     return config.model_copy(update={"evaluation": config.evaluation.model_copy(update=updates)})
 
 
+def test_offline_capture_import_stays_frozen_at_v5_after_prompt_bump(tmp_path: Path, basic_rule) -> None:
+    source = SOURCE.decode()
+    (tmp_path / "same.py").write_text(source, encoding="utf-8")
+    target = Target.from_unit(_unit(SOURCE))
+    target_metadata = target.metadata()
+    state = {
+        "documents": [
+            {
+                "path": "same.py",
+                "language": "python",
+                "start_byte": 0,
+                "end_byte": len(SOURCE),
+                "start_line": 1,
+                "end_line": 2,
+                "content": source,
+            }
+        ],
+        "coverage": {"file_complete": True},
+    }
+    check = Check("baseline-001", target, "cohesion", basic_rule)
+    wire = prompt_binder(5, QUESTION_POLICY_V5).bind(basic_rule.question, target, QUESTION_POLICY_V5)
+    material = {
+        "state": state,
+        "wire": wire,
+        "cached": {
+            "answer": {"type": "noul", "noul": 0.95},
+            "model": "jev-1.13.0",
+        },
+    }
+    display = {
+        "display_id": 1,
+        "rule_id": "cohesion",
+        "label": "Agree",
+        "explanation": "The source supports the displayed answer.",
+    }
+    capture_material = {
+        "version": 1,
+        "endpoint": "https://api.typesafe.ai",
+        "requested_model": "jev-latest",
+        "source_commit": "test-commit",
+    }
+    row = import_cases._case(
+        display,
+        {"target": target_metadata},
+        {"context_complete": True, "target_complete": True},
+        material,
+        {"cohesion": basic_rule.model_dump(mode="json")},
+        tmp_path,
+        capture_material,
+    )
+    case = CalibrationCase.model_validate(row)
+
+    assert case.prompt.version == 5
+    assert case.prompt.policy == QUESTION_POLICY_V5
+    assert case.question_wire is None
+    assert replay_case(case).comparable
+    v6_material = {
+        "state": PromptRegistry.for_question(basic_rule.question).bind_state(state),
+        "wire": check.question(),
+    }
+    with pytest.raises(ValueError, match="frozen version-5"):
+        import_cases._frozen_capture_prompt(basic_rule, target_metadata, v6_material)
+
+
+def test_compact_v6_capture_target_matches_full_event_by_path_name_and_lines() -> None:
+    target = {
+        "path": "first.py",
+        "name": "Owner.work",
+        "kind": "method",
+        "start_line": 3,
+        "end_line": 8,
+        "span": [0, 10],
+    }
+    question = {"instructions": {"target": target, "rubric": "0123456789abcdef"}}
+    event_target = {
+        "id": "first.py:0:method",
+        "scope": "unit",
+        "path": "first.py",
+        "language": "python",
+        "qualified_name": "Owner.work",
+        "start_byte": 0,
+        "end_byte": 10,
+        "start_line": 3,
+        "end_line": 8,
+        "kind": "method",
+    }
+
+    assert import_cases._wire_target_key(question) == import_cases._event_target_key(event_target)
+    other_file = {**question, "instructions": {"target": {**target, "path": "second.py"}}}
+    assert import_cases._wire_target_key(other_file) != import_cases._event_target_key(event_target)
+
+
 def test_prepare_separates_same_relative_path_from_distinct_parsed_sources(config, basic_rule) -> None:
     first_source = b"def work():\n    return 1\n"
     second_source = b"def work():\n    return 2\n"
@@ -143,7 +243,8 @@ def test_batches_split_before_request_budget_violation_and_plan_live_parity(
     first = _prepared("first", basic_rule, evidence)
     second = _prepared("second", basic_rule, evidence)
     unconstrained_budget = RequestBudget(config.evaluation, MODEL)
-    singleton = unconstrained_budget.body(evidence.encoded, {first.check.id: encode(first.check.question())})
+    state = PromptRegistry.from_rules(config.selected_rules()).state_bytes(evidence.state)
+    singleton = unconstrained_budget.body(state, {first.check.id: encode(first.check.question())})
     bounded = _evaluation_config(config, max_questions=10, max_request_bytes=len(singleton) + 1)
     budget = RequestBudget(bounded.evaluation, MODEL)
 
@@ -154,8 +255,8 @@ def test_batches_split_before_request_budget_violation_and_plan_live_parity(
     assert plan["requests"] == len(batches)
     assert [record["question_ids"] for record in plan["batches"]] == [sorted(batch.questions) for batch in batches]
     for batch in batches:
-        body = budget.body(batch.evidence.encoded, batch.wires)
-        assert budget.fits(batch.evidence.encoded, batch.wires)
+        body = budget.body(batch.state, batch.wires)
+        assert budget.fits(batch.state, batch.wires)
         assert len(body) <= bounded.evaluation.max_request_bytes
 
     class FakeClient:
@@ -196,7 +297,7 @@ def test_batches_split_before_request_budget_violation_and_plan_live_parity(
 
     calls = FakeClient.instances[0].calls
     assert [sorted(questions) for _, questions in calls] == [record["question_ids"] for record in plan["batches"]]
-    assert [body for body, _ in calls] == [budget.body(batch.evidence.encoded, batch.wires) for batch in batches]
+    assert [body for body, _ in calls] == [budget.body(batch.state, batch.wires) for batch in batches]
 
 
 def test_batches_reject_singleton_that_exceeds_request_budget(config, basic_rule) -> None:
@@ -273,7 +374,9 @@ def test_cmd_import_rejects_capture_identity_mismatches(
         "rule_id": prepared[0].scenario.rule_id,
         "answer": {"type": "noul", "noul": 0.5},
         "returned_model": MODEL,
-        "evidence_sha256": prepared[0].evidence.key,
+        "evidence_sha256": hashlib.sha256(
+            PromptRegistry.for_question(basic_rule.question).state_bytes(prepared[0].evidence.state)
+        ).hexdigest(),
     }
     mutation(row, prepared)
     args = _write_import_inputs(tmp_path, prepared, [row])
@@ -297,7 +400,9 @@ def test_cmd_import_emits_cases_in_manifest_order(
             "rule_id": item.scenario.rule_id,
             "answer": {"type": "noul", "noul": 0.5},
             "returned_model": MODEL,
-            "evidence_sha256": item.evidence.key,
+            "evidence_sha256": hashlib.sha256(
+                PromptRegistry.for_question(basic_rule.question).state_bytes(item.evidence.state)
+            ).hexdigest(),
         }
         for item in reversed(prepared)
     ]

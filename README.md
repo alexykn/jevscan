@@ -323,7 +323,12 @@ reassesses once only when useful evidence is admitted.
 JEV12–JEV16 are advisory, non-blocking code reviews (`report.blocks_exit: false`). They require source-visible evidence of a material effect callers need
 to know about, an unexplained required setup step, stale derived state, an unsafe retry, or success before a required
 result; names, opaque calls, tests, and conventions alone are insufficient. They do not enforce runtime behavior or
-claim recall on real positive cases.
+claim recall on real positive cases. JEV03–JEV16 have shorter questions; the shared-rubric wire reduces per-target
+question size for all built-ins. The synthetic review is limited, and its nominal held-out sources were reused during
+question selection; it does not establish accuracy equivalence. See
+[calibration results](calibration/COMPACT_WIRE_VALIDATION.md). Default scans still evaluate all 16 rules, including
+enrichment; check `jevscan --plan .` before an uncached live run. The initial plan does not account for enrichment
+calls or cache hits.
 
 Inspect the fully resolved catalogue with:
 

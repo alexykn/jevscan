@@ -189,7 +189,7 @@ Benign Choice labels and missing-evidence labels never acquire an invented defec
 |---|---|
 | scan | Existing five-language include patterns and dependency/build excludes; respect_gitignore=true; jobs=0 (up to 8 parsers); batch_size=8; queue_size=8; max_file_bytes=2000000; max_units_per_file=10000; max_full_file_lines=3000 |
 | jev | model="jev-latest"; concurrency=16; requests_per_minute=600; timeout_seconds=30; retries=3; max_retry_delay=60 |
-| evaluation | max_context_tokens=28000; max_total_tokens=56000; token_reserve=512; bytes_per_token=3.0; max_request_bytes=1048576; max_questions=64; oversized_context="reduce" |
+| evaluation | max_context_tokens=28000; max_total_tokens=56000; token_reserve=512; bytes_per_token=3.0; max_request_bytes=1048576; max_questions=128; oversized_context="reduce" |
 | compaction | context_tokens=24000; max_rounds=3; max_candidates=32; max_calls_per_file=12; semantic=true |
 | enrichment | enabled=true; mode="targeted"; max_checks_per_file=12; max_calls_per_file=36; max_candidates=12; max_evidence=3; max_source_files=1000; max_source_bytes=16777216 |
 | budget | max_requests=1500; max_input_tokens=5000000; max_cost=null; input_cost_per_million=0.042 |

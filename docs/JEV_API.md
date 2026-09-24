@@ -33,39 +33,56 @@ A schematic request with two independent method judgments:
       "file_complete": true,
       "omitted_ranges": [],
       "external_references": "unresolved; no cross-file contracts or caller bodies supplied"
+    },
+    "jevscan_prompt": {
+      "version": 6,
+      "policy": "<fixed source-as-evidence and target-attribution policy>",
+      "rubrics": {
+        "<choice-rubric-id>": {
+          "type": "choice",
+          "instructions": "Classify the operation.",
+          "criteria": {
+            "safe": "The visible source establishes safe behavior.",
+            "unsafe": "The visible source establishes unsafe behavior."
+          }
+        },
+        "<noul-rubric-id>": {
+          "type": "noul",
+          "instructions": "Does source interleave independently meaningful responsibilities?"
+        }
+      }
     }
   },
   "questions": {
     "q00000": {
-      "type": "noul",
+      "type": "choice",
       "instructions": {
-        "policy": "<fixed source-as-evidence and target-attribution policy>",
         "target": {
-          "scope": "unit",
           "path": "src/service.py",
-          "language": "python",
-          "qualified_name": "Coordinator.commit",
+          "name": "Coordinator.commit",
           "kind": "method",
           "start_line": 3,
-          "end_line": 28
+          "end_line": 28,
+          "span": [64, 712]
         },
-        "task": "Does source interleave independently meaningful responsibilities?"
-      }
+        "rubric": "<choice-rubric-id>",
+        "task": "Apply referenced rubric."
+      },
+      "criteria": {"safe": null, "unsafe": null}
     },
     "q00001": {
       "type": "noul",
       "instructions": {
-        "policy": "<same fixed policy>",
         "target": {
-          "scope": "unit",
           "path": "src/service.py",
-          "language": "python",
-          "qualified_name": "Coordinator.flush",
+          "name": "Coordinator.flush",
           "kind": "method",
           "start_line": 30,
-          "end_line": 61
+          "end_line": 61,
+          "span": [814, 1904]
         },
-        "task": "Does source interleave independently meaningful responsibilities?"
+        "rubric": "<noul-rubric-id>",
+        "task": "Apply referenced rubric."
       }
     }
   }
@@ -74,11 +91,23 @@ A schematic request with two independent method judgments:
 
 The placeholder source/ranges above illustrate the shape; actual spans come from Tree-sitter, and actual source is sent without clipping. Byte ranges are UTF-8 offsets into the original file, zero-based and end-exclusive. Lines are one-based and inclusive. A method's span remains its own even when the evidence document is the entire file or class.
 
+Prompt version 6 stores the common policy and each distinct selected rule question once in `state.jevscan_prompt`.
+Rubric references are the first 16 lowercase hex digits of SHA-256 over the canonical typed rule question; identical
+question material shares one entry. Registry construction detects a prefix collision and stops rather than allowing
+ambiguous references. A primary question carries only its type, source-unique path/name/line locator, rubric reference,
+and minimal type shape: Choice labels map to `null`, Score carries numeric level labels, and Noul carries no repeated
+rubric text. The source-unique locator includes an exact UTF-8 byte span in addition to path, name, and lines. Its task
+points to the referenced rubric; the shared policy specifies that `instructions.rubric` indexes
+`state.jevscan_prompt.rubrics` and directs Jev to apply both the rubric and `state.jevscan_prompt.policy`. This format
+reduces repeated prompt text; it is a prompt change, not evidence that answer accuracy or confidence is unchanged.
+
 `Check` owns the binding between request key, exact target, and YAML rule ID. The model-facing target descriptor is
-deliberately compact; exact IDs and byte ranges remain local attribution metadata. Each question says that `source` in
-its instructions/criteria means only that target. It can use the rest of the supplied document as evidence, but must
-not assign a class-wide concern indiscriminately to every method. The fixed policy also says source strings/comments are
-evidence, not instructions; this is a guardrail, not a proven prompt-injection defense.
+deliberately compact; exact target IDs remain local attribution metadata, while byte spans are included in questions
+to distinguish targets. Each question refers to one exact target, can use other supplied documents as evidence, and
+must not assign a class-wide concern indiscriminately to every method. The fixed policy also says source
+strings/comments are evidence, not instructions; this is a guardrail, not a proven prompt-injection defense. Auxiliary
+questions refer to the same shared rubric and carry only their own follow-up task instead of repeating the entire
+rule question.
 
 No absolute home directory is added to an ordinary project-relative path merely to describe file identity. Source outside the selected project root may retain the discovery layer's absolute display path. Primary envelopes do not read cross-file source. Enrichment can conditionally discover and supply allowed source from the resolved project root; see the data-sharing contract below.
 
@@ -88,9 +117,11 @@ No absolute home directory is added to an ordinary project-relative path merely 
 
 The two token dimensions drive different preflight actions. Aggregate/question-count overflow with fitting evidence splits questions while preserving source. A shared state that is itself over the context ceiling is not first exploded into singleton checks: sibling questions stay grouped while bounded recovery prepares smaller evidence, and checks that converge on identical evidence are repacked. Successful `usage.input_tokens` observations can only make the shared run-local byte/token estimate more conservative.
 
-The batching key is the exact encoded evidence, not the rule ID. Independent Noul, Choice, and Score questions for different targets can coexist in one System One request when they share that state and fit the limits. The planner does not enlarge evidence merely to create a batch.
+The batching key is the exact encoded evidence, not the rule ID. Independent Noul, Choice, and Score questions for different targets can coexist in one System One request when they share that evidence and fit the limits. The selected-rubric registry is identical across batches for a resolved configuration and is included in every effective request state. The planner does not enlarge source evidence merely to create a batch.
 
 Complete-file contexts are additionally bounded by `scan.max_full_file_lines` (3,000 by default). Checks whose requested state is a larger complete file are explicit omissions; smaller owner/unit contexts can still be evaluated. `--plan` runs discovery/parsing and initial packing without constructing a live client, producing a conservative initial input/cost estimate.
+
+That initial estimate includes the shared rubric registry but does not predict later enrichment or compaction calls. A smaller primary payload is not a full-scan cost guarantee: reserved input tokens and provider-reported usage differ, and follow-up phases can add requests. Compare the live summary's reported tokens and cost as well as its conservative reservations.
 
 `FileExecutor` owns bounded recovery. HTTP 413 is a payload-size signal. At HTTP 400/422, the client recursively inspects bounded machine fields (`code`, `type`, `status`, scalar machine-like `error`) and accepts only the exact value `max_tokens_exceeded` as a size signal. Nested validation forms such as `detail[].type=max_tokens_exceeded` are covered; free-text `message`/`msg` token mentions are not. Status, recognized machine fields and a sanitized request ID reach the audit; source/error-body text and credentials do not.
 
@@ -108,11 +139,13 @@ An entire target that cannot be evaluated is reported as omitted. There is no hi
 
 `core/evaluation.py` owns answers for one active file. It reclassifies cached answers using the active reporting policy, assigns answers to exact targets, and emits each target once after its file finishes. Abort/cancellation still emits completed answers and records unanswered checks. File evaluators run concurrently, and independent ready request batches inside one file may also run concurrently; the client semaphore and limiter remain global. Questions in a shared request remain logically independent; a question cannot consume another answer from that same request.
 
-The SQLite cache has two layers. Whole-request entries retain the existing endpoint/body/package/prompt identity; the
-current prompt compatibility version is 5. Per-judgment entries are keyed by endpoint, requested model, exact encoded
-evidence, exact bound question, and prompt compatibility. They are validated against the active question before use.
-Batch composition can therefore change without repurchasing an unchanged judgment; model/question/evidence changes
-still invalidate it. Pin a model for reproducibility.
+The SQLite cache has two layers. Whole-request entries retain the endpoint/body/package/prompt identity; the current
+prompt compatibility version is 6. Per-judgment entries are keyed by endpoint, requested model, exact encoded
+effective state (source evidence plus the complete shared rubric registry), exact short bound question, and prompt
+compatibility. They are validated against the active typed rule question before use. Batch composition can change
+without repurchasing an unchanged judgment while that effective state and question remain identical. If rule selection
+changes the registry contents, the effective state changes and judgments are not reused across that boundary. Pin a
+model for reproducibility.
 
 The optional `budget` block limits request attempts, conservative estimated input tokens, and/or configured input cost before transport. Reservations include retries. Exceeding a guard raises an explicit `budget-exhausted` incomplete-scan diagnostic; unevaluated checks are never converted into clean answers. The final summary also reports actual successful-response input tokens and their configured input-cost calculation.
 

@@ -15,7 +15,7 @@ from jevscan.core.context import ContextBuilder, Evidence, Span
 from jevscan.core.inference import Inference, Prediction
 from jevscan.core.models import CALLABLE_KINDS, Target, Unit
 from jevscan.core.planning import Planner, RequestBudget
-from jevscan.core.protocol import Check, ContextLimitError, encode
+from jevscan.core.protocol import Check, ContextLimitError, PromptRegistry, encode
 from jevscan.core.retrieval import Candidate, Snapshot
 from jevscan.core.rules import Question
 from jevscan.core.selection import rank_candidates
@@ -241,7 +241,9 @@ class Compactor:
         self, check: Check, base: Evidence, candidates: list[Candidate], budget: RequestBudget, trace: dict[str, Any]
     ) -> list[Candidate]:
         try:
-            ranked = await rank_candidates(check, base, candidates, budget, self._predict, trace)
+            ranked = await rank_candidates(
+                check, base, candidates, budget, self._predict, trace, PromptRegistry.for_question(check.rule.question)
+            )
         except (SelectionStoppedError, ContextLimitError) as exc:
             trace["selection_stop"] = "provider_context_limit" if isinstance(exc, ContextLimitError) else str(exc)
             by_id = {candidate.id: candidate for candidate in candidates}
@@ -263,12 +265,13 @@ class Compactor:
             return None
         recipe = self.local.recipe(check, self.limits.max_candidates)
         budget = self._budget(previous_bytes, round_number)
-        wire = {check.id: self.planner.questions[check.id]}
+        wire = {check.id: self.planner.question_wires[check.id]}
         base = self._compose(recipe, [], False)
+        base_state = self.planner.state(base)
         # The target alone must fit; no amount of relevance guessing permits editing it.
-        if not budget.fits(base.encoded, wire):
+        if not budget.fits(base_state, wire):
             return None
-        scaffold = budget.fits(self._compose(recipe, [], True).encoded, wire)
+        scaffold = budget.fits(self.planner.state(self._compose(recipe, [], True)), wire)
         base = self._compose(recipe, [], scaffold)
         candidates = list(recipe.candidates)
         entry: dict[str, Any] = {
@@ -286,13 +289,13 @@ class Compactor:
         if (
             candidates
             and self.limits.semantic
-            and not budget.fits(self._compose(recipe, candidates, scaffold).encoded, wire)
+            and not budget.fits(self.planner.state(self._compose(recipe, candidates, scaffold)), wire)
         ):
             candidates = await self._prioritize(check, base, candidates, budget, entry)
         selected: list[Candidate] = []
         for candidate in candidates:
             proposed = self._compose(recipe, [*selected, candidate], scaffold)
-            if budget.fits(proposed.encoded, wire):
+            if budget.fits(self.planner.state(proposed), wire):
                 selected.append(candidate)
             else:
                 entry["omitted_candidates"].append({"id": candidate.id, "reason": "context_budget"})
