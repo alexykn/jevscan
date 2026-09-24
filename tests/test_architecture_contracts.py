@@ -13,7 +13,7 @@ from jevscan.core.client import JevClient, ReservationUsage
 from jevscan.core.config import BudgetConfig, JevConfig
 from jevscan.core.protocol import BudgetExhaustedError
 from jevscan.core.rule_writeback import SuppliedRules
-from jevscan.core.rules import NoulQuestion
+from jevscan.core.rules import NoulQuestion, Question
 
 
 @pytest.fixture
@@ -66,7 +66,7 @@ async def test_cancelled_transport_finishes_accounting_without_refunding_paid_at
 
     config = JevConfig(requests_per_minute=0, retries=0)
     reservation = ReservationUsage()
-    questions = {"q": NoulQuestion(type="noul", instructions="Is the source inconsistent?")}
+    questions: dict[str, Question] = {"q": NoulQuestion(type="noul", instructions="Is the source inconsistent?")}
     async with JevClient(
         config,
         "test-key",

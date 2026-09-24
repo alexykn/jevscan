@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import IO, Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
@@ -139,14 +139,14 @@ def _roundtrip_bytes(document: Any) -> bytes:
 
 
 @contextmanager
-def _temporary_yaml(path: Path, purpose: str) -> Iterator[tuple[Path, BinaryIO]]:
+def _temporary_yaml(path: Path, purpose: str) -> Iterator[tuple[Path, IO[bytes]]]:
     """Own cleanup from creation, including failed writes and interrupted validation."""
     with tempfile.NamedTemporaryFile(
         mode="wb", suffix=path.suffix, prefix=f".{path.name}.{purpose}-", dir=path.parent, delete=False
     ) as stream:
         temporary = Path(stream.name)
         try:
-            yield temporary, stream
+            yield temporary, stream.file
         finally:
             temporary.unlink(missing_ok=True)
 
