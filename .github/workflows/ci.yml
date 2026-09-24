@@ -100,7 +100,7 @@ jobs:
           assert 'site-packages' in str(Path(jevscan.__file__)), jevscan.__file__
           assert jevscan.__version__ == '0.2.0rc7'
           config = yaml.safe_load(Path('resolved.yaml').read_text())
-          assert config['version'] == 4 and len(config['rules']) == 10
+          assert config['version'] == 4 and len(config['rules']) == 16
           assert config['evaluation']['max_context_tokens'] == 28000
           assert config['evaluation']['max_total_tokens'] == 56000
           assert config['scan']['max_full_file_lines'] == 3000
@@ -108,7 +108,7 @@ jobs:
           assert config['budget']['max_requests'] == 1500
           assert config['budget']['max_input_tokens'] == 5000000
           assert config['compaction']['max_rounds'] == 3
-          assert {rule['name'] for rule in config['rules']} == {f'JEV{i:02}' for i in range(1, 11)}
+          assert {rule['name'] for rule in config['rules']} == {f'JEV{i:02}' for i in range(1, 17)}
           report = json.loads(Path('inventory.json').read_text())
           assert report['schema_version'] == 8
           assert not report['summary']['incomplete'], report['summary']
