@@ -6,8 +6,6 @@ Only discovered, non-ignored source under the project root can enter a snapshot.
 
 import asyncio
 import hashlib
-import os
-import stat
 from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -17,36 +15,10 @@ from typing import Any
 from jevscan.core.config import EnrichmentConfig, ScanConfig
 from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.discovery import discover
-from jevscan.core.models import Diagnostic, Kind, ParsedFile, Reference, Target
+from jevscan.core.models import Diagnostic, FileJob, Kind, ParsedFile, Reference, Target
 from jevscan.core.parser import parse_source
 from jevscan.core.protocol import Check
-
-
-def _read_source(root: Path, path: str, limit: int) -> bytes:
-    """Open every component relative to a trusted root, without following symlinks."""
-    parts = Path(path).parts
-    if not parts or Path(path).is_absolute() or any(part in {"..", "."} for part in parts):
-        raise OSError("evidence path is not project-relative")
-    if not hasattr(os, "O_NOFOLLOW") or os.open not in os.supports_dir_fd:
-        raise OSError("safe evidence reads require no-follow, directory-relative file access")
-    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        for part in parts[:-1]:
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
-            os.close(directory)
-            directory = child
-        descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
-        with os.fdopen(descriptor, "rb") as stream:
-            before = os.fstat(stream.fileno())
-            if not stat.S_ISREG(before.st_mode):
-                raise OSError("evidence is not a regular file")
-            source = stream.read(limit + 1)
-            after = os.fstat(stream.fileno())
-            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-                raise OSError("evidence changed during snapshot read")
-            return source
-    finally:
-        os.close(directory)
+from jevscan.core.source_snapshot import read_source as _read_source
 
 
 def _reference_targets(parsed: ParsedFile) -> Iterator[tuple[Reference, Target]]:
@@ -205,6 +177,10 @@ class Catalogue:
             if _test_path(parsed.path):
                 self.tests[reference.name].append(Candidate(snapshot, target, "test_reference", reference))
 
+    def record_gap(self, reason: str) -> None:
+        self.coverage[reason] += 1
+        self.coverage["discovery_complete"] = False
+
     def related(self, context: ContextBuilder, target: Target, route: str) -> list[Candidate]:
         parsed = context.parsed
         primary_names = (
@@ -228,40 +204,38 @@ class Catalogue:
         ]
 
 
+def _index_source(root: Path, entry: FileJob, scan: ScanConfig, byte_limit: int, result: Catalogue) -> None:
+    """Read and admit one source snapshot, recording why it cannot enter the index."""
+    result.coverage["files_read"] += 1
+    try:
+        source = _read_source(root, entry.display_path, byte_limit)
+        result.coverage["source_bytes"] += len(source)
+        if len(source) > byte_limit:
+            result.record_gap("oversized")
+            return
+        parsed = parse_source(source, entry, scan.max_units_per_file)
+    except (OSError, UnicodeError):
+        result.record_gap("unreadable")
+        return
+    if parsed.failed:
+        result.record_gap("parse_failed")
+        return
+    result.add(parsed)
+
+
 def _catalogue(root: Path, scan: ScanConfig, limits: EnrichmentConfig) -> Catalogue:
     result = Catalogue()
     iterator = discover([root], root, scan)
     try:
         for entry in iterator:
             if isinstance(entry, Diagnostic):
-                result.coverage["unreadable"] += 1
-                result.coverage["discovery_complete"] = False
+                result.record_gap("unreadable")
                 continue
-            if result.coverage["files_read"] >= limits.max_source_files:
-                result.coverage["discovery_complete"] = False
-                break
             remaining = limits.max_source_bytes - result.coverage["source_bytes"]
-            if remaining <= 0:
+            if result.coverage["files_read"] >= limits.max_source_files or remaining <= 0:
                 result.coverage["discovery_complete"] = False
                 break
-            result.coverage["files_read"] += 1
-            try:
-                source = _read_source(root, entry.display_path, min(scan.max_file_bytes, remaining))
-                result.coverage["source_bytes"] += len(source)
-                if len(source) > min(scan.max_file_bytes, remaining):
-                    result.coverage["oversized"] += 1
-                    result.coverage["discovery_complete"] = False
-                    continue
-                parsed = parse_source(source, entry, scan.max_units_per_file)
-            except (OSError, UnicodeError):
-                result.coverage["unreadable"] += 1
-                result.coverage["discovery_complete"] = False
-                continue
-            if parsed.failed:
-                result.coverage["parse_failed"] += 1
-                result.coverage["discovery_complete"] = False
-                continue
-            result.add(parsed)
+            _index_source(root, entry, scan, min(scan.max_file_bytes, remaining), result)
     finally:
         iterator.close()
     return result
