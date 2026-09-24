@@ -20,7 +20,6 @@ from jevscan.core.syntax_recovery import (
     recoverable_type_errors,
 )
 from jevscan.core.syntax_symbols import Symbol, capture_symbols, node_text
-from jevscan.core.syntax_symbols import _rust_callable_start as _rust_callable_start
 
 
 class ParserUnavailableError(RuntimeError):

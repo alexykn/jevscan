@@ -8,7 +8,8 @@ import pytest
 from jevscan.cli.main import main
 from jevscan.core.languages import language_for
 from jevscan.core.models import FileJob, Kind
-from jevscan.core.parser import _rust_callable_start, parse_batch, parse_source
+from jevscan.core.parser import parse_batch, parse_source
+from jevscan.core.syntax_symbols import _rust_callable_start
 
 pytestmark = [pytest.mark.parser, pytest.mark.usefixtures("grammar_runtime")]
 
