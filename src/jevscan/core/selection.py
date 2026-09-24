@@ -6,7 +6,7 @@ from typing import Any
 from jevscan.core.context import Evidence
 from jevscan.core.inference import Prediction
 from jevscan.core.planning import RequestBudget
-from jevscan.core.protocol import Check, NoulAnswer, encode
+from jevscan.core.protocol import Check, NoulAnswer, PromptRegistry, encode
 from jevscan.core.retrieval import Candidate
 from jevscan.core.rules import NoulQuestion, Question
 
@@ -14,7 +14,7 @@ Predict = Callable[[str, bytes, dict[str, Question], dict[str, bytes], dict[str,
 
 
 def selection_input(
-    check: Check, evidence: Evidence, candidates: list[Candidate]
+    check: Check, evidence: Evidence, candidates: list[Candidate], rubric: PromptRegistry
 ) -> tuple[bytes, dict[str, Question], dict[str, bytes]]:
     questions: dict[str, Question] = {
         candidate.id: NoulQuestion(
@@ -29,8 +29,9 @@ def selection_input(
         )
         for candidate in candidates
     }
+    state = rubric.state_bytes({**evidence.state, "candidate_context": [item.preview() for item in candidates]})
     return (
-        encode({**evidence.state, "candidate_context": [item.preview() for item in candidates]}),
+        state,
         questions,
         {name: encode(check.auxiliary(question)) for name, question in questions.items()},
     )
@@ -43,12 +44,13 @@ async def rank_candidates(
     budget: RequestBudget,
     predict: Predict,
     trace: dict[str, Any],
+    rubric: PromptRegistry,
 ) -> list[tuple[float, Candidate]]:
     """Pack independent questions without weakening any caller's request or call limits."""
     ranked: list[tuple[float, Candidate]] = []
 
     async def flush(batch: list[Candidate]) -> None:
-        state, questions, wire = selection_input(check, evidence, batch)
+        state, questions, wire = selection_input(check, evidence, batch, rubric)
         prediction = await predict("selection", state, questions, wire, trace)
         for candidate in batch:
             answer = prediction.response.answers[candidate.id]
@@ -58,11 +60,11 @@ async def rank_candidates(
 
     pending: list[Candidate] = []
     for candidate in candidates:
-        state, _, wire = selection_input(check, evidence, [*pending, candidate])
+        state, _, wire = selection_input(check, evidence, [*pending, candidate], rubric)
         if pending and not budget.fits(state, wire):
             await flush(pending)
             pending = []
-        state, _, wire = selection_input(check, evidence, [candidate])
+        state, _, wire = selection_input(check, evidence, [candidate], rubric)
         if budget.fits(state, wire):
             pending.append(candidate)
         else:

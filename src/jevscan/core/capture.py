@@ -10,7 +10,13 @@ from threading import Lock
 from typing import TYPE_CHECKING, Any, Mapping, Protocol
 
 from jevscan.core.assessment import Assessment
-from jevscan.core.protocol import PROMPT_VERSION, QUESTION_POLICY, encode
+from jevscan.core.protocol import (
+    PROMPT_VERSION,
+    QUESTION_POLICY,
+    PromptRegistry,
+    encode,
+    validate_prompt_registry,
+)
 
 if TYPE_CHECKING:
     from jevscan.core.evaluation import Judgment
@@ -52,12 +58,17 @@ def assessment_record(value: Assessment) -> dict[str, Any]:
 
 
 def _stable_case_id(judgment: Judgment, source_documents: Mapping[str, str]) -> str:
+    state = (
+        json.loads(judgment.wire_state)
+        if judgment.wire_state
+        else PromptRegistry.for_question(judgment.check.rule.question).bind_state(judgment.context.state)
+    )
     identity = encode({
         "target": judgment.check.target.metadata(),
         "rule_id": judgment.check.rule_id,
-        "question": judgment.check.question(),
+        "question": judgment.question_wire or judgment.check.question(),
         "model": judgment.model,
-        "evidence_sha256": hashlib.sha256(judgment.context.encoded).hexdigest(),
+        "evidence_sha256": hashlib.sha256(encode(state)).hexdigest(),
         "source_documents": {
             path: hashlib.sha256(content.encode("utf-8")).hexdigest()
             for path, content in sorted(source_documents.items())
@@ -123,7 +134,15 @@ class FinalJudgmentRecorder:
         source_documents: Mapping[str, str],
         review: Mapping[str, Any] | None = None,
     ) -> None:
-        evidence = judgment.context.state
+        evidence = (
+            json.loads(judgment.wire_state)
+            if judgment.wire_state
+            else PromptRegistry.for_question(judgment.check.rule.question).bind_state(judgment.context.state)
+        )
+        question_wire = judgment.question_wire or judgment.check.question()
+        if question_wire != judgment.check.question():
+            raise ValueError("final judgment question does not match its canonical wire")
+        validate_prompt_registry(evidence, judgment.check.rule.question)
         document_paths = {
             document.get("path") for document in evidence.get("documents", []) if isinstance(document, dict)
         }
@@ -148,7 +167,7 @@ class FinalJudgmentRecorder:
             "cached": bool(getattr(judgment, "cached", False)),
             "fully_cached": bool(getattr(judgment, "fully_cached", False)),
             "prompt": {"version": PROMPT_VERSION, "policy": QUESTION_POLICY},
-            "question_wire": judgment.check.question(),
+            "question_wire": question_wire,
             "context_complete": judgment.evidence["context_complete"],
             "target_complete": judgment.evidence["target_complete"],
             "evidence": {"state": evidence, "source_documents": final_sources},

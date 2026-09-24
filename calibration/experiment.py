@@ -45,6 +45,7 @@ from jevscan.core.protocol import (
     Answer,
     Check,
     JevResponse,
+    PromptRegistry,
     ScoreAnswer,
     encode,
 )
@@ -166,6 +167,7 @@ class TargetRecord:
 @dataclass(frozen=True, slots=True)
 class RequestBatch:
     evidence: Evidence
+    state: bytes
     records: tuple[TargetRecord, ...]
     questions: dict[str, Any]
     wires: dict[str, bytes]
@@ -481,6 +483,16 @@ def _question_id(record: TargetRecord, candidate: str, rule_id: str) -> str:
     return f"{record.case_key}::{candidate}::{rule_id}"
 
 
+def _request_batch(
+    evidence: Evidence,
+    records: list[TargetRecord],
+    questions: dict[str, Any],
+    wires: dict[str, bytes],
+) -> RequestBatch:
+    state = PromptRegistry.from_questions(questions.values()).state_bytes(evidence.state)
+    return RequestBatch(evidence, state, tuple(records), questions, wires)
+
+
 def _request_batches(
     records: list[TargetRecord], candidates: str | tuple[str, ...], rules: dict[str, Rule]
 ) -> list[RequestBatch]:
@@ -507,7 +519,7 @@ def _request_batches(
                         Check(record.case_key, record.target, rule_id, rule).question()
                     )
             if current and len(proposed) > MAX_QUESTIONS:
-                batches.append(RequestBatch(record.evidence, tuple(current), current_questions, current_wires))
+                batches.append(_request_batch(record.evidence, current, current_questions, current_wires))
                 current, current_questions, current_wires = [], {}, {}
                 proposed = {}
                 proposed_wires = {}
@@ -523,13 +535,13 @@ def _request_batches(
             current.append(record)
             current_questions, current_wires = proposed, proposed_wires
         if current:
-            batches.append(RequestBatch(group[0].evidence, tuple(current), current_questions, current_wires))
+            batches.append(_request_batch(group[0].evidence, current, current_questions, current_wires))
     return batches
 
 
 def _build_body(batch: RequestBatch, config: JevConfig) -> bytes:
     budget = RequestBudget(EvaluationConfig(max_questions=MAX_QUESTIONS), config.model, TokenCalibration())
-    return budget.body(batch.evidence.encoded, batch.wires)
+    return budget.body(batch.state, batch.wires)
 
 
 def _case(
@@ -541,6 +553,7 @@ def _case(
     returned_model: str,
     endpoint: str,
     rules: dict[str, Rule],
+    wire_state: dict[str, Any],
 ) -> CalibrationCase:
     variant = CANDIDATE_BUNDLES[candidate][rule_id]
     rule = _variant_rule(rules[rule_id], variant)
@@ -550,7 +563,7 @@ def _case(
     source_documents = {record.display_path: record.parsed.source.decode("utf-8")}
     hashes = {
         "question": f"sha256:{_json_hash(Check(record.case_key, record.target, rule_id, rule).question())}",
-        "evidence": f"sha256:{_json_hash(record.evidence.state)}",
+        "evidence": f"sha256:{_json_hash(wire_state)}",
         "source_documents": {record.display_path: f"sha256:{record.source_sha256}"},
         "rule": f"sha256:{_json_hash(rule.model_dump(mode='json'))}",
         "report": f"sha256:{_json_hash(rule.report.model_dump(mode='json'))}",
@@ -584,7 +597,7 @@ def _case(
             "variant": variant,
             "expected_score": judgment.expected_score,
         },
-        "evidence": {"state": record.evidence.state, "source_documents": source_documents},
+        "evidence": {"state": wire_state, "source_documents": source_documents},
         "prompt": prompt,
         "endpoint": endpoint,
         "requested_model": requested_model,
@@ -749,7 +762,8 @@ async def _capture_live(
         body = _build_body(batch, jev_config)
         planned.append({
             "request_index": index,
-            "evidence_sha256": batch.evidence.key,
+            "source_evidence_sha256": batch.evidence.key,
+            "evidence_sha256": _sha256_bytes(batch.state),
             "question_count": len(batch.questions),
             "question_ids": sorted(batch.questions),
             "body_sha256": _sha256_bytes(body),
@@ -780,7 +794,17 @@ async def _capture_live(
                     for rule_id in sorted(record.judgments):
                         answer = response.answers[_question_id(record, candidate, rule_id)]
                         cases.append(
-                            _case(record, rule_id, candidate, answer, requested_model, response.model, endpoint, rules)
+                            _case(
+                                record,
+                                rule_id,
+                                candidate,
+                                answer,
+                                requested_model,
+                                response.model,
+                                endpoint,
+                                rules,
+                                json.loads(batch.state),
+                            )
                         )
             reported_input = response.usage.input_tokens
             reported_output = response.usage.output_tokens
@@ -823,7 +847,8 @@ def _plan_only(
         body = _build_body(batch, config)
         planned.append({
             "request_index": index,
-            "evidence_sha256": batch.evidence.key,
+            "source_evidence_sha256": batch.evidence.key,
+            "evidence_sha256": _sha256_bytes(batch.state),
             "question_count": len(batch.questions),
             "body_sha256": _sha256_bytes(body),
             "estimated_reserved_input_tokens": math.ceil(len(body) / BYTES_PER_TOKEN) + TOKEN_RESERVE,

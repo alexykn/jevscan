@@ -47,6 +47,7 @@ from jevscan.core.protocol import (
     Answer,
     Check,
     JevResponse,
+    PromptRegistry,
     encode,
     validate_answer,
 )
@@ -152,11 +153,13 @@ class PreparedScenario:
     context_complete: bool
     target_complete: bool
     applicability_skip: str | None = None
+    rubric: PromptRegistry | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class RequestBatch:
     evidence: Evidence
+    state: bytes
     scenarios: tuple[PreparedScenario, ...]
     questions: dict[str, Any]
     wires: dict[str, bytes]
@@ -399,6 +402,7 @@ def _prepare(scenarios: list[Scenario], config: Any) -> list[PreparedScenario]:
                     False,
                     False,
                     reason,
+                    planner.rubric,
                 )
             )
             continue
@@ -413,6 +417,7 @@ def _prepare(scenarios: list[Scenario], config: Any) -> list[PreparedScenario]:
                 evidence,
                 bool(description["context_complete"]),
                 bool(description["target_complete"]),
+                rubric=planner.rubric,
             )
         )
     return prepared
@@ -422,8 +427,16 @@ def _request_budget(config: Any) -> RequestBudget:
     return RequestBudget(config.evaluation, MODEL, TokenCalibration())
 
 
+def _request_rubric(prepared: list[PreparedScenario], config: Any) -> PromptRegistry:
+    for item in prepared:
+        if item.rubric is not None:
+            return item.rubric
+    return PromptRegistry.from_rules(config.selected_rules())
+
+
 def _batches(prepared: list[PreparedScenario], config: Any) -> list[RequestBatch]:
     budget = _request_budget(config)
+    rubric = _request_rubric(prepared, config)
     groups: dict[str, list[PreparedScenario]] = defaultdict(list)
     for item in prepared:
         if item.applicability_skip is None:
@@ -432,6 +445,7 @@ def _batches(prepared: list[PreparedScenario], config: Any) -> list[RequestBatch
     for evidence_key in sorted(groups):
         group = sorted(groups[evidence_key], key=lambda item: item.scenario.scenario_id)
         evidence = group[0].evidence
+        state = rubric.state_bytes(evidence.state)
         current: list[PreparedScenario] = []
         questions: dict[str, Any] = {}
         wires: dict[str, bytes] = {}
@@ -440,20 +454,20 @@ def _batches(prepared: list[PreparedScenario], config: Any) -> list[RequestBatch
             question = item.scenario.rule.question
             question_wire = encode(item.check.question())
             proposed_questions = {**wires, question_id: question_wire}
-            violations = budget.violations(item.evidence.encoded, {question_id: question_wire})
+            violations = budget.violations(state, {question_id: question_wire})
             if violations:
                 details = ", ".join(sorted(violations))
                 raise ValueError(
                     f"{item.scenario.scenario_id}: single question/evidence request exceeds request budget ({details})"
                 )
-            if current and not budget.fits(item.evidence.encoded, proposed_questions):
-                batches.append(RequestBatch(evidence, tuple(current), questions, wires))
+            if current and not budget.fits(state, proposed_questions):
+                batches.append(RequestBatch(evidence, state, tuple(current), questions, wires))
                 current, questions, wires = [], {}, {}
             current.append(item)
             questions[question_id] = question
             wires[question_id] = question_wire
         if current:
-            batches.append(RequestBatch(evidence, tuple(current), questions, wires))
+            batches.append(RequestBatch(evidence, state, tuple(current), questions, wires))
     return batches
 
 
@@ -462,10 +476,11 @@ def _plan(prepared: list[PreparedScenario], config: Any) -> dict[str, Any]:
     batches = _batches(prepared, config)
     records = []
     for index, batch in enumerate(batches):
-        body = budget.body(batch.evidence.encoded, batch.wires)
+        body = budget.body(batch.state, batch.wires)
         records.append({
             "request_index": index,
-            "evidence_sha256": batch.evidence.key,
+            "source_evidence_sha256": batch.evidence.key,
+            "evidence_sha256": _sha256_bytes(batch.state),
             "question_ids": sorted(batch.questions),
             "question_count": len(batch.questions),
             "body_sha256": _sha256_bytes(body),
@@ -508,7 +523,7 @@ def _plan(prepared: list[PreparedScenario], config: Any) -> dict[str, Any]:
 
 def _hashes(
     check: Check,
-    evidence: Evidence,
+    wire_state: dict[str, Any],
     source_sha256: str,
     rule: Rule,
     endpoint: str,
@@ -518,7 +533,7 @@ def _hashes(
     prompt = {"version": PROMPT_VERSION, "policy": QUESTION_POLICY}
     return {
         "question": f"sha256:{_json_hash(check.question())}",
-        "evidence": f"sha256:{_json_hash(evidence.state)}",
+        "evidence": f"sha256:{_json_hash(wire_state)}",
         "source_documents": {check.target.path: f"sha256:{source_sha256}"},
         "rule": f"sha256:{_json_hash(rule.model_dump(mode='json'))}",
         "report": f"sha256:{_json_hash(rule.report.model_dump(mode='json'))}",
@@ -595,9 +610,11 @@ def _make_case(
     expected = adjudication.get("expected_answer")
     label, warning_worthy = _answer_label(item.scenario.rule, expected)
     check = item.check
+    rubric = item.rubric or PromptRegistry.for_question(item.scenario.rule.question)
+    wire_state = rubric.bind_state(item.evidence.state)
     hashes = _hashes(
         check,
-        item.evidence,
+        wire_state,
         item.scenario.source_sha256,
         item.scenario.rule,
         endpoint,
@@ -637,7 +654,7 @@ def _make_case(
         "explanation": _string(adjudication.get("reason"), f"{item.scenario.scenario_id}.reason"),
         "provenance": provenance,
         "evidence": {
-            "state": item.evidence.state,
+            "state": wire_state,
             "source_documents": {item.scenario.source_path: item.scenario.source.decode("utf-8")},
         },
         "prompt": prompt,
@@ -706,10 +723,12 @@ def _validate_captured_answers(
                 f"manifest rule_id {item.scenario.rule_id!r}"
             )
         captured_evidence = captured.get("evidence_sha256")
-        if captured_evidence != item.evidence.key:
+        rubric = item.rubric or PromptRegistry.for_question(item.scenario.rule.question)
+        expected_evidence = _sha256_bytes(rubric.state_bytes(item.evidence.state))
+        if captured_evidence != expected_evidence:
             raise ValueError(
                 f"{scenario_id}: captured evidence_sha256 {captured_evidence!r} does not match "
-                f"prepared evidence {item.evidence.key!r}"
+                f"prepared request state {expected_evidence!r}"
             )
 
 
@@ -747,14 +766,15 @@ async def _capture_live(
     request_budget = _request_budget(config)
     plans = []
     for index, batch in enumerate(batches):
-        violations = request_budget.violations(batch.evidence.encoded, batch.wires)
+        violations = request_budget.violations(batch.state, batch.wires)
         if violations:
             details = ", ".join(sorted(violations))
             raise ValueError(f"request batch {index} exceeds request budget ({details})")
-        body = request_budget.body(batch.evidence.encoded, batch.wires)
+        body = request_budget.body(batch.state, batch.wires)
         plans.append({
             "request_index": index,
-            "evidence_sha256": batch.evidence.key,
+            "source_evidence_sha256": batch.evidence.key,
+            "evidence_sha256": _sha256_bytes(batch.state),
             "question_ids": sorted(batch.questions),
             "body_sha256": _sha256_bytes(body),
             "reserved_input_tokens": math.ceil(len(body) / BYTES_PER_TOKEN) + TOKEN_RESERVE,
@@ -768,7 +788,7 @@ async def _capture_live(
         jev, api_key, base_url=endpoint, budget=budget, bytes_per_token=BYTES_PER_TOKEN, token_reserve=TOKEN_RESERVE
     ) as client:
         for plan, batch in zip(plans, batches, strict=True):
-            body = request_budget.body(batch.evidence.encoded, batch.wires)
+            body = request_budget.body(batch.state, batch.wires)
             reservation = ReservationUsage()
             response: JevResponse = await client.evaluate(body, batch.questions, reservation=reservation)
             answer_rows.extend(
@@ -777,7 +797,7 @@ async def _capture_live(
                     "rule_id": item.scenario.rule_id,
                     "answer": response.answers[item.scenario.scenario_id].model_dump(mode="json"),
                     "returned_model": response.model,
-                    "evidence_sha256": item.evidence.key,
+                    "evidence_sha256": _sha256_bytes(batch.state),
                 }
                 for item in batch.scenarios
             )

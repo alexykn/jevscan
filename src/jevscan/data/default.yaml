@@ -25,7 +25,7 @@ evaluation:
   token_reserve: 512
   bytes_per_token: 3.0
   max_request_bytes: 1048576
-  max_questions: 64
+  max_questions: 128
   oversized_context: reduce
 compaction:
   context_tokens: 24000
@@ -129,13 +129,10 @@ rules:
     require_body: true
     question:
       type: noul
-      instructions: Does the target mix high-level orchestration with a substantial low-level implementation concern
-        that obscures its primary operation?
+      instructions: Does substantial low-level implementation obscure this operation's high-level orchestration?
       criteria:
-        "true": The target interleaves orchestration with substantial parsing, resource bookkeeping, or other low-level
-          detail.
-        "false": The target stays at one abstraction level, or its small necessary details and cleanup do not obscure the
-          primary operation.
+        "true": Orchestration interleaves substantial parsing, resource bookkeeping, or similar detail.
+        "false": One abstraction level, or necessary detail that does not obscure the operation.
     report:
       message: High-level orchestration appears mixed with substantial low-level implementation detail.
       uncertain_range: [0.4, 0.6]
@@ -159,17 +156,12 @@ rules:
       when_choices: [insufficient_context]
     question:
       type: choice
-      instructions: Select exactly one outcome for repeated validation in the target. A repeated check is visible only
-        when two validation operations can be identified. If no repeated validation is visible, choose
-        justified_or_absent. Use insufficient_context only when a repeated validation is visible but the missing
-        guarantee or boundary fact determines its classification.
+      instructions: Classify two visible checks of the same invariant. With no repeated check, choose justified_or_absent;
+        with a repeated check but unknown guarantee or boundary, choose insufficient_context.
       criteria:
-        demonstrably_redundant: A visible operation establishes a specific invariant and the target later checks that
-          same invariant again without a new boundary, mutation, or concurrency risk.
-        justified_or_absent: No repeated validation is visible, or every visible repeat follows a new boundary or
-          possible invalidation.
-        insufficient_context: A concrete repeated validation is visible, but the missing upstream guarantee or boundary
-          fact is required to choose between redundant and justified_or_absent.
+        demonstrably_redundant: An established invariant is checked again without a new boundary, mutation, or race.
+        justified_or_absent: No repeated check, or a new boundary or invalidation justifies it.
+        insufficient_context: Repeated check visible; upstream guarantee or boundary is unknown.
     report:
       message: A validation check appears to repeat an invariant explicitly established in the supplied code.
       choices: [demonstrably_redundant]
@@ -196,17 +188,12 @@ rules:
       when_choices: [insufficient_context]
     question:
       type: choice
-      instructions: Select exactly one outcome for fallback or swallowed-failure behavior visible in the target. A
-        fallback behavior is visible only when a fallback, swallowed failure, or best-effort continuation is concrete.
-        If no such behavior is visible, choose legitimate_behavior. Use insufficient_context only when the visible
-        behavior needs a missing invariant or failure contract to classify.
+      instructions: Classify a visible fallback, swallowed failure, or best-effort continuation. If none is visible,
+        choose legitimate_behavior; if its governing invariant or failure contract is unknown, choose insufficient_context.
       criteria:
-        concealed_bug: A visible fallback or swallowed failure silently hides a violation of an invariant established by
-          the supplied evidence.
-        legitimate_behavior: No fallback or swallowed failure is visible, or the behavior handles a legitimate runtime
-          condition such as I/O failure, cancellation, input error, or documented optional behavior.
-        insufficient_context: A concrete fallback or swallowed failure is visible, but a missing invariant or intended
-          failure contract is required to choose between concealed_bug and legitimate_behavior.
+        concealed_bug: Fallback silently hides violation of a source-established invariant.
+        legitimate_behavior: No fallback, or it handles a real runtime failure, invalid input, or optional behavior.
+        insufficient_context: Fallback visible, but invariant or intended failure contract is unknown.
     report:
       message: A fallback or swallowed failure appears to conceal a violation of an established internal invariant.
       choices: [concealed_bug]
@@ -233,19 +220,13 @@ rules:
       when_choices: [insufficient_context]
     question:
       type: choice
-      instructions: Select exactly one outcome for helper decomposition in the target. helper decomposition is visibly
-        present only when an implemented caller/helper relationship is visible. If no caller/helper decomposition is
-        visible, choose not_applicable. If it is visible but a missing implementation or caller is needed to classify
-        it, choose insufficient_context.
+      instructions: Classify an implemented caller/helper relationship. Without one choose not_applicable; with one
+        but a missing implementation or caller choose insufficient_context.
       criteria:
-        meaningful: Each visible helper hides a coherent operation behind a meaningful name or satisfies an evident
-          interface requirement, and the caller is clearer.
-        needless_indirection: Visible helpers only forward arguments or move lines without hiding meaningful detail,
-          and the caller is less clear because of that indirection.
-        not_applicable: No helper decomposition is visible in the target; data-only types and declarations are not
-          decomposition defects.
-        insufficient_context: Helper decomposition is visibly present, but a missing helper implementation or caller
-          is required to distinguish meaningful from needless_indirection.
+        meaningful: Helper hides a coherent operation or fulfills an interface, clarifying the caller.
+        needless_indirection: Helper only forwards or moves lines, making the caller less clear.
+        not_applicable: No implemented caller/helper decomposition.
+        insufficient_context: Relationship visible; missing caller or helper prevents classification.
     report:
       message: Helper indirection appears to obscure the caller without providing meaningful decomposition.
       choices: [needless_indirection]
@@ -267,13 +248,10 @@ rules:
     context: file
     question:
       type: noul
-      instructions: Does the file assign the same authoritative state or lifecycle bookkeeping to conflicting owners,
-        creating a concrete synchronization obligation?
+      instructions: Do conflicting owners of the same state or lifecycle create a synchronization obligation?
       criteria:
-        "true": Two or more owners visibly act as authoritative for the same state or lifecycle transition, creating a
-          synchronization obligation.
-        "false": State has one authoritative owner, or repeated data is a derived cache or deliberately synchronized
-          representation without a concrete ownership conflict.
+        "true": Multiple authorities for the same state or transition require synchronization.
+        "false": One authority, a derived cache, or intentional synchronization without ownership conflict.
     report:
       message: State or lifecycle bookkeeping appears to have competing authoritative owners.
       uncertain_range: [0.4, 0.6]
@@ -294,13 +272,10 @@ rules:
       requires_any: [executable_behavior]
     question:
       type: noul
-      instructions: Does this owner combine two or more unrelated responsibilities with weakly connected state or
-        behavior?
+      instructions: Does this owner combine unrelated responsibilities with weakly connected state or behavior?
       criteria:
-        "true": The owner contains multiple responsibilities with weakly connected state or behavior and no clear
-          cohesive boundary.
-        "false": The owner is cohesive, a domain aggregate or facade, or one implementation of a required interface;
-          method count alone is not evidence.
+        "true": Multiple weakly connected responsibilities lack a cohesive boundary.
+        "false": Cohesive owner, aggregate, facade, or required interface; method count alone is insufficient.
     report:
       message: This owner appears to combine unrelated state and behavior.
       uncertain_range: [0.4, 0.6]
@@ -318,14 +293,10 @@ rules:
     context: file
     question:
       type: noul
-      instructions: Does the file contain materially duplicated implementations of the same owned behavior, creating a
-        maintenance obligation to keep them in sync? Similar syntax alone, distinct trust boundaries, and required
-        trait/interface implementations are insufficient.
+      instructions: Is the same owned behavior implemented twice, requiring synchronized maintenance?
       criteria:
-        "true": At least two implementations contain materially duplicated owned behavior with a concrete obligation to
-          keep them synchronized.
-        "false": No implementation is materially duplicated behavior, or similarity is explained by a distinct boundary
-          or required implementation.
+        "true": Materially duplicated implementations must be kept in sync.
+        "false": Only syntax overlaps, or distinct boundaries or required interfaces explain the similarity.
     report:
       message: The same owned behavior appears implemented more than once and may need to be maintained in sync.
       uncertain_range: [0.4, 0.6]
@@ -350,44 +321,23 @@ rules:
     question:
       type: choice
       instructions: >-
-        Select exactly one outcome for narrow temporal atomicity in the target.
-        Choose unaccounted_partial_transition only when two or more
-        semantically coupled externally observable state effects are visible,
-        a reachable failure, cancellation, early return, or retry can leave
-        only a subset visible or durable, and there is no atomic boundary,
-        rollback, compensation, reconciliation, or explicitly valid
-        intermediate or progressive contract. Exclude independent logging,
-        metrics, or caches, local temporary construction, and a complete build
-        followed by one publication. Choose accounted_transition when those
-        effects are covered by such a boundary or contract, or no qualifying
-        transition is visible. Choose insufficient_context when reachability or
-        the local transition contract is unresolved. Do not classify an
-        explicitly progressive or restartable workflow as
-        unaccounted_partial_transition, and do not classify independent
-        best-effort audit or telemetry as a coupled transition when their
-        failure cannot invalidate the primary transition; classify such cases
-        as accounted_transition.
+        Are two coupled, externally visible state changes left partially
+        applied on a reachable failure, cancellation, early return, or retry?
+        Require visible effects and an invalid partial state. Do not count
+        independent telemetry/cache updates, temporary construction, or
+        complete build-then-publish. Explicitly progressive or restartable
+        workflows are accounted, not defects.
       criteria:
         unaccounted_partial_transition: >-
-          Two or more semantically coupled externally observable state effects
-          are visible; a reachable failure, cancellation, early return, or
-          retry can leave only a subset visible or durable; and no atomic
-          boundary, rollback, compensation, reconciliation, or explicitly valid
-          intermediate or progressive contract covers that subset.
+          Coupled visible effects can be left partially applied, without
+          atomicity, rollback, compensation, reconciliation, or a valid
+          intermediate-state contract.
         accounted_transition: >-
-          The effects are covered by an atomic boundary, rollback, compensation,
-          reconciliation, or explicitly valid intermediate or progressive
-          contract, or the target shows no qualifying transition. Independent
-          logging, metrics, caches, local temporary construction, and complete
-          build-then-one-publication patterns are excluded. Do not classify an
-          explicitly progressive or restartable workflow as
-          unaccounted_partial_transition, and do not classify independent
-          best-effort audit or telemetry as a coupled transition when their
-          failure cannot invalidate the primary transition; classify such cases
-          as accounted_transition.
+          No coupled partial effect, or atomicity, rollback, reconciliation,
+          compensation, or a progressive/restartable contract accounts for it;
+          independent best-effort telemetry is not a coupled effect.
         insufficient_context: >-
-          A qualifying partial transition may exist, but reachability or the
-          local transition contract is unresolved.
+          Reachability or the partial-state contract is unknown.
     report:
       message: A partial state transition appears to be left unaccounted for.
       choices: [unaccounted_partial_transition]
@@ -413,37 +363,23 @@ rules:
     question:
       type: choice
       instructions: >-
-        Select exactly one outcome for terminal lifecycle state in the target.
-        Choose terminal_reentry only when a source-established terminal state
-        has a reachable operation that accepts new work, performs a stateful
-        effect, or reacquires a resource, and the target does not reject it
-        before that effect and does not show a proven restart, reset,
-        reinitialization, or fresh generation. Choose valid_restart_or_reuse
-        for an explicit restart, reset, reinitialization, or fresh-generation
-        contract; allowed_terminal_operation for an explicitly allowed
-        terminal operation; and no_terminal_reentry when no qualifying
-        reentry is visible. Exclude idempotent close/stop, draining accepted
-        work, diagnostics, per-operation terminality, and valid pool
-        generations. Choose insufficient_context when terminality or the
-        governing contract is not visible.
+        After a source-proven terminal state, does a reachable operation
+        accept new work, change state, or reacquire a resource without
+        rejection or valid restart? Exclude idempotent close, draining,
+        diagnostics, and per-operation terminality.
       criteria:
         terminal_reentry: >-
-          A source-established terminal state has a reachable operation that
-          accepts new work, performs a stateful effect, or reacquires a
-          resource without rejection and without a proven restart, reset,
-          reinitialization, or fresh generation.
+          After a proven terminal state, a reachable operation accepts new work
+          or has a stateful effect without rejection or a valid restart.
         valid_restart_or_reuse: >-
-          An explicit restart, reset, reinitialization, or fresh generation
-          governs the new operation.
+          Explicit restart, reset, reinitialization, or fresh generation permits the operation.
         allowed_terminal_operation: >-
-          The terminal operation is explicitly allowed, idempotent close/stop,
-          draining accepted work, per-operation terminality, read-only
-          diagnostics, or another stated terminal contract.
+          Explicitly allowed terminal operation, idempotent close/stop,
+          draining, diagnostics, or per-operation terminality.
         no_terminal_reentry: >-
-          No qualifying terminal-state reentry is visible.
+          No qualifying reentry is visible.
         insufficient_context: >-
-          The terminal state or the restart/reinitialization contract is not
-          established by the supplied evidence.
+          Terminality or the governing restart contract is not established.
     report:
       message: "A terminal state appears to be resurrected without an explicit restart or reinitialization contract."
       choices: [terminal_reentry]
@@ -485,48 +421,23 @@ rules:
       - insufficient_context
     question:
       type: choice
-      instructions: 'Select exactly one outcome for the complete callable. First ask
-        the counterfactual: if this effect were made explicit at the caller-facing boundary,
-        would a caller have to reason differently about sequencing, failure, state,
-        ownership, retries, lifecycle, correctness, or externally visible behavior?
-        Choose hidden_caller_relevant_effect only when the target itself visibly owns
-        or directly coordinates a material consequence, that counterfactual is yes,
-        and the consequence is not reasonably signaled by the callable name, typed contract,
-        effect-bearing type or result, explicit operation, or surrounding control flow.
-        Reviewer visibility inside a callee is not the test: an opaque callee is insufficient_context
-        unless the target''s caller-facing consequence is established. Do not infer
-        a finding from effect existence, density, line count, I/O syntax, a helper call,
-        or a surprising implementation. Dense pure pipelines are not_applicable. Dense
-        explicitly effectful pipelines, conventional verbs such as commit, flush, send,
-        refresh_cache, and retry_request, explicit typed contracts, and honest encapsulation
-        are explicit_effect_contract when the caller-facing consequence is appropriately
-        signaled. Choose non_observable_memoization for cache fill that does not change
-        caller correctness, ownership, lifecycle, retry, sequencing, or visible behavior.
-        Choose observability_only for diagnostics that do not alter caller obligations.
-        Choose not_applicable when no material caller-relevant consequence is visible.
-        Choose insufficient_context when materiality, attribution, caller relevance,
-        transparency, or the transitive contract cannot be established.'
+      instructions: >-
+        Does this callable conceal an owned material effect that would change
+        caller reasoning about failure, state, ownership, order, or retries?
+        Effect existence, complexity, and opaque callees alone do not qualify.
+        A clear name, contract, result, or operation can signal the effect.
       criteria:
-        hidden_caller_relevant_effect: The target visibly owns or coordinates a material
-          effect or consequence that would change a caller's reasoning about sequencing,
-          failure, state, ownership, retries, lifecycle, correctness, or externally
-          visible behavior if made explicit, and the target does not reasonably signal
-          that consequence through its name, type, result, operation, or surrounding
-          flow.
-        explicit_effect_contract: A material effect is appropriately signaled to callers
-          by a conventional effect verb, explicit typed contract or effect-bearing result,
-          visible operation, surrounding control flow, documented ownership, or honest
-          encapsulation. Effect existence alone is not a defect.
-        non_observable_memoization: Cache fill or memoization is not caller-observable
-          and does not change caller correctness, ownership, lifecycle, retry, sequencing,
-          or visible behavior.
-        observability_only: Logging, metrics, tracing, or equivalent diagnostics do
-          not alter caller-facing semantic obligations.
-        not_applicable: No material caller-relevant consequence is visible, including
-          a pure pipeline.
-        insufficient_context: A possible consequence is visible, but its materiality,
-          attribution, caller relevance, caller-facing transparency, or transitive contract
-          cannot be established from the supplied evidence.
+        hidden_caller_relevant_effect: A source-visible, material consequence
+          changes caller obligations without a clear name, type, result,
+          contract, or visible operation.
+        explicit_effect_contract: The caller-facing effect is signaled by
+          a verb, type, result, contract, or visible operation.
+        non_observable_memoization: Cache fill has no caller-relevant effect
+          on correctness, ownership, or behavior.
+        observability_only: Diagnostics do not change caller obligations.
+        not_applicable: No material caller-relevant effect; pure computation qualifies.
+        insufficient_context: Materiality, caller impact, or transparency
+          cannot be established from supplied source.
     report:
       message: A callable may conceal a material consequence that callers need for correct
         local reasoning.
@@ -574,53 +485,28 @@ rules:
       - insufficient_context
     question:
       type: choice
-      instructions: 'Select exactly one outcome for an apparently self-contained operation
-        in the target. Choose hidden_caller_relevant_prerequisite only when the source
-        establishes that the operation is valid only after a prior setup, initialization,
-        phase transition, or temporal obligation, the operation relies on state established
-        by that prior phase, and the visible API, type, state model, name, and local
-        contract do not communicate the ordering. Require a source-visible valid path
-        or caller that performs the prior phase before the operation, and require that
-        the prerequisite is not represented by a phase-specific handle, typestate, state-bearing
-        API, context manager, RAII or ownership mechanism, transaction object, or equivalent.
-        Do not report explicit prepare/execute sequencing, phase-specific handles, context
-        managers, RAII, transaction objects, type- or state-encoded prerequisites, clear
-        local rejection of an explicitly communicated prerequisite, or ordinary local
-        lifecycle pairing. Do not infer a finding from a method call sequence, mutable
-        field, null assertion, panic, unwrap, exception, or caller convention alone.
-        Apply the outcomes exclusively and in precedence order: not_applicable when
-        no genuine required prior phase exists, including a transaction object that
-        does not encode such a phase; ordinary_lifecycle_pairing for a conventional
-        locally established open/use/close, scope/RAII, start/stop, lock/unlock, or
-        acquire/release pairing with no hidden caller prerequisite; encoded_phase_state
-        only when a genuine required prior phase exists and a phase-specific type, handle,
-        context, RAII, transaction, or equivalent representation communicates or prevents
-        invalid ordering. Choose explicit_phase_contract when the API or local contract
-        clearly communicates the required ordering. Choose explicit_local_rejection
-        when the operation clearly rejects an unmet and communicated prerequisite before
-        performing its operation. Choose insufficient_context when the dependency, valid
-        ordering, contract, enforcement, or caller burden cannot be established.'
+      instructions: >-
+        Does a source-proven required prior phase leave an undisclosed
+        caller obligation? Require a valid path that performs setup first
+        and state this operation relies on. A call sequence, mutable field,
+        assertion, or name alone proves nothing. Without a real required
+        phase choose not_applicable, not encoded_phase_state.
       criteria:
-        hidden_caller_relevant_prerequisite: The target visibly relies on state or a
-          temporal condition established by a prior phase; a valid caller or owner path
-          performs that phase first; and the visible API, type, state model, name, and
-          local contract neither communicate nor encode the obligation nor clearly reject
-          an unmet prerequisite.
-        explicit_phase_contract: The required ordering is explicitly communicated by the
-          API, method contract, documentation, or visible phase protocol.
-        encoded_phase_state: A genuine required prior phase exists, and a phase-specific
-          handle, typestate, state transition, context manager, RAII or ownership mechanism,
-          transaction object, or equivalent representation communicates or prevents
-          invalid ordering.
-        explicit_local_rejection: The operation checks and clearly rejects an unmet
-          prerequisite before doing the operation under a visible contract.
-        ordinary_lifecycle_pairing: Conventional local ownership or lifecycle pairing
-          is itself visible and creates no hidden caller prerequisite.
-        not_applicable: No genuine required prior phase, setup, initialization, or temporal
-          prerequisite exists, including a transaction object that does not encode such
-          a phase.
-        insufficient_context: A possible prerequisite is visible, but dependency, ordering,
-          contract, enforcement, caller path, or burden is unresolved.
+        hidden_caller_relevant_prerequisite: A required prior phase and valid
+          path are visible; API, type, name, and contract do not communicate,
+          encode, or reject its absence.
+        explicit_phase_contract: The required ordering is communicated by the
+          API or phase contract.
+        encoded_phase_state: A real required phase is conveyed or enforced
+          by a phase-specific type, handle, context, RAII, or transaction.
+        explicit_local_rejection: An unmet, communicated prerequisite is
+          rejected before the operation.
+        ordinary_lifecycle_pairing: Local open/use/close or acquire/release
+          has no hidden caller obligation.
+        not_applicable: No required prior phase, including a transaction
+          object with no phase obligation.
+        insufficient_context: Dependency, ordering, contract, or caller
+          burden is unresolved.
     report:
       message: An operation appears to require an uncommunicated prior phase or setup
         step.
@@ -661,27 +547,19 @@ rules:
       - insufficient_context
     question:
       type: choice
-      instructions: Select exactly one outcome for derived state in the target. Choose
-        derived_incoherence only when exactly one visible authoritative representation
-        and one derived cache, index, denormalized value, or projection describe the
-        same fact, a reachable normal mutation leaves the derived form usable without
-        update, invalidation, or version check, and a consumer can observe a wrong or
-        conflicting result. Exclude metrics, diagnostics, ranking, competing authorities,
-        and failure-only partial writes. Choose coherent_or_intentional when the derivation
-        is maintained, invalidated, boundedly stale by contract, or no qualifying relation
-        is visible. Choose insufficient_context when authority, derivation, reachability,
-        or the freshness contract is not visible.
+      instructions: >-
+        Is a derived copy stale after a normal reachable mutation of one
+        source of truth, with observable consumer harm? Exclude metrics,
+        ranking, competing authorities, failure-only writes, and permitted
+        bounded staleness.
       criteria:
-        derived_incoherence: Exactly one authoritative representation and a derived
-          representation of the same fact are visible; a normal reachable mutation leaves
-          the derived form usable without update, invalidation, or version check; and
-          a consumer can observe a wrong or conflicting result.
-        coherent_or_intentional: The derivation is updated, recomputed, invalidated,
-          versioned, replaced from one snapshot, explicitly boundedly stale, or no qualifying
-          relationship is visible. Metrics, diagnostics, ranking, competing authorities,
-          and failure-only partial writes do not qualify.
-        insufficient_context: The source, derived relationship, or freshness contract
-          cannot be established by the supplied evidence.
+        derived_incoherence: One authority changes; its derived copy remains
+          usable without refresh, invalidation, or version check; a consumer
+          can observe an incorrect result.
+        coherent_or_intentional: Kept in sync, invalidated, versioned,
+          intentionally stale, or no qualifying source/derived relation.
+        insufficient_context: Authority, derivation, reachability,
+          consumer impact, or freshness contract is unknown.
     report:
       message: Derived state appears to remain stale after its authoritative source
         changes.
@@ -727,42 +605,23 @@ rules:
       - insufficient_context
     question:
       type: choice
-      instructions: Select exactly one outcome for retry behavior in the target. Use
-        only the supplied source. Before unsafe_retry, require (1) a dispatch of one
-        logical externally visible effect, (2) source-visible evidence that the effect
-        occurred or was committed before completion became unknown, (3) a reachable
-        replay of the same logical effect, and (4) a concrete duplicate or reorder consequence
-        visible in the supplied source. A timeout, generic exception, API name, argument
-        name, comment, type shape, test, caller, or provider convention does not establish
-        post-dispatch ambiguity or deduplication when the relevant implementation or
-        contract is absent. Choose unsafe_retry only when all four facts are visible
-        and no source-visible stable-key deduplication, operation-ID transaction, replay-safe
-        implementation contract, or compensation/reconciliation prevents the consequence.
-        Choose safe_retry when such protection is visible. Choose explicitly_nonretryable
-        when ambiguity is surfaced as pending/non-retryable and the target does not
-        replay. Choose not_applicable when no dispatch/replay shape is visible. Choose
-        insufficient_context when a retry shape is visible but ambiguity, consequence,
-        logical identity, or the safety contract is not established.
+      instructions: >-
+        Unsafe retry requires source-visible external effect before unknown
+        completion, reachable replay of that SAME logical effect, and
+        concrete duplicate/reorder harm. Timeout or opaque provider contracts
+        alone prove neither ambiguity nor safety. Deduplication, operation
+        IDs, replay-safe contracts, or reconciliation can prevent harm.
       criteria:
-        unsafe_retry: The supplied source visibly shows an externally visible dispatch
-          whose effect occurs before an unknown completion, a reachable replay of the
-          same logical effect, and a concrete duplicate or reorder consequence; no source-visible
-          deduplication, operation-ID transaction, replay-safe implementation contract,
-          or compensation/reconciliation prevents it.
-        safe_retry: The supplied source visibly shows a replay after an ambiguous completion
-          and also shows stable-key deduplication, an operation-ID transaction, a replay-safe
-          implementation contract, or compensation/reconciliation that prevents the
-          duplicate or reorder.
-        explicitly_nonretryable: The supplied source visibly shows an ambiguous completion
-          being recorded or returned as pending/non-retryable, with no replay of the
-          logical externally visible effect.
-        not_applicable: No externally visible dispatch followed by an ambiguous completion
-          and reachable replay of one logical effect is visible.
-        insufficient_context: A possible retry or external call is visible, but the
-          source does not establish post-dispatch ambiguity, the logical effect, its
-          duplicate or reorder consequence, or the governing safety contract. Do not
-          infer these facts from an opaque provider, names, comments, tests, callers,
-          types, or API convention.
+        unsafe_retry: Source proves an effect before unknown completion,
+          replay of the same effect, and duplicate/reorder harm with no
+          visible deduplication or recovery.
+        safe_retry: Source proves ambiguous replay plus deduplication,
+          replay-safe implementation, or compensation preventing harm.
+        explicitly_nonretryable: Ambiguity is surfaced as pending or
+          non-retryable; the effect is not replayed.
+        not_applicable: No qualifying external dispatch and replay shape.
+        insufficient_context: Ambiguity, effect identity, harm, or retry
+          safety is not established by supplied source.
     report:
       message: An externally visible effect appears to be replayed after a source-established
         ambiguous completion without a retry-safety contract.
@@ -803,36 +662,20 @@ rules:
       - insufficient_context
     question:
       type: choice
-      instructions: Select exactly one outcome for a completion or readiness signal
-        in the target. Require a visible success/completion/readiness signal, a required
-        externally observable postcondition such as output, flush, commit, delivery,
-        acknowledgement, or registration, and a reachable path where that postcondition
-        is absent. Choose false_success only when the success claim hides failure or
-        partial state. Choose truthful_success when failure is propagated or success is
-        claimed only after the required postcondition, and explicit_partial_success
-        when an accepted or partial state is surfaced honestly. Optional best-effort
-        telemetry does not invalidate truthful success, and atomic publication is a
-        clean contract. Choose not_applicable when no required externally observable
-        postcondition or success signal is established. Choose insufficient_context
-        when requiredness, the postcondition, reachability, or signal semantics are
-        not visible. Do not infer requiredness from names alone.
+      instructions: >-
+        Does a reachable success/completion/readiness signal falsely claim
+        a required externally observable result that has not happened?
       criteria:
-        false_success: A visible success, completion, or readiness signal is reachable
-          despite a required externally observable output, flush, commit, delivery,
-          acknowledgement, registration, or equivalent postcondition being absent on
-          that path, without exposing failure or partial state.
-        truthful_success: Failure is propagated or the success/completion/readiness
-          signal is reachable only after the required externally observable postcondition
-          succeeds. Atomic publication and optional best-effort telemetry are compatible
-          with this outcome.
-        explicit_partial_success: The target explicitly exposes an accepted, pending,
-          partial, or otherwise non-complete status when the required postcondition
-          is not yet complete, rather than claiming full success.
-        not_applicable: No visible required externally observable postcondition paired
-          with a success/completion/readiness signal is established.
-        insufficient_context: A signal or externally visible operation is present, but
-          the postcondition's requiredness, its reachable failure path, or the meaning
-          of the success claim is not established by the supplied evidence.
+        false_success: Full success is reported on a reachable path missing
+          a required externally observable result, hiding failure or partial state.
+        truthful_success: Failure propagates, or full success follows the
+          required result; optional telemetry may fail independently.
+        explicit_partial_success: Accepted, pending, or partial status
+          honestly distinguishes incomplete work from full success.
+        not_applicable: No established required postcondition paired
+          with a success signal.
+        insufficient_context: Requiredness, reachability, or the
+          signal's meaning is not established.
     report:
       message: A success signal appears reachable without a required externally observable
         postcondition.

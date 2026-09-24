@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from jevscan.core.config import ConfigError, default_yaml, load_config, resolved_yaml
+from jevscan.core.protocol import encode
 from jevscan.core.rules import ChoiceQuestion, NoulQuestion
 
 
@@ -166,9 +167,9 @@ def test_yaml_optional_field_can_be_cleared_without_deleting_other_settings(tmp_
 def test_default_context_sensitive_choices_require_visible_phenomena(tmp_path: Path) -> None:
     config = load_config([tmp_path], cwd=tmp_path).config
     expectations = {
-        "JEV04": ("repeated check is visible", "A concrete repeated validation is visible"),
-        "JEV05": ("fallback behavior is visible", "A concrete fallback"),
-        "JEV06": ("helper decomposition is visibly present", "Helper decomposition is visibly present"),
+        "JEV04": ("two visible checks", "Repeated check visible"),
+        "JEV05": ("visible fallback", "Fallback visible"),
+        "JEV06": ("implemented caller/helper", "Relationship visible"),
     }
     for name, (instruction_phrase, criterion_phrase) in expectations.items():
         question = config.rules[name].question
@@ -253,9 +254,8 @@ def test_packaged_partial_transition_rule_uses_static_admission_and_uncertainty(
     assert rule.report.levels.warning.min_confidence == 0.5
     assert rule.report.levels.error.min_probability == 0.92
     assert rule.report.levels.error.min_confidence == 0.7
-    exclusion = "Do not classify an explicitly progressive or restartable workflow as unaccounted_partial_transition"
-    assert exclusion in rule.question.instructions
-    assert exclusion in rule.question.criteria["accounted_transition"]
+    assert "progressive or restartable" in rule.question.instructions
+    assert "progressive/restartable" in rule.question.criteria["accounted_transition"]
 
 
 def test_packaged_terminal_reentry_contract(tmp_path):
@@ -286,6 +286,14 @@ def test_packaged_terminal_reentry_contract(tmp_path):
     assert rule.report.levels.error.min_confidence == 0.70
     assert rule.report.blocks_exit is True
     assert "blocks_exit" not in rule.report.model_dump(mode="json")
+
+
+def test_default_rules_have_bounded_question_payload(tmp_path: Path) -> None:
+    config = load_config([tmp_path], cwd=tmp_path).config
+    names = {f"JEV{i:02}" for i in range(1, 17)}
+    assert names == config.selected_rules().keys()
+    # The shared registry carries each rule once per request, not per target.
+    assert sum(len(encode(config.rules[name].question.model_dump(mode="json"))) for name in names) <= 11_000
 
 
 @pytest.mark.parametrize(

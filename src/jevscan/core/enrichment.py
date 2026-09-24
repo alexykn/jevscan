@@ -15,7 +15,7 @@ from jevscan.core.config import EnrichmentConfig
 from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.inference import Inference, Prediction
 from jevscan.core.planning import RequestBudget
-from jevscan.core.protocol import Answer, Check, ChoiceAnswer, ContextLimitError, NoulAnswer, encode
+from jevscan.core.protocol import Answer, Check, ChoiceAnswer, ContextLimitError, NoulAnswer, PromptRegistry, encode
 from jevscan.core.retrieval import Candidate, SourceIndex
 from jevscan.core.rules import ChoiceQuestion, EnrichmentTrigger, NoulQuestion, Question
 from jevscan.core.selection import rank_candidates
@@ -147,6 +147,8 @@ class EnrichmentStoppedError(Exception):
 class Reassessment:
     prediction: Prediction
     evidence: Evidence
+    wire_state: bytes
+    question_wire: dict[str, Any]
 
 
 def _augment(
@@ -206,9 +208,11 @@ class Enricher:
         limits: EnrichmentConfig,
         index: SourceIndex,
         inference: Inference,
+        rubric: PromptRegistry,
     ) -> None:
         self.context, self.budget, self.limits = context, budget, limits
         self.index, self.inference = index, inference
+        self.rubric = rubric
         self.calls = 0
         self.reviewed = 0
         self._snapshots: dict[str, str] = {context.parsed.path: context.parsed.source.decode("utf-8")}
@@ -261,21 +265,19 @@ class Enricher:
         """Batch independent routing questions; small configured request budgets still apply."""
         questions = self._routing_questions(check)
         wire = self._wire(check, questions)
+        rubric = PromptRegistry.for_question(check.rule.question)
+        state = rubric.state_bytes(evidence.state)
         pending: dict[str, Question] = {}
         answers: dict[str, Answer] = {}
         for name, question in questions.items():
             proposed = {key: wire[key] for key in (*pending, name)}
-            if pending and not self.budget.fits(evidence.encoded, proposed):
-                prediction = await self._predict(
-                    "route", evidence.encoded, pending, {key: wire[key] for key in pending}, trace
-                )
+            if pending and not self.budget.fits(state, proposed):
+                prediction = await self._predict("route", state, pending, {key: wire[key] for key in pending}, trace)
                 answers.update(prediction.response.answers)
                 pending = {}
             pending[name] = question
         if pending:
-            prediction = await self._predict(
-                "route", evidence.encoded, pending, {key: wire[key] for key in pending}, trace
-            )
+            prediction = await self._predict("route", state, pending, {key: wire[key] for key in pending}, trace)
             answers.update(prediction.response.answers)
         return answers
 
@@ -334,14 +336,23 @@ class Enricher:
         if self.calls >= self.limits.max_calls_per_file:
             raise EnrichmentStoppedError("call_budget")
         candidates = await self._candidates(check, evidence, families, trace)
-        ranked = await rank_candidates(check, evidence, candidates, self.budget, self._predict, trace)
+        ranked = await rank_candidates(
+            check,
+            evidence,
+            candidates,
+            self.budget,
+            self._predict,
+            trace,
+            PromptRegistry.for_question(check.rule.question),
+        )
         ranked = [pair for pair in ranked if pair[0] >= self.limits.min_relevance]
         selected: list[Candidate] = []
         wire = {check.id: encode(check.question())}
+        registry = self.rubric
         for _, candidate in ranked:
             proposed = [*selected, candidate]
             if len(proposed) <= self.limits.max_evidence and self.budget.fits(
-                _augment(self.context, evidence, proposed, trace["retrieval"]).encoded, wire
+                registry.state_bytes(_augment(self.context, evidence, proposed, trace["retrieval"]).state), wire
             ):
                 selected.append(candidate)
             else:
@@ -398,6 +409,8 @@ class Enricher:
                 trace["outcome"] = "no_relevant_evidence"
                 return None
             enriched = _augment(self.context, evidence, selected, trace["retrieval"])
+            request_state = self.rubric.state_bytes(enriched.state)
+            question_wire = check.question()
             self._snapshots.update({
                 candidate.snapshot.parsed.path: candidate.snapshot.parsed.source.decode("utf-8")
                 for candidate in selected
@@ -406,14 +419,14 @@ class Enricher:
             # Fresh judgment: no initial answer, route, relevance score, or expected label in state.
             prediction = await self._predict(
                 "reassess",
-                enriched.encoded,
+                request_state,
                 {check.id: check.rule.question},
-                {check.id: encode(check.question())},
+                {check.id: encode(question_wire)},
                 trace,
             )
             self.inference.summary.enrichment_reruns += 1
             trace["outcome"] = "reassessed"
-            return Reassessment(prediction, enriched)
+            return Reassessment(prediction, enriched, request_state, question_wire)
         except EnrichmentStoppedError as exc:
             trace["outcome"] = str(exc)
         except ContextLimitError:

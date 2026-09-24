@@ -48,11 +48,13 @@ from jevscan.core.planning import Planner, Request
 from jevscan.core.protocol import (
     PROMPT_VERSION,
     QUESTION_POLICY,
+    QUESTION_POLICY_V5,
     Check,
     ChoiceAnswer,
     JevError,
     JevResponse,
     NoulAnswer,
+    PromptRegistry,
     encode,
     validate_answer,
 )
@@ -401,8 +403,9 @@ def _expanded_case_entry(case: CalibrationCase, source_root: Path, source_commit
         return None
     if case.requested_model != MODEL or case.returned_model != MODEL:
         raise ValueError(f"{case.case_id}: imported case model is not pinned to {MODEL}")
-    if case.prompt.version != PROMPT_VERSION or case.prompt.policy != QUESTION_POLICY:
-        raise ValueError(f"{case.case_id}: imported case prompt identity is not the production prompt")
+    supported_prompts = {(5, QUESTION_POLICY_V5), (PROMPT_VERSION, QUESTION_POLICY)}
+    if (case.prompt.version, case.prompt.policy) not in supported_prompts:
+        raise ValueError(f"{case.case_id}: imported case prompt policy is not supported experiment source material")
     source, source_hash, target_bytes = _expanded_case_source(case, source_root)
     expected_score = None
     if case.rule_id == "JEV02":
@@ -430,7 +433,10 @@ def _expanded_case_entry(case: CalibrationCase, source_root: Path, source_commit
         "target_sha256": f"sha256:{hashlib.sha256(target_bytes).hexdigest()}",
         "expected_score": expected_score,
         "validation_pair": case.provenance.get("validation_pair"),
-        "note": "Imported as development-only metadata; stored provider answer is never reused for focused candidates.",
+        "note": (
+            f"Imported from prompt v{case.prompt.version} as development-only source and label material; "
+            "stored provider answer is never reused for focused candidates."
+        ),
     }
 
 
@@ -702,24 +708,28 @@ def _prepare_candidate(
 
 def _pack_requests(planner: Planner, items: list[tuple[Check, Evidence]]) -> list[Request]:
     grouped: dict[str, tuple[Evidence, list[Check]]] = {}
+    rubric = PromptRegistry.from_questions(check.rule.question for check, _ in items)
     for check, evidence in items:
         checks = grouped.setdefault(evidence.key, (evidence, []))[1]
         if check.id not in {item.id for item in checks}:
             checks.append(check)
     requests: list[Request] = []
     for evidence, checks in sorted(grouped.values(), key=lambda item: item[0].key):
+        state = rubric.state_bytes(evidence.state)
         current: list[Check] = []
         for check in sorted(checks, key=lambda item: item.id):
             proposed = (*current, check)
-            proposed_questions = {item.id: encode(item.question()) for item in proposed}
-            if current and not planner.budget.fits(evidence.encoded, proposed_questions):
-                questions = {item.id: encode(item.question()) for item in current}
-                requests.append(Request(evidence, tuple(current), planner.budget.body(evidence.encoded, questions)))
+            proposed_wires = {item.id: encode(item.question()) for item in proposed}
+            if current and not planner.budget.fits(state, proposed_wires):
+                question_wires = {item.id: encode(item.question()) for item in current}
+                body = planner.budget.body(state, question_wires)
+                requests.append(Request(evidence, tuple(current), body, state, question_wires))
                 current = []
             current.append(check)
         if current:
-            questions = {item.id: encode(item.question()) for item in current}
-            requests.append(Request(evidence, tuple(current), planner.budget.body(evidence.encoded, questions)))
+            question_wires = {item.id: encode(item.question()) for item in current}
+            body = planner.budget.body(state, question_wires)
+            requests.append(Request(evidence, tuple(current), body, state, question_wires))
     return requests
 
 
@@ -902,6 +912,7 @@ def _plan_record(
 def _case_hashes(
     item: _CaptureItem,
     evidence_sources: Mapping[str, str],
+    wire_state: dict[str, Any],
     *,
     endpoint: str,
     returned_model: str,
@@ -909,7 +920,7 @@ def _case_hashes(
     prompt = {"version": PROMPT_VERSION, "policy": QUESTION_POLICY}
     return {
         "question": f"sha256:{_json_hash(item.check.question())}",
-        "evidence": f"sha256:{_json_hash(item.evidence.state)}",
+        "evidence": f"sha256:{_json_hash(wire_state)}",
         "source_documents": {path: _sha256_text(content) for path, content in sorted(evidence_sources.items())},
         "rule": f"sha256:{_json_hash(item.check.rule.model_dump(mode='json'))}",
         "report": f"sha256:{_json_hash(item.check.rule.report.model_dump(mode='json'))}",
@@ -928,6 +939,7 @@ def _require_pinned_model(model: str) -> None:
 def _capture_case(
     item: _CaptureItem,
     answer: Any,
+    wire_state: dict[str, Any],
     *,
     endpoint: str,
     manifest_sha256: str,
@@ -970,7 +982,7 @@ def _capture_case(
         "body_sha256": usage.get("body_sha256"),
         "source_documents": sorted(evidence_sources),
     }
-    hashes = _case_hashes(item, evidence_sources, endpoint=endpoint, returned_model=returned_model)
+    hashes = _case_hashes(item, evidence_sources, wire_state, endpoint=endpoint, returned_model=returned_model)
     prompt = {"version": PROMPT_VERSION, "policy": QUESTION_POLICY}
     return CalibrationCase.model_validate({
         "version": 1,
@@ -986,7 +998,7 @@ def _capture_case(
         "label": label,
         "explanation": "Focused experiment manifest label; provider answer is replayed through production assessment.",
         "provenance": provenance,
-        "evidence": {"state": item.evidence.state, "source_documents": evidence_sources},
+        "evidence": {"state": wire_state, "source_documents": evidence_sources},
         "prompt": prompt,
         "endpoint": endpoint,
         "requested_model": MODEL,
@@ -1057,10 +1069,7 @@ def _capture_reservations(
     planned_tokens = 0
     reserved_tokens = 0
     for index, request in enumerate(requests):
-        estimate = planner.budget.budget(
-            request.evidence.encoded,
-            {check.id: encode(check.question()) for check in request.checks},
-        )
+        estimate = planner.budget.budget(request.state, request.question_wires)
         body_reserved = _body_reservation(request.body, planner.budget.limits)
         attempts_reserved = body_reserved * (retries + 1)
         margin_reserved = math.ceil(attempts_reserved * LOCALIZATION_OVERHEAD)
@@ -1074,7 +1083,8 @@ def _capture_reservations(
             "parent_opportunity_count": len(
                 set().union(*(parent_counts[(request.evidence.key, check.id)] for check in request.checks))
             ),
-            "evidence_sha256": f"sha256:{hashlib.sha256(request.evidence.encoded).hexdigest()}",
+            "source_evidence_sha256": f"sha256:{hashlib.sha256(request.evidence.encoded).hexdigest()}",
+            "evidence_sha256": f"sha256:{hashlib.sha256(request.state).hexdigest()}",
             "body_sha256": f"sha256:{hashlib.sha256(request.body).hexdigest()}",
             "planned_input_tokens": estimate.total_tokens,
             "request_body_reserved_input_tokens": body_reserved,
@@ -1120,11 +1130,13 @@ def _cases_from_response(
         "purchased_question_count": reservation["question_count"],
     }
     cases: list[CalibrationCase] = []
+    wire_state = json.loads(request.state)
     for check in request.checks:
         for item in by_question[(request.evidence.key, check.id)]:
             case = _capture_case(
                 item,
                 response.answers[check.id],
+                wire_state,
                 endpoint=endpoint,
                 manifest_sha256=manifest_sha256,
                 returned_model=response.model,
@@ -1474,9 +1486,7 @@ def plan_manifest(
             _RULE_BASES[record["rule_id"]],
         ))
     for index, request in enumerate(requests):
-        estimate = next(iter(planners.values())).budget.budget(
-            request.evidence.encoded, {check.id: encode(check.question()) for check in request.checks}
-        )
+        estimate = next(iter(planners.values())).budget.budget(request.state, request.question_wires)
         body_reserved = _body_reservation(request.body, next(iter(planners.values())).budget.limits)
         attempts_reserved = body_reserved * (CAPTURE_RETRIES + 1)
         margin_reserved = math.ceil(attempts_reserved * LOCALIZATION_OVERHEAD)
@@ -1484,7 +1494,8 @@ def plan_manifest(
         reserved_tokens += attempts_reserved + margin_reserved
         batch_documents.append({
             "request_index": index,
-            "evidence_sha256": f"sha256:{hashlib.sha256(request.evidence.encoded).hexdigest()}",
+            "source_evidence_sha256": f"sha256:{hashlib.sha256(request.evidence.encoded).hexdigest()}",
+            "evidence_sha256": f"sha256:{hashlib.sha256(request.state).hexdigest()}",
             "question_ids": [check.id for check in request.checks],
             "question_count": len(request.checks),
             "parent_opportunity_count": len(
@@ -1916,7 +1927,12 @@ def _record_pair_metadata(record: Any) -> Mapping[str, Any]:
     pair = binding["pair"]
     wire = record.case.question_wire
     try:
-        task = wire["instructions"]["task"]
+        instructions = wire["instructions"]
+        if "rubric" in instructions:
+            rubric_ref = instructions["rubric"]
+            task = record.case.evidence.state["jevscan_prompt"]["rubrics"][rubric_ref]["instructions"]
+        else:
+            task = instructions["task"]
         encoded = task.split(_PAIR_TASK_MARKER, 1)[1]
         task_binding = json.loads(encoded)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:

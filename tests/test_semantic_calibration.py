@@ -16,11 +16,14 @@ from jevscan.core.protocol import (
     QUESTION_POLICY,
     QUESTION_POLICY_V4,
     QUESTION_POLICY_V4_EARLY,
+    QUESTION_POLICY_V5,
     Check,
+    PromptRegistry,
     ScoreAnswer,
-    bind_question,
+    bind_shared_question,
     encode,
     prompt_binder,
+    rubric_reference,
 )
 from jevscan.core.rules import Rule
 from jevscan.core.semantic_calibration import CalibrationCase, load_cases, replay_case, replay_cases
@@ -177,11 +180,17 @@ def case_document(
     requested_model: str = "requested-model",
     returned_model: str = "concrete-model",
     prompt_version: int = PROMPT_VERSION,
-    prompt_policy: str = QUESTION_POLICY,
+    prompt_policy: str | None = None,
     adjudicated_severity: str | None = None,
     context_complete: bool = True,
     target_complete: bool = True,
 ) -> dict[str, Any]:
+    if prompt_policy is None:
+        prompt_policy = {
+            4: QUESTION_POLICY_V4,
+            5: QUESTION_POLICY_V5,
+            PROMPT_VERSION: QUESTION_POLICY,
+        }.get(prompt_version, QUESTION_POLICY)
     source_bytes = source.encode("utf-8")
     evidence_end = len(source_bytes) if evidence_end is None else evidence_end
     target_end = len(source_bytes) if target_end is None else target_end
@@ -222,6 +231,8 @@ def case_document(
         question = prompt_binder(prompt_version, prompt_policy).bind(rule.question, target, prompt_policy)
     except ValueError:
         question = check.question()
+    if prompt_version == 6:
+        state = PromptRegistry.for_question(rule.question).bind_state(state)
     hashes = {
         "question": _hash_bytes(encode(question)),
         "evidence": _hash_bytes(encode(state)),
@@ -275,6 +286,14 @@ def case_document(
     return document
 
 
+def _refresh_shared_rubric(document: dict[str, Any], rule: Rule) -> None:
+    state = document["evidence"]["state"]
+    state.pop("jevscan_prompt", None)
+    state.update(PromptRegistry.for_question(rule.question).bind_state(state))
+    document["hashes"]["evidence"] = _hash_bytes(encode(state))
+    document["comparability"]["evidence"] = document["hashes"]["evidence"]
+
+
 def _noul_case_with_capture(disposition: dict[str, str]) -> dict[str, Any]:
     document = case_document()
     rule = Rule.model_validate({
@@ -298,6 +317,7 @@ def _noul_case_with_capture(disposition: dict[str, str]) -> dict[str, Any]:
         "answer": answer,
         "question_wire": question,
     })
+    _refresh_shared_rubric(document, rule)
     document["hashes"].update({
         "question": _hash_bytes(encode(question)),
         "rule": _hash_bytes(encode(document["rule"])),
@@ -352,6 +372,7 @@ def _ordinary_not_applicable_choice_case() -> CalibrationCase:
         rule.question, target, document["prompt"]["policy"]
     )
     document.update({"rule": rule.model_dump(mode="json"), "answer": answer, "question_wire": question})
+    _refresh_shared_rubric(document, rule)
     document["hashes"].update({
         "question": _hash_bytes(encode(question)),
         "rule": _hash_bytes(encode(document["rule"])),
@@ -561,6 +582,7 @@ def test_changed_question_with_updated_identity_is_not_paired() -> None:
     changed = case_document()
     changed["rule"]["question"]["instructions"] = "A different question"
     changed_rule = Rule.model_validate(changed["rule"])
+    _refresh_shared_rubric(changed, changed_rule)
     changed_target = Target("target", "unit", "sample.py", "python", "sample", 0, 10, 1, 1, Kind.FUNCTION)
     changed_question = Check("case-1", changed_target, "renamed-rule", changed_rule).question()
     changed["hashes"]["question"] = _hash_bytes(encode(changed_question))
@@ -591,11 +613,35 @@ def test_output_retains_provenance_identity_and_assessment_outcome() -> None:
     assert record["target_complete"] is True
 
 
-def test_current_question_binding_delegates_to_the_generic_protocol_binder() -> None:
+def test_current_question_binding_uses_the_shared_rubric_contract() -> None:
     rule = score_rule({"min_score": 2}, {"min_score": 3})
     check = score_check(rule)
 
-    assert check.question() == bind_question(rule.question, check.target, QUESTION_POLICY)
+    assert check.question() == bind_shared_question(rule.question, check.target, QUESTION_POLICY)
+
+
+def test_rubric_ids_are_stable_short_and_collision_checked(monkeypatch, basic_rule) -> None:
+    question = basic_rule.question
+    changed = question.model_copy(update={"instructions": question.instructions + " More detail."})
+    reference = rubric_reference(question)
+
+    assert len(reference) == 16
+    assert reference == rubric_reference(question.model_copy())
+    assert reference != rubric_reference(changed)
+    assert len(PromptRegistry.from_questions([question, question]).rubrics) == 1
+
+    monkeypatch.setattr("jevscan.core.protocol.rubric_reference", lambda _question: reference)
+    with pytest.raises(ValueError, match="identifier collision"):
+        PromptRegistry.from_questions([question, changed])
+
+
+def test_historical_v5_prompt_material_still_replays() -> None:
+    case = CalibrationCase.model_validate(case_document(prompt_version=5))
+    expected = prompt_binder(5, QUESTION_POLICY_V5).bind(case.rule.question, case.target, QUESTION_POLICY_V5)
+
+    assert case.question_wire is None
+    assert case.hashes.question == _hash_bytes(encode(expected))
+    assert replay_case(case).comparable
 
 
 @pytest.mark.parametrize("policy", [QUESTION_POLICY_V4, QUESTION_POLICY_V4_EARLY])

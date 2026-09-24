@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -38,8 +39,8 @@ class FileExecutor:
 
     async def _without_cached_judgments(self, request: Request) -> Request | None:
         cached = await self.inference.cached_judgments(
-            request.evidence.encoded,
-            {check.id: self.planner.questions[check.id] for check in request.checks},
+            request.state,
+            request.question_wires,
             request.questions,
         )
         missing: list[Check] = []
@@ -49,7 +50,15 @@ class FileExecutor:
                 missing.append(check)
                 continue
             answer, model = item
-            self.results.accept_answer(check, request.evidence, answer, model, True)
+            self.results.accept_answer(
+                check,
+                request.evidence,
+                answer,
+                model,
+                True,
+                wire_state=request.state,
+                question_wire=json.loads(request.question_wires[check.id]),
+            )
             trace = self.results.records[check.target.id].context_selection.get(check.rule_id)
             if trace:
                 trace["outcome"] = "judgment_cache"
@@ -64,15 +73,16 @@ class FileExecutor:
             self.results.recovery(check)["rejections"].append({
                 **error.metadata(),
                 "request_bytes": len(request.body),
-                "state_sha256": request.evidence.key,
+                "state_sha256": hashlib.sha256(request.state).hexdigest(),
                 "questions": len(request.checks),
             })
         if len(request.checks) != 1:
             return
-        length = len(self.planner.questions[request.checks[0].id])
-        old = self.rejected.get(request.evidence.key)
+        length = len(request.question_wires[request.checks[0].id])
+        state_key = hashlib.sha256(request.state).hexdigest()
+        old = self.rejected.get(state_key)
         if old is None or length < old[0]:
-            self.rejected[request.evidence.key] = length, error.metadata()
+            self.rejected[state_key] = length, error.metadata()
 
     def _mark_accepted(self, attempt: Attempt, request: Request) -> None:
         for check in request.checks:
@@ -91,9 +101,9 @@ class FileExecutor:
             prediction = await self.inference.predict(
                 request.body,
                 request.questions,
-                state_bytes=len(request.evidence.encoded),
-                question_bytes=sum(len(self.planner.questions[check.id]) for check in request.checks),
-                state=request.evidence.state,
+                state_bytes=len(request.state),
+                question_bytes=sum(len(request.question_wires[check.id]) for check in request.checks),
+                state=json.loads(request.state),
             )
         except ContextLimitError as exc:
             self.rejected_requests.add(digest)
@@ -107,8 +117,8 @@ class FileExecutor:
         self._mark_accepted(attempt, request)
         response = prediction.response
         await self.inference.store_judgments(
-            request.evidence.encoded,
-            {check.id: self.planner.questions[check.id] for check in request.checks},
+            request.state,
+            request.question_wires,
             request.questions,
             response,
         )
@@ -124,7 +134,7 @@ class FileExecutor:
     def _split(self, attempt: Attempt) -> list[Attempt]:
         request = attempt.request
         # Probe a short singleton before retrying sibling batches with the same large state.
-        probe = min(request.checks, key=lambda check: len(self.planner.questions[check.id]))
+        probe = min(request.checks, key=lambda check: len(request.question_wires[check.id]))
         remaining = tuple(check for check in request.checks if check.id != probe.id)
         midpoint = (len(remaining) + 1) // 2
         batches = [(probe,), remaining[:midpoint], remaining[midpoint:]]
@@ -190,11 +200,12 @@ class FileExecutor:
 
     async def _preflight(self, attempt: Attempt) -> list[Attempt] | None:
         request = attempt.request
-        known = self.rejected.get(request.evidence.key)
+        state_key = hashlib.sha256(request.state).hexdigest()
+        known = self.rejected.get(state_key)
         blocked = (
             not attempt.final
             and known is not None
-            and all(len(self.planner.questions[check.id]) >= known[0] for check in request.checks)
+            and all(len(request.question_wires[check.id]) >= known[0] for check in request.checks)
         )
         if blocked:
             assert known is not None

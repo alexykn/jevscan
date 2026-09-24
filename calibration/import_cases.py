@@ -15,11 +15,18 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from jevscan.core.protocol import QUESTION_POLICY, encode
+from jevscan.core.protocol import (
+    QUESTION_POLICY_V5,
+    RUBRIC_STATE_KEY,
+    encode,
+    prompt_binder,
+)
 from jevscan.core.rules import Rule
-from jevscan.core.semantic_calibration import CalibrationCase
+from jevscan.core.semantic_calibration import CalibrationCase, TargetRecord
 
 CASE_VERSION = 1
+CAPTURE_FORMAT_VERSION = 1
+CAPTURE_PROMPT_VERSION = 5
 
 
 def _hash_bytes(value: bytes) -> str:
@@ -45,14 +52,18 @@ def _wire_target_key(wire: dict[str, Any]) -> tuple[Any, ...]:
     if not isinstance(instructions, dict) or not isinstance(instructions.get("target"), dict):
         raise TypeError("captured question has no bound target metadata")
     target = instructions["target"]
+    span = target.get("span")
+    if span is None and {"start_byte", "end_byte"} <= target.keys():
+        span = [target["start_byte"], target["end_byte"]]
+    if span is not None and (not isinstance(span, list) or len(span) != 2):
+        raise ValueError("captured question has an invalid target byte span")
     return (
         target.get("path"),
         target.get("start_line"),
         target.get("end_line"),
-        target.get("qualified_name"),
-        target.get("scope"),
-        target.get("language"),
+        target.get("name", target.get("qualified_name")),
         target.get("kind"),
+        tuple(span) if span is not None else None,
     )
 
 
@@ -62,10 +73,23 @@ def _event_target_key(target: dict[str, Any]) -> tuple[Any, ...]:
         target["start_line"],
         target["end_line"],
         target["qualified_name"],
-        target["scope"],
-        target["language"],
         target["kind"],
+        (target["start_byte"], target["end_byte"]),
     )
+
+
+def _captured_material(
+    indexed: dict[tuple[str, tuple[Any, ...]], dict[str, Any]],
+    question_id: str,
+    target: dict[str, Any],
+) -> dict[str, Any] | None:
+    locator = _event_target_key(target)
+    material = indexed.get((question_id, locator))
+    if material is not None:
+        return material
+    # Version-5 bound questions did not include byte spans. Their question IDs
+    # are file-local and disambiguate legacy same-line target locators.
+    return indexed.get((question_id, (*locator[:-1], None)))
 
 
 def _read_json(path: Path) -> Any:
@@ -172,6 +196,21 @@ def _source_documents(root: Path, state: dict[str, Any]) -> dict[str, str]:
     return result
 
 
+def _frozen_capture_prompt(rule: Rule, target: dict[str, Any], material: dict[str, Any]) -> dict[str, Any]:
+    """Validate the capture-v1 request as the historical version-5 wire."""
+    state = material.get("state")
+    wire = material.get("wire")
+    if not isinstance(state, dict) or RUBRIC_STATE_KEY in state or not isinstance(wire, dict):
+        raise ValueError("offline runner capture v1 must contain frozen version-5 state and question material")
+    target_record = TargetRecord.model_validate(target).to_target()
+    expected = prompt_binder(CAPTURE_PROMPT_VERSION, QUESTION_POLICY_V5).bind(
+        rule.question, target_record, QUESTION_POLICY_V5
+    )
+    if wire != expected:
+        raise ValueError("offline runner capture v1 question does not match the frozen version-5 wire")
+    return {"version": CAPTURE_PROMPT_VERSION, "policy": QUESTION_POLICY_V5}
+
+
 def _case(
     display: dict[str, Any],
     event: dict[str, Any],
@@ -181,6 +220,8 @@ def _case(
     source_root: Path,
     capture: dict[str, Any],
 ) -> dict[str, Any]:
+    if capture.get("version") != CAPTURE_FORMAT_VERSION:
+        raise ValueError("offline runner capture format version 1 is required (frozen prompt version 5)")
     cached = material.get("cached")
     if not isinstance(cached, dict):
         raise TypeError(f"displayed ID {display['display_id']} has no pre-existing cached answer")
@@ -199,7 +240,7 @@ def _case(
     target = event["target"]
     state = material["state"]
     sources = _source_documents(source_root, state)
-    prompt = {"version": 5, "policy": QUESTION_POLICY}
+    prompt = _frozen_capture_prompt(Rule.model_validate(rule), target, material)
     endpoint = capture["endpoint"]
     requested_model = capture["requested_model"]
     hashes = {
@@ -250,7 +291,7 @@ def _case(
         "comparability": {
             "question": hashes["question"],
             "evidence": hashes["evidence"],
-            "prompt": {"version": 5, "identity": hashes["prompt"]},
+            "prompt": {"version": CAPTURE_PROMPT_VERSION, "identity": hashes["prompt"]},
             "endpoint": endpoint,
             "model": returned_model,
         },
@@ -314,8 +355,7 @@ def import_cases(
     used_keys: set[tuple[str, tuple[Any, ...]]] = set()
     for display in labels:
         event, question_id, evidence_meta = _find_event(events, display)
-        key = (question_id, _event_target_key(event["target"]))
-        material = indexed.get(key)
+        material = _captured_material(indexed, question_id, event["target"])
         if material is None:
             raise ValueError(f"displayed ID {display['display_id']} has no captured question material")
         if material["cached"] is None:

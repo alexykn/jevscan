@@ -82,7 +82,7 @@ class EvaluationConfig(StrictModel):
     token_reserve: int = Field(default=512, ge=0)
     bytes_per_token: float = Field(default=3.0, ge=1, le=8)
     max_request_bytes: int = Field(default=1_048_576, ge=1024)
-    max_questions: int = Field(default=64, ge=1, le=256)
+    max_questions: int = Field(default=128, ge=1, le=256)
     oversized_context: Literal["reduce", "skip"] = "reduce"
 
     @model_validator(mode="after")

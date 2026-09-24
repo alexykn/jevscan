@@ -111,7 +111,7 @@ async def _parse_worker(
                 for request in requests:
                     _, total_tokens, _ = planner.estimate(request.evidence, request.checks)
                     planned_tokens += total_tokens
-                    planned_state_bytes += len(request.evidence.encoded)
+                    planned_state_bytes += len(request.state)
                 checks = len(planner.checks) + len(planner.omissions)
                 applicability_skips = sum(len(skipped) for skipped in planner.applicability_skips.values())
                 summary.planned_checks += checks

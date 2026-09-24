@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from jevscan.core.cache import AnswerCache
+from jevscan.core.cache import AnswerCache, judgment_cache_key
 from jevscan.core.client import JevClient
 from jevscan.core.config import Config, EvaluationConfig, JevConfig, load_config
 from jevscan.core.context import ContextBuilder
@@ -16,7 +16,7 @@ from jevscan.core.models import FileJob, Summary
 from jevscan.core.parser import parse_source
 from jevscan.core.planning import Planner, Request
 from jevscan.core.protocol import JevError
-from jevscan.core.rules import Rule
+from jevscan.core.rules import ChoiceQuestion, Rule, ScoreQuestion
 
 pytestmark = [pytest.mark.parser, pytest.mark.usefixtures("grammar_runtime")]
 
@@ -42,6 +42,37 @@ def planned(source: str, config: Config, language: str = "python") -> Planner:
     parsed = parse_source(source.encode(), FileJob(path, path, language, language))
     assert not parsed.failed, parsed.diagnostics
     return Planner(ContextBuilder(parsed), config)
+
+
+def test_default_batching_shares_evidence_across_more_than_64_questions(basic_rule: Rule) -> None:
+    source = "".join(f"def item_{i}(): return {i}\n" for i in range(80))
+    planner = planned(source, configured(basic_rule))
+    requests = list(planner.plan())
+    assert len(planner.checks) == 80
+    assert len(requests) == 1
+    assert len(requests[0].checks) == 80
+    assert planner.fits(requests[0].evidence, requests[0].checks)
+
+
+def test_primary_locator_byte_spans_distinguish_same_line_duplicate_names(basic_rule: Rule) -> None:
+    planner = planned("function duplicate(){} function duplicate(){}\n", configured(basic_rule), "javascript")
+    requests = list(planner.plan())
+    assert len(requests) == 1
+    checks = requests[0].checks
+    assert len(checks) == 2
+    assert {check.target.qualified_name for check in checks} == {"duplicate"}
+    assert {check.target.start_line for check in checks} == {1}
+    locators = [json.loads(requests[0].question_wires[check.id])["instructions"]["target"] for check in checks]
+
+    assert {tuple(locator["span"]) for locator in locators} == {
+        (check.target.start_byte, check.target.end_byte) for check, locator in zip(checks, locators, strict=True)
+    }
+    assert len({tuple(locator["span"]) for locator in locators}) == 2
+    assert len({locator["path"] for locator in locators}) == 1
+    assert len({locator["name"] for locator in locators}) == 1
+    assert len({locator["start_line"] for locator in locators}) == 1
+    assert len({locator["end_line"] for locator in locators}) == 1
+    assert len({locator["kind"] for locator in locators}) == 1
 
 
 def answer(request: httpx.Request, probability: float = 0.95) -> httpx.Response:
@@ -129,8 +160,13 @@ def test_large_class_shared_once_with_independent_method_bindings(basic_rule: Ru
     assert body["state"]["documents"][0]["content"] == source.rstrip()
     for check in request.checks:
         target = body["questions"][check.id]["instructions"]["target"]
-        assert target == check.target.model_metadata()
-        assert not {"id", "start_byte", "end_byte", "display_name"} & target.keys()
+        assert target["path"] == check.target.path
+        assert target["name"] == check.target.qualified_name
+        assert target["start_line"] == check.target.start_line
+        assert target["end_line"] == check.target.end_line
+        assert target["span"] == [check.target.start_byte, check.target.end_byte]
+        assert target.get("kind") == check.target.kind
+        assert not {"scope", "language", "id", "start_byte", "end_byte", "display_name"} & target.keys()
 
 
 async def test_rule_metrics_distinguish_question_bytes_from_shared_request_usage(basic_rule: Rule) -> None:
@@ -356,7 +392,7 @@ async def test_out_of_order_answers_keep_method_attribution(basic_rule: Rule) ->
                 "answers": {
                     key: {
                         "type": "noul",
-                        "noul": 0.99 if question["instructions"]["target"]["qualified_name"].endswith("bad") else 0.1,
+                        "noul": 0.99 if question["instructions"]["target"]["name"].endswith("bad") else 0.1,
                     }
                     for key, question in reversed(list(questions.items()))
                 },
@@ -405,8 +441,10 @@ def test_utf8_target_ranges_and_exact_request_byte_accounting(basic_rule: Rule) 
             target = question["instructions"]["target"]
             assert target["path"] == "sample.py"
             assert target["start_line"] <= target["end_line"]
+            assert len(target["span"]) == 2
+            assert 0 <= target["span"][0] <= target["span"][1]
             assert not {"id", "start_byte", "end_byte"} & target.keys()
-            assert target["qualified_name"] in {"Café", "Café.méthode"}
+            assert target["name"] in {"Café", "Café.méthode"}
 
 
 def test_many_owner_envelopes_keep_correct_sources_when_reused(basic_rule: Rule) -> None:
@@ -565,10 +603,7 @@ async def test_compaction_retains_referenced_source_and_fields_not_unrelated_bod
     actual = next(
         body
         for body in bodies
-        if any(
-            question["instructions"]["target"]["qualified_name"] == "Owner.work"
-            for question in body["questions"].values()
-        )
+        if any(question["instructions"]["target"]["name"] == "Owner.work" for question in body["questions"].values())
     )
     content = "\n".join(document["content"] for document in actual["state"]["documents"])
     assert "def work(self, value): return validate(value) and self.counter" in content
@@ -596,7 +631,7 @@ async def test_permanent_rejection_has_bounded_progress_and_never_scores_a_file_
     assert summary.checks_evaluated == 0 and summary.checks_skipped == 2
     for raw in bodies:
         body = json.loads(raw)
-        if any(question["instructions"]["target"]["scope"] == "file" for question in body["questions"].values()):
+        if any("kind" not in question["instructions"]["target"] for question in body["questions"].values()):
             assert body["state"]["coverage"]["file_complete"]
     assert summary.incomplete and summary.exit_code("never") == 2
 
@@ -643,8 +678,10 @@ async def test_semantic_compaction_questions_bind_custom_yaml_rule_and_stop_at_c
     assert len(selectors) == summary.compaction_calls == 1
     for question in selectors[0]["questions"].values():
         instructions = question["instructions"]
-        assert instructions["rule"] == config.rules["TEAM01"].question.model_dump(mode="json")
-        assert instructions["target"]["scope"] == "unit"
+        assert selectors[0]["state"]["jevscan_prompt"]["rubrics"][instructions["rubric"]] == config.rules[
+            "TEAM01"
+        ].question.model_dump(mode="json")
+        assert instructions["target"]["kind"] == "function"
         assert "JEV04" not in json.dumps(instructions)
     results = [event for event in sink.events if event["event"] == "evaluation"]
     work = next(event for event in results if event["target"]["qualified_name"] == "work")
@@ -661,11 +698,12 @@ async def test_one_rejected_file_rule_cannot_silently_omit_other_file_rules(basi
 
     def handle(request):
         body = json.loads(request.content)
-        if (
-            len(body["questions"]) > 1
-            or next(iter(body["questions"].values()))["instructions"]["task"] != second.question.instructions
-        ):
+        question = next(iter(body["questions"].values()))
+        rubric = body["state"]["jevscan_prompt"]["rubrics"][question["instructions"]["rubric"]]
+        if len(body["questions"]) > 1:
             return httpx.Response(413)
+        if rubric["instructions"] == first.question.instructions:
+            return httpx.Response(422, json={"detail": [{"type": "invalid_request"}]})
         assert body["state"]["coverage"]["file_complete"]
         return answer(request)
 
@@ -945,7 +983,53 @@ def test_shared_evidence_batch_can_mix_noul_score_and_choice_questions(basic_rul
     })
     noul = basic_rule.model_copy(update={"context": "file", "applies_to": ["function"]})
     config = configured(noul).model_copy(update={"rules": {"noul": noul, "score": score, "choice": choice}})
-    planner = planned("VALUE = 1\ndef work(): return VALUE\n", config)
+    source = "VALUE = 1\ndef first(): return VALUE\ndef second(): return VALUE\n"
+    planner = planned(source, config)
     requests = list(planner.plan())
     assert len(requests) == 1
-    assert {check.rule.question.type for check in requests[0].checks} == {"noul", "score", "choice"}
+    request = requests[0]
+    assert {check.rule.question.type for check in request.checks} == {"noul", "score", "choice"}
+    assert len(request.checks) == 6
+    assert {check.target.qualified_name for check in request.checks} == {"first", "second"}
+    body = json.loads(request.body)
+    rubrics = body["state"]["jevscan_prompt"]["rubrics"]
+    for check in request.checks:
+        question = json.loads(request.question_wires[check.id])
+        assert question["instructions"]["target"]["name"] == check.target.qualified_name
+        assert rubrics[question["instructions"]["rubric"]] == check.rule.question.model_dump(mode="json")
+        if question["type"] == "choice":
+            assert isinstance(check.rule.question, ChoiceQuestion)
+            assert set(question["criteria"]) == set(check.rule.question.criteria)
+            assert set(question["criteria"].values()) == {None}
+        elif question["type"] == "score":
+            assert isinstance(check.rule.question, ScoreQuestion)
+            assert question["criteria"] == [str(index) for index in range(len(check.rule.question.criteria))]
+        else:
+            assert "criteria" not in question
+
+    bounded = config.model_copy(update={"evaluation": config.evaluation.model_copy(update={"max_questions": 2})})
+    bounded_requests = list(Planner(planner.context, bounded).plan())
+    assert len(bounded_requests) == 3
+    assert all(len(batch.checks) <= 2 and batch.questions for batch in bounded_requests)
+
+
+def test_judgment_cache_identity_changes_with_the_shared_rubric_registry(basic_rule: Rule) -> None:
+    extra_question = basic_rule.question.model_copy(update={"instructions": "Is this a different operation?"})
+    extra_rule = basic_rule.model_copy(update={"question": extra_question})
+    config = configured(basic_rule).model_copy(update={"rules": {"base": basic_rule, "extra": extra_rule}})
+    selected_only = config.model_copy(update={"lint": config.lint.model_copy(update={"select": ["base"]})})
+    all_selected = config.model_copy(update={"lint": config.lint.model_copy(update={"select": ["ALL"]})})
+    source = "def work(): return 1\n"
+    only_planner, all_planner = planned(source, selected_only), planned(source, all_selected)
+    only_check = next(check for check in only_planner.checks if check.rule_id == "base")
+    all_check = next(check for check in all_planner.checks if check.rule_id == "base")
+    only_request = only_planner.request(only_planner.requested_evidence(only_check), (only_check,))
+    all_request = all_planner.request(all_planner.requested_evidence(all_check), (all_check,))
+
+    assert only_request.question_wires[only_check.id] == all_request.question_wires[all_check.id]
+    assert only_request.state != all_request.state
+    assert judgment_cache_key(
+        "https://api.typesafe.ai", "jev-latest", only_request.state, only_request.question_wires[only_check.id]
+    ) != judgment_cache_key(
+        "https://api.typesafe.ai", "jev-latest", all_request.state, all_request.question_wires[all_check.id]
+    )

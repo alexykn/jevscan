@@ -67,9 +67,17 @@ async def test_actual_http_contract_and_retry_attempts(config: Config, unit: Uni
         body = json.loads(request.content)
         assert body["model"] == config.jev.model
         assert body["questions"]["q00000"]["type"] == "noul"
-        target = body["questions"]["q00000"]["instructions"]["target"]
-        assert target["qualified_name"] == unit.qualified_name
-        assert "id" not in target and "start_byte" not in target
+        instructions = body["questions"]["q00000"]["instructions"]
+        target = instructions["target"]
+        assert target["name"] == unit.qualified_name
+        assert target["path"] == unit.path and target["start_line"] == unit.start_line
+        assert target["span"] == [unit.start_byte, unit.end_byte]
+        assert not {"scope", "language", "id", "start_byte", "end_byte"} & target.keys()
+        prompt = body["state"]["jevscan_prompt"]
+        assert instructions["rubric"] in prompt["rubrics"]
+        assert instructions["task"] == "Apply referenced rubric."
+        assert "state.jevscan_prompt.rubrics" in prompt["policy"]
+        assert "state.jevscan_prompt.policy" in prompt["policy"]
         if len(requests) < 3:
             return httpx.Response(429 if len(requests) == 1 else 503, headers={"Retry-After": "0"})
         return httpx.Response(200, json=response_body())

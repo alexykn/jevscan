@@ -29,7 +29,7 @@ The planner now groups checks by exact encoded evidence, independent of rule and
 
 Large-file execution is no longer limited to one sequential request lane. A mocked 20-request file reaches the configured global concurrency of four while `JevClient` keeps one shared semaphore and one shared request-rate limiter around actual transport starts.
 
-The answer cache now has a per-judgment layer keyed by endpoint, requested model, exact evidence, exact typed question, and prompt compatibility version. A warm rerun can therefore reuse a judgment after unrelated batch composition changes. Tests also cover upgrading an existing schema-1 cache and ensure source content is represented by hashes/opaque keys rather than appearing in SQLite cache keys.
+The answer cache has a per-judgment layer keyed by endpoint, requested model, exact effective state (source evidence plus shared rubric registry), exact typed question, and prompt compatibility version. A warm rerun can therefore reuse a judgment after unrelated batch composition changes while the effective state is unchanged; changing selected rubric material changes the state and prevents reuse across that boundary. Tests also cover upgrading an existing schema-1 cache and ensure source content is represented by hashes/opaque keys rather than appearing in SQLite cache keys.
 
 Live budgets are enforced before each transport attempt. Regressions cover request-count and conservative input-cost limits, including refusal to start an attempt that would cross the configured budget. Successful provider usage is reported separately from the conservative reservation estimate. `--plan` performs parsing and initial request packing without creating a Jev client or requiring an API key.
 
