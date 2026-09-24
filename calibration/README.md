@@ -16,10 +16,11 @@ usefulness review, and public cost ledger from
 [new-rule-finalists/README.md](new-rule-finalists/README.md). Its questions
 matched the original JEV12–JEV16 production contracts. The current release
 retains JEV01–JEV02 wording and compacts JEV03–JEV16; outcome labels and
-reporting thresholds are unchanged. Prompt version 6 stores
-selected rule questions in shared state and refers to them from short
-per-target questions; this changes both prompt bytes and effective state/cache
-identity. Historical version-4/version-5 cases remain replayable, but are
+reporting thresholds are unchanged. Prompt version 6 stores the rule questions
+needed by each evidence/target-scope group in shared state and refers to them
+from short per-target questions. Scoped registries keep unrelated rubrics out
+of file-wide requests; they change effective state/cache identity without a
+new prompt version. Historical version-4/version-5 cases remain replayable, but are
 non-comparable to version 6. Historical accuracy and usefulness measurements
 are not validation of the compact wording or shared-rubric format. The bounded
 [prompt-v6 evaluation](COMPACT_WIRE_VALIDATION.md) reports fresh synthetic

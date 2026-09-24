@@ -235,7 +235,7 @@ class PromptRegistry:
             if previous is not None and previous != material:
                 raise ValueError("shared rubric identifier collision")
             rubrics[reference] = material
-        return cls(rubrics)
+        return cls(dict(sorted(rubrics.items())))
 
     @classmethod
     def for_question(cls, question: Question) -> "PromptRegistry":
@@ -252,6 +252,13 @@ class PromptRegistry:
 
     def state_bytes(self, state: Mapping[str, Any]) -> bytes:
         return encode(self.bind_state(state))
+
+    def validate_questions(self, questions: Iterable[Question]) -> None:
+        """Require every primary or auxiliary binding to resolve in this registry."""
+        for question in questions:
+            reference = rubric_reference(question)
+            if self.rubrics.get(reference) != question.model_dump(mode="json"):
+                raise ValueError("shared prompt registry does not contain a bound question's rubric")
 
 
 def validate_prompt_registry(state: Mapping[str, Any], question: Question) -> None:

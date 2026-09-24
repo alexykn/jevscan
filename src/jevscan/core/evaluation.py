@@ -419,7 +419,7 @@ async def evaluate_file(
     try:
         await FileExecutor(planner, inference, results).run()
         if index is not None:
-            enricher = Enricher(planner.context, planner.budget, index.limits, index, inference, planner.rubric)
+            enricher = Enricher(planner.context, planner.budget, index.limits, index, inference)
             await results.enrich(enricher, capture)
         if capture is not None:
             source_documents = (

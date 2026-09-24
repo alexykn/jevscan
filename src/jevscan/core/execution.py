@@ -17,7 +17,7 @@ from jevscan.core.compaction import Compactor
 from jevscan.core.context import Evidence
 from jevscan.core.inference import Inference
 from jevscan.core.planning import Omission, Planner, Request
-from jevscan.core.protocol import Check, ContextLimitError, RequestRejectedError
+from jevscan.core.protocol import Check, ContextLimitError, PromptRegistry, RequestRejectedError
 
 if TYPE_CHECKING:
     from jevscan.core.evaluation import FileResults
@@ -65,7 +65,9 @@ class FileExecutor:
         if not missing:
             return None
         return (
-            request if len(missing) == len(request.checks) else self.planner.request(request.evidence, tuple(missing))
+            request
+            if len(missing) == len(request.checks)
+            else self.planner.request(request.evidence, tuple(missing), request.registry)
         )
 
     def _record_size_rejection(self, request: Request, error: ContextLimitError) -> None:
@@ -138,28 +140,34 @@ class FileExecutor:
         remaining = tuple(check for check in request.checks if check.id != probe.id)
         midpoint = (len(remaining) + 1) // 2
         batches = [(probe,), remaining[:midpoint], remaining[midpoint:]]
-        return [Attempt(self.planner.request(request.evidence, batch), attempt.round) for batch in batches if batch]
+        return [
+            Attempt(self.planner.request(request.evidence, batch, request.registry), attempt.round)
+            for batch in batches
+            if batch
+        ]
 
     def _split_preflight(self, attempt: Attempt) -> list[Attempt]:
         checks = attempt.request.checks
         midpoint = len(checks) // 2
         return [
-            Attempt(self.planner.request(attempt.request.evidence, batch), attempt.round)
+            Attempt(self.planner.request(attempt.request.evidence, batch, attempt.request.registry), attempt.round)
             for batch in (checks[:midpoint], checks[midpoint:])
             if batch
         ]
 
-    def _pack(self, evidence: Evidence, checks: list[Check], round_number: int) -> list[Attempt]:
+    def _pack(
+        self, evidence: Evidence, checks: list[Check], round_number: int, registry: PromptRegistry
+    ) -> list[Attempt]:
         """Preserve shared-state batching when multiple rules choose identical compacted evidence."""
         attempts = []
         pending: tuple[Check, ...] = ()
         for check in checks:
-            if pending and not self.planner.fits(evidence, (*pending, check)):
-                attempts.append(Attempt(self.planner.request(evidence, pending), round_number))
+            if pending and not self.planner.fits(evidence, (*pending, check), registry):
+                attempts.append(Attempt(self.planner.request(evidence, pending, registry), round_number))
                 pending = ()
             pending = (*pending, check)
         if pending:
-            attempts.append(Attempt(self.planner.request(evidence, pending), round_number))
+            attempts.append(Attempt(self.planner.request(evidence, pending, registry), round_number))
         return attempts
 
     async def _recover(self, attempt: Attempt, reason: str) -> list[Attempt]:
@@ -175,14 +183,17 @@ class FileExecutor:
                     Omission(check, f"{reason}: complete target/context cannot be evaluated within bounded recovery")
                 )
                 continue
-            previous_bytes = len(self.planner.request(request.evidence, (check,)).body)
+            previous_bytes = len(self.planner.request(request.evidence, (check,), request.registry).body)
             trace.setdefault("initial_request_bytes", previous_bytes)
-            trace.setdefault("initial_token_estimates", self.planner.estimate(request.evidence, (check,))[:2])
+            trace.setdefault(
+                "initial_token_estimates",
+                self.planner.estimate(request.evidence, (check,), request.registry)[:2],
+            )
             evidence = None
             if attempt.round < self.planner.compaction.max_rounds:
                 if self.compactor is None:
                     self.compactor = Compactor(self.planner, self.inference)
-                evidence = await self.compactor.compact(check, previous_bytes, attempt.round, trace)
+                evidence = await self.compactor.compact(check, previous_bytes, attempt.round, trace, request.registry)
             if evidence is None:
                 target = check.target
                 bare = (
@@ -190,12 +201,16 @@ class FileExecutor:
                     if self.planner.limits.oversized_context == "skip"
                     else self.planner.context.envelope(target.start_byte, target.end_byte)
                 )
-                final_attempts.append(Attempt(self.planner.request(bare, (check,)), attempt.round, final=True))
+                final_attempts.append(
+                    Attempt(self.planner.request(bare, (check,), request.registry), attempt.round, final=True)
+                )
                 continue
-            assert len(self.planner.request(evidence, (check,)).body) < previous_bytes
+            assert len(self.planner.request(evidence, (check,), request.registry).body) < previous_bytes
             groups.setdefault(evidence.key, (evidence, []))[1].append(check)
         return [
-            item for evidence, checks in groups.values() for item in self._pack(evidence, checks, attempt.round + 1)
+            item
+            for evidence, checks in groups.values()
+            for item in self._pack(evidence, checks, attempt.round + 1, request.registry)
         ] + final_attempts
 
     async def _preflight(self, attempt: Attempt) -> list[Attempt] | None:
@@ -213,7 +228,7 @@ class FileExecutor:
                 self.results.recovery(check)["known_rejection"] = known[1]
             return await self._recover(attempt, "related_request_rejection")
 
-        violations = self.planner.violations(request.evidence, request.checks)
+        violations = self.planner.violations(request.evidence, request.checks, request.registry)
         if not violations:
             return None
         if "context" not in violations and len(request.checks) > 1:

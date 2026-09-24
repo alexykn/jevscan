@@ -402,7 +402,6 @@ def _prepare(scenarios: list[Scenario], config: Any) -> list[PreparedScenario]:
                     False,
                     False,
                     reason,
-                    planner.rubric,
                 )
             )
             continue
@@ -417,7 +416,7 @@ def _prepare(scenarios: list[Scenario], config: Any) -> list[PreparedScenario]:
                 evidence,
                 bool(description["context_complete"]),
                 bool(description["target_complete"]),
-                rubric=planner.rubric,
+                rubric=planner.registry_for((planned_check,)),
             )
         )
     return prepared
@@ -427,24 +426,18 @@ def _request_budget(config: Any) -> RequestBudget:
     return RequestBudget(config.evaluation, MODEL, TokenCalibration())
 
 
-def _request_rubric(prepared: list[PreparedScenario], config: Any) -> PromptRegistry:
-    for item in prepared:
-        if item.rubric is not None:
-            return item.rubric
-    return PromptRegistry.from_rules(config.selected_rules())
-
-
 def _batches(prepared: list[PreparedScenario], config: Any) -> list[RequestBatch]:
     budget = _request_budget(config)
-    rubric = _request_rubric(prepared, config)
-    groups: dict[str, list[PreparedScenario]] = defaultdict(list)
+    groups: dict[tuple[str, str, bytes], tuple[Evidence, PromptRegistry, list[PreparedScenario]]] = {}
     for item in prepared:
         if item.applicability_skip is None:
-            groups[item.evidence.key].append(item)
+            rubric = item.rubric or PromptRegistry.for_question(item.scenario.rule.question)
+            key = item.evidence.key, item.check.target.scope, encode(rubric.material)
+            groups.setdefault(key, (item.evidence, rubric, []))[2].append(item)
     batches: list[RequestBatch] = []
-    for evidence_key in sorted(groups):
-        group = sorted(groups[evidence_key], key=lambda item: item.scenario.scenario_id)
-        evidence = group[0].evidence
+    for _, (evidence, rubric, group) in sorted(groups.items(), key=lambda item: item[0]):
+        group.sort(key=lambda item: item.scenario.scenario_id)
+        rubric.validate_questions(item.scenario.rule.question for item in group)
         state = rubric.state_bytes(evidence.state)
         current: list[PreparedScenario] = []
         questions: dict[str, Any] = {}
@@ -611,6 +604,7 @@ def _make_case(
     label, warning_worthy = _answer_label(item.scenario.rule, expected)
     check = item.check
     rubric = item.rubric or PromptRegistry.for_question(item.scenario.rule.question)
+    rubric.validate_questions((check.rule.question,))
     wire_state = rubric.bind_state(item.evidence.state)
     hashes = _hashes(
         check,
@@ -724,6 +718,7 @@ def _validate_captured_answers(
             )
         captured_evidence = captured.get("evidence_sha256")
         rubric = item.rubric or PromptRegistry.for_question(item.scenario.rule.question)
+        rubric.validate_questions((item.check.rule.question,))
         expected_evidence = _sha256_bytes(rubric.state_bytes(item.evidence.state))
         if captured_evidence != expected_evidence:
             raise ValueError(

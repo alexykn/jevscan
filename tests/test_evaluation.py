@@ -12,10 +12,11 @@ from jevscan.core.client import JevClient
 from jevscan.core.config import Config, EvaluationConfig, JevConfig, load_config
 from jevscan.core.context import ContextBuilder
 from jevscan.core.evaluation import evaluate_file
+from jevscan.core.model_limits import TokenCalibration
 from jevscan.core.models import FileJob, Summary
 from jevscan.core.parser import parse_source
 from jevscan.core.planning import Planner, Request
-from jevscan.core.protocol import JevError
+from jevscan.core.protocol import JevError, PromptRegistry, rubric_reference, validate_prompt_registry
 from jevscan.core.rules import ChoiceQuestion, Rule, ScoreQuestion
 
 pytestmark = [pytest.mark.parser, pytest.mark.usefixtures("grammar_runtime")]
@@ -207,15 +208,16 @@ def test_rust_owner_supplies_fields_and_sibling_impls(basic_rule: Rule) -> None:
     assert {check.target.qualified_name for check in request.checks} == {"impl S::first", "impl S::second"}
 
 
-def test_file_and_unit_targets_share_evidence_but_not_identity(basic_rule: Rule) -> None:
+def test_file_and_unit_targets_with_shared_evidence_use_separate_scope_batches(basic_rule: Rule) -> None:
     document = basic_rule.model_dump()
     file_rule = Rule.model_validate({**document, "target": "file", "context": "file", "applies_to": []})
     unit_rule = Rule.model_validate({**document, "context": "file"})
     config = configured(basic_rule).model_copy(update={"rules": {"file-check": file_rule, "unit-check": unit_rule}})
     planner = planned("GLOBAL = 1\ndef f(): return GLOBAL\n", config)
     requests = list(planner.plan())
-    assert len(requests) == 1 and isinstance(requests[0], Request)
-    assert {check.target.scope for check in requests[0].checks} == {"file", "unit"}
+    assert len(requests) == 2 and all(isinstance(request, Request) for request in requests)
+    assert {request.checks[0].target.scope for request in requests} == {"file", "unit"}
+    assert requests[0].evidence.key == requests[1].evidence.key
     # Top-level behavior with no lexical units is still eligible for a file judgment.
     empty_units = planned("GLOBAL = 1\n", config)
     assert len(empty_units.checks) == 1 and empty_units.checks[0].target.scope == "file"
@@ -1011,6 +1013,7 @@ def test_shared_evidence_batch_can_mix_noul_score_and_choice_questions(basic_rul
     bounded_requests = list(Planner(planner.context, bounded).plan())
     assert len(bounded_requests) == 3
     assert all(len(batch.checks) <= 2 and batch.questions for batch in bounded_requests)
+    assert len({batch.state for batch in bounded_requests}) == 1
 
 
 def test_judgment_cache_identity_changes_with_the_shared_rubric_registry(basic_rule: Rule) -> None:
@@ -1033,3 +1036,144 @@ def test_judgment_cache_identity_changes_with_the_shared_rubric_registry(basic_r
     ) != judgment_cache_key(
         "https://api.typesafe.ai", "jev-latest", all_request.state, all_request.question_wires[all_check.id]
     )
+
+
+async def test_file_wide_rubrics_fit_calibrated_context_on_public_source() -> None:
+    root = Path(__file__).parents[1]
+    path = root / "src/jevscan/core/calibration_selection.py"
+    relative = path.relative_to(root).as_posix()
+    parsed = parse_source(path.read_bytes(), FileJob(str(path), relative, "python", "python"))
+    assert not parsed.failed, parsed.diagnostics
+    assert parsed.source.count(b"\n") < 3_000
+
+    config = load_config([], cwd=root).config
+    calibration = TokenCalibration(bytes_per_token=2.2, observations=1)
+    planner = Planner(ContextBuilder(parsed), config, calibration)
+    requests = list(planner.plan())
+    planned_ids = {check.id for request in requests for check in request.checks}
+    assert planned_ids == {check.id for check in planner.checks}
+
+    file_checks = [check for check in planner.checks if check.target.scope == "file"]
+    assert {check.rule_id for check in file_checks} == {"JEV07", "JEV09"}
+    file_request = next(request for request in requests if request.checks[0].target.scope == "file")
+    assert {check.rule_id for check in file_request.checks} == {"JEV07", "JEV09"}
+    state = json.loads(file_request.state)
+    rubrics = state["jevscan_prompt"]["rubrics"]
+    expected_references = {rubric_reference(check.rule.question) for check in file_request.checks}
+    assert set(rubrics) == expected_references
+    assert json.loads(file_request.body)["state"] == state
+    for check in file_request.checks:
+        validate_prompt_registry(state, check.rule.question)
+    assert len(file_request.evidence.encoded) > 49_000
+    assert planner.budget.fits(file_request.state, file_request.question_wires)
+    assert planner.estimate(file_request.evidence, file_request.checks)[0] < 28_000
+
+    all_selected = PromptRegistry.from_rules(config.selected_rules())
+    unscoped_state = all_selected.state_bytes(file_request.evidence.state)
+    assert len(json.loads(unscoped_state)["jevscan_prompt"]["rubrics"]) == len(config.selected_rules())
+    assert not planner.budget.fits(unscoped_state, file_request.question_wires)
+
+    selected = config.model_copy(
+        update={"lint": config.lint.model_copy(update={"select": ["JEV01", "JEV07", "JEV09"]})}
+    )
+    live_planner = Planner(ContextBuilder(parsed), selected, TokenCalibration(bytes_per_token=2.2, observations=1))
+    live_requests = list(live_planner.plan())
+    assert all(live_planner.budget.fits(request.state, request.question_wires) for request in live_requests)
+    calls = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(body)
+        return httpx.Response(
+            200,
+            json={
+                "model": "test",
+                "answers": {name: {"type": "noul", "noul": 0.1} for name in body["questions"]},
+            },
+        )
+
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(selected.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(live_planner, client, None, sink, summary)
+    assert summary.checks_evaluated == len(live_planner.checks)
+    assert {check.rule_id for check in live_planner.checks} == {"JEV01", "JEV07", "JEV09"}
+    assert sum(len(body["questions"]) for body in calls) == len(live_planner.checks)
+
+
+async def test_scoped_registry_survives_batch_splitting_and_unrelated_rule_changes(
+    basic_rule: Rule,
+) -> None:
+    extra_question = basic_rule.question.model_copy(update={"instructions": "Does this preserve a separate contract?"})
+    extra_rule = basic_rule.model_copy(update={"question": extra_question})
+    file_question = basic_rule.question.model_copy(update={"instructions": "Does the whole file own this state?"})
+    file_rule = Rule.model_validate({
+        **basic_rule.model_dump(),
+        "target": "file",
+        "context": "file",
+        "applies_to": [],
+        "question": file_question.model_dump(),
+    })
+    config = Config(
+        rules={"file": file_rule, "unit": basic_rule, "unit_extra": extra_rule},
+        evaluation=EvaluationConfig(),
+        jev=JevConfig(requests_per_minute=0, retries=0),
+    )
+    planner = planned("def work(): return 1\n", config)
+    requests = list(planner.plan())
+    assert len(requests) == 2
+    file_request = next(request for request in requests if request.checks[0].target.scope == "file")
+    unit_request = next(request for request in requests if request.checks[0].target.scope == "unit")
+    assert file_request.evidence.key == unit_request.evidence.key
+    assert set(file_request.registry.rubrics) == {rubric_reference(file_rule.question)}
+    assert set(unit_request.registry.rubrics) == {
+        rubric_reference(basic_rule.question),
+        rubric_reference(extra_rule.question),
+    }
+    with pytest.raises(ValueError, match="different evidence groups"):
+        planner.registry_for((file_request.checks[0], unit_request.checks[0]))
+
+    # A check-only retry retains the registry for the whole shared group.
+    unit_subset = planner.request(unit_request.evidence, (unit_request.checks[0],))
+    assert unit_subset.registry == unit_request.registry
+    assert unit_subset.state == unit_request.state
+
+    units_only = Config(
+        rules={"unit": basic_rule, "unit_extra": extra_rule},
+        evaluation=config.evaluation,
+        jev=config.jev,
+    )
+    without_unrelated_file_rule = Planner(planner.context, units_only)
+    same_unit_group = next(without_unrelated_file_rule.plan())
+    unit_check = unit_request.checks[0]
+    same_check = next(check for check in same_unit_group.checks if check.rule_id == unit_check.rule_id)
+    assert same_unit_group.state == unit_request.state
+    assert judgment_cache_key(
+        "https://api.typesafe.ai",
+        "jev-latest",
+        unit_request.state,
+        unit_request.question_wires[unit_check.id],
+    ) == judgment_cache_key(
+        "https://api.typesafe.ai",
+        "jev-latest",
+        same_unit_group.state,
+        same_unit_group.question_wires[same_check.id],
+    )
+
+    calls = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(body)
+        return httpx.Response(
+            200,
+            json={
+                "model": "test",
+                "answers": {name: {"type": "noul", "noul": 0.1} for name in body["questions"]},
+            },
+        )
+
+    sink, summary = Sink(), Summary("live")
+    async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
+        await evaluate_file(planner, client, None, sink, summary)
+    assert summary.checks_evaluated == len(planner.checks) == 3
+    assert sum(len(body["questions"]) for body in calls) == len(planner.checks)
