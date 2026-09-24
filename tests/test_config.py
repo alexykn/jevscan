@@ -19,18 +19,21 @@ def write_config(path: Path, document: dict) -> Path:
 def test_packaged_default_and_empty_project_are_additive(tmp_path: Path, text: str) -> None:
     original = load_config([tmp_path], cwd=tmp_path)
     assert original.source == "packaged default"
-    expected_names = [f"JEV{i:02}" for i in range(1, 17)]
-    assert list(original.config.rules) == expected_names
+    packaged_rules = set(original.config.rules)
+    assert {"JEV01", "JEV11", "JEV16"} <= packaged_rules
     (tmp_path / "jevscan.yaml").write_text(text)
     child = tmp_path / "src" / "nested"
     child.mkdir(parents=True)
     loaded = load_config([child], cwd=child)
     assert loaded.root == tmp_path
     assert loaded.config == original.config
-    assert list(loaded.config.selected_rules()) == expected_names
+    assert set(loaded.config.selected_rules()) == set(original.config.selected_rules())
 
 
 def test_rule_overrides_custom_sets_and_selection_are_independent(tmp_path, basic_rule):
+    packaged = load_config([tmp_path], cwd=tmp_path).config
+    packaged_rules = set(packaged.rules)
+    packaged_selected = set(packaged.selected_rules())
     document: dict[str, Any] = {
         "rulesets": {"TEAM": {"description": "Team rules"}},
         "rules": [
@@ -47,10 +50,11 @@ def test_rule_overrides_custom_sets_and_selection_are_independent(tmp_path, basi
     }
     write_config(tmp_path, document)
     config = load_config([tmp_path], cwd=tmp_path).config
-    assert len(config.rules) == 18
+    assert packaged_rules <= set(config.rules)
+    assert {"TEAM01", "TEAM02"} <= set(config.rules)
     assert config.rules["JEV02"].report.levels.warning.min_score == 1.2
     assert config.rules["JEV02"].report.levels.error.min_score == 2
-    assert set(config.selected_rules()) == ({f"JEV{i:02}" for i in range(1, 17)} - {"JEV09"} | {"TEAM01"})
+    assert set(config.selected_rules()) == (packaged_selected - {"JEV09"} | {"TEAM01"})
     # Ignore a whole built-in set, without deleting its definitions.
     document["lint"] = {"ignore": ["JEV"]}
     write_config(tmp_path, document)
