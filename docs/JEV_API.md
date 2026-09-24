@@ -118,7 +118,7 @@ The optional `budget` block limits request attempts, conservative estimated inpu
 
 ## Machine reports
 
-Report schema **8** is separate from configuration schema **4**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/coverage/diagnostic/evaluation events, optional `plan` events in plan mode, and a final `summary`, flushing each event.
+Report schema **9** is separate from configuration schema **4**. JSON contains metadata, events, and a final summary. JSONL has `start`, source/coverage/diagnostic/evaluation events, optional `plan` events in plan mode, and a final `summary`, flushing each event.
 
 An `evaluation` event contains:
 
@@ -126,10 +126,10 @@ An `evaluation` event contains:
 | --- | --- |
 | `target` | Complete unit/file identity and source span |
 | `answers` | Raw typed answers keyed by YAML rule name |
-| `rule_metadata` | Per-rule title and ruleset membership, separate from identity |
+| `rule_metadata` | Per-rule title, ruleset membership, and `blocks_exit` policy, separate from identity |
 | `statuses` | `ok`, `unknown`, `not_applicable`, `warning`, or `error` per answer |
 | `uncertainty_reasons`, `reviews` | Decision reasons and an auditable, bounded enrichment history |
-| `findings` | Confidence-qualified warning/error findings, each with `target`; these alone determine `--fail-on` |
+| `findings` | Confidence-qualified warning/error findings, each with `target`; only findings whose `rule_metadata.blocks_exit` is true can trigger `--fail-on` |
 | `tentative_findings` | Indicated warning/error signals that remain `unknown`; same item structure, never duplicated in `findings` |
 | `context_selection` | Local recovery/relevance audit, including safe request-local rejection metadata, separate from post-answer enrichment reviews |
 | `evidence` | Per-rule included ranges, original-file omissions, requested context, `context_complete`, `target_complete` |
@@ -140,10 +140,10 @@ An `evaluation` event contains:
 | `applicability_skips` | Deterministic not-applicable rules and declared missing syntax prerequisites, separate from `skipped_rules` |
 | `inference` | Per-rule phase/cache/question bytes plus nested shared-request metrics: request hash, serialized request/state/all-question bytes, evidence-group density (documents per source file), and provider-reported request usage when present |
 
-`summary.tentative_findings` counts tentative warnings/errors separately; they are already included in `summary.uncertain`. Reviews distinguish the admitted `trigger` from the `initial_reason`. Ordinary intrinsic ambiguity does not request enrichment by default; no review entry means no review was requested, not that a model approved the evidence.
-Schema 8 coverage events add `request_rejected_checks` beside compacted/omitted counts and preserve `aborted`. `summary.request_rejections` counts request-local HTTP 400/422 rejections that were isolated rather than treated as size errors or immediate scan-fatal failures. `summary.applicability_skips` counts deterministic policy exclusions. Request-local rejection details live under the affected rule's `context_selection.request_rejections`; only sanitized machine metadata is retained.
+`summary.tentative_findings` counts tentative warnings/errors separately; they are already included in `summary.uncertain`. `summary.advisory_findings` counts confirmed findings whose rule has `blocks_exit: false`; they remain visible but cannot trigger `--fail-on`. Reviews distinguish the admitted `trigger` from the `initial_reason`. Ordinary intrinsic ambiguity does not request enrichment by default; no review entry means no review was requested, not that a model approved the evidence.
+Schema 9 retains schema 8 coverage events, including `request_rejected_checks` beside compacted/omitted counts and `aborted`. `summary.request_rejections` counts request-local HTTP 400/422 rejections that were isolated rather than treated as size errors or immediate scan-fatal failures. `summary.applicability_skips` counts deterministic policy exclusions. Request-local rejection details live under the affected rule's `context_selection.request_rejections`; only sanitized machine metadata is retained.
 
-Schema 8 adds planning/cost counters to the summary and `plan` events for `--plan`. Interactive progress remains text-only and is never inserted into JSON/JSONL.
+Schema 9 retains schema 8 planning/cost counters and `plan` events for `--plan`, and adds per-rule `blocks_exit` metadata plus `summary.advisory_findings`. Interactive progress remains text-only and is never inserted into JSON/JSONL.
 
 
 The raw source evidence is not copied into machine reports, but target/declaration metadata may still be sensitive. Interactive text progress is ephemeral and is not inserted into JSON/JSONL event streams. Verbosity, terminal colors, and text display limits never remove machine-report answers. Completion describes software coverage, not proof of semantic correctness; low-confidence and insufficient-evidence judgments remain distinguishable from clean results.
