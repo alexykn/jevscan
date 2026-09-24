@@ -252,9 +252,7 @@ class JevClient:
 
     async def _retry_transport(self, error: httpx.RequestError, attempt: int) -> None:
         if attempt == self.config.retries:
-            raise JevError(
-                f"Jev connection failed after {attempt + 1} attempts ({type(error).__name__})"
-            ) from error
+            raise JevError(f"Jev connection failed after {attempt + 1} attempts ({type(error).__name__})") from error
         await asyncio.sleep(self._backoff(attempt))
 
     async def _retry_response(self, response: httpx.Response, attempt: int) -> None:
@@ -265,9 +263,7 @@ class JevClient:
         server_delay = _retry_after(response.headers)
         delay = server_delay if server_delay is not None else self._backoff(attempt)
         if delay > self.config.max_retry_delay:
-            raise JevError(
-                "Jev requested a retry delay above jev.max_retry_delay; stopping rather than retrying early"
-            )
+            raise JevError("Jev requested a retry delay above jev.max_retry_delay; stopping rather than retrying early")
         if response.status_code == 429:
             self.limiter.defer(delay)
         else:

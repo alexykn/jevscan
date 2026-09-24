@@ -9,30 +9,78 @@ from jevscan.core.models import CALLABLE_KINDS, Reference, SyntaxFact, Unit
 from jevscan.core.syntax_symbols import Symbol, node_text
 
 _NAME_NODES = frozenset({
-    "identifier", "property_identifier", "field_identifier", "type_identifier", "bareword", "function", "method"
+    "identifier",
+    "property_identifier",
+    "field_identifier",
+    "type_identifier",
+    "bareword",
+    "function",
+    "method",
 })
 _CALL_NODES = frozenset({
-    "call", "call_expression", "func1op_call_expression", "function_call_expression", "method_call_expression"
+    "call",
+    "call_expression",
+    "func1op_call_expression",
+    "function_call_expression",
+    "method_call_expression",
 })
 _VALIDATION_NODES = _CALL_NODES | frozenset({
-    "assert_expression", "assert_statement", "binary_expression", "boolean_operator", "comparison_expression",
-    "comparison_operator", "conditional_expression", "conditional_statement", "if_expression", "if_statement",
-    "in_operator", "is_operator", "macro_invocation", "match_expression", "type_check", "unary_expression",
+    "assert_expression",
+    "assert_statement",
+    "binary_expression",
+    "boolean_operator",
+    "comparison_expression",
+    "comparison_operator",
+    "conditional_expression",
+    "conditional_statement",
+    "if_expression",
+    "if_statement",
+    "in_operator",
+    "is_operator",
+    "macro_invocation",
+    "match_expression",
+    "type_check",
+    "unary_expression",
     "unless_statement",
 })
 _FALLBACK_NODES = _CALL_NODES | frozenset({
-    "assignment_expression", "binary_expression", "boolean_operator", "catch_clause", "coalesce_expression",
-    "conditional_expression", "conditional_statement", "default_parameter", "else_clause", "eval_expression",
-    "except_clause", "finally_clause", "if_expression", "if_statement", "macro_invocation", "match_expression",
-    "optional_parameter", "rescue_clause", "try_expression", "try_statement", "unless_statement",
+    "assignment_expression",
+    "binary_expression",
+    "boolean_operator",
+    "catch_clause",
+    "coalesce_expression",
+    "conditional_expression",
+    "conditional_statement",
+    "default_parameter",
+    "else_clause",
+    "eval_expression",
+    "except_clause",
+    "finally_clause",
+    "if_expression",
+    "if_statement",
+    "macro_invocation",
+    "match_expression",
+    "optional_parameter",
+    "rescue_clause",
+    "try_expression",
+    "try_statement",
+    "unless_statement",
 })
 _ASSIGNMENT_NODES = frozenset({
-    "assignment", "assignment_expression", "augmented_assignment", "augmented_assignment_expression"
+    "assignment",
+    "assignment_expression",
+    "augmented_assignment",
+    "augmented_assignment_expression",
 })
 _STATE_UPDATE_NODES = frozenset({"delete_statement", "update_expression"})
 _STATE_MUTATION_NODES = _ASSIGNMENT_NODES | _STATE_UPDATE_NODES
 _STATEFUL_TARGET_NODES = frozenset({
-    "attribute", "field_expression", "index_expression", "member_expression", "subscript", "subscript_expression"
+    "attribute",
+    "field_expression",
+    "index_expression",
+    "member_expression",
+    "subscript",
+    "subscript_expression",
 })
 _CALLABLE_NODE_TYPES = frozenset(
     name for spec in SPECS.values() for name, kind in spec.nodes.items() if kind in CALLABLE_KINDS
@@ -48,7 +96,11 @@ def _callee_name(node: Any, source: bytes) -> str | None:
     # Calls through returned functions or indexed expressions cannot be named here.
     while callee.type not in _NAME_NODES:
         if callee.type not in {
-            "attribute", "member_expression", "field_expression", "scoped_identifier", "generic_function"
+            "attribute",
+            "member_expression",
+            "field_expression",
+            "scoped_identifier",
+            "generic_function",
         }:
             return None
         callee = (
@@ -73,7 +125,9 @@ def references(root: Any, source: bytes) -> tuple[Reference, ...]:
             if name:
                 result.append(Reference(name, node.start_byte, node.end_byte, "call"))
         elif node.type in _NAME_NODES and not node.named_children:
-            result.append(Reference(node_text(node, source).rsplit("::", 1)[-1], node.start_byte, node.end_byte, "name"))
+            result.append(
+                Reference(node_text(node, source).rsplit("::", 1)[-1], node.start_byte, node.end_byte, "name")
+            )
         pending.extend(reversed(node.named_children))
     return tuple(result)
 
@@ -193,7 +247,9 @@ def _has_helper_relationship(children: list[Unit], calls_by_callable: dict[str, 
     return False
 
 
-def finalize_units(units: list[Unit], member_counts: dict[str, int], occurrences: tuple[Reference, ...]) -> tuple[Unit, ...]:
+def finalize_units(
+    units: list[Unit], member_counts: dict[str, int], occurrences: tuple[Reference, ...]
+) -> tuple[Unit, ...]:
     children_by_parent: dict[str, list[Unit]] = defaultdict(list)
     for child in units:
         if child.parent_id:

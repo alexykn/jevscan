@@ -84,7 +84,12 @@ async def test_cancelled_transport_finishes_accounting_without_refunding_paid_at
             before = (client.requests, client.completed_requests, client.estimated_input_tokens, client.estimated_cost)
             with pytest.raises(BudgetExhaustedError):
                 await client.evaluate(b"{}", questions)
-            assert (client.requests, client.completed_requests, client.estimated_input_tokens, client.estimated_cost) == before
+            assert (
+                client.requests,
+                client.completed_requests,
+                client.estimated_input_tokens,
+                client.estimated_cost,
+            ) == before
         finally:
             task.cancel()
             release.set()

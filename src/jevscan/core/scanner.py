@@ -197,9 +197,7 @@ class _ScanResources:
         self.cache: AnswerCache | None = None
         self.pool: ProcessPoolExecutor | None = None
 
-    async def open(
-        self, stack: AsyncExitStack, *, live: bool, no_cache: bool, api_key: str, base_url: str
-    ) -> None:
+    async def open(self, stack: AsyncExitStack, *, live: bool, no_cache: bool, api_key: str, base_url: str) -> None:
         config = self.loaded.config
         if live:
             self.client = await stack.enter_async_context(

@@ -106,6 +106,8 @@ def report_summary(
         summary.reported_cost = round(summary.input_tokens * config.budget.input_cost_per_million / 1_000_000, 6)
     elif plan_only:
         summary.estimated_input_tokens = summary.planned_input_tokens
-        summary.estimated_cost = round(summary.planned_input_tokens * config.budget.input_cost_per_million / 1_000_000, 6)
+        summary.estimated_cost = round(
+            summary.planned_input_tokens * config.budget.input_cost_per_million / 1_000_000, 6
+        )
     summary.elapsed_seconds = round(time.monotonic() - started, 3)
     sink.emit({"event": "summary", **asdict(summary)})
