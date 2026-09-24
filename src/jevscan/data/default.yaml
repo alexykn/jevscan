@@ -399,3 +399,454 @@ rules:
         error:
           min_probability: 0.92
           min_confidence: 0.7
+  - name: JEV11
+    title: terminal-state-reentry
+    ruleset: JEV
+    enrich_on: [missing_evidence, reduced_context]
+    enrichment_families: [callers, callees, tests, enclosing_context]
+    target: unit
+    context: owner
+    applies_to: [function, method, closure]
+    require_body: true
+    targeted_enrichment:
+      when_choices: [insufficient_context]
+    question:
+      type: choice
+      instructions: >-
+        Select exactly one outcome for terminal lifecycle state in the target.
+        Choose terminal_reentry only when a source-established terminal state
+        has a reachable operation that accepts new work, performs a stateful
+        effect, or reacquires a resource, and the target does not reject it
+        before that effect and does not show a proven restart, reset,
+        reinitialization, or fresh generation. Choose valid_restart_or_reuse
+        for an explicit restart, reset, reinitialization, or fresh-generation
+        contract; allowed_terminal_operation for an explicitly allowed
+        terminal operation; and no_terminal_reentry when no qualifying
+        reentry is visible. Exclude idempotent close/stop, draining accepted
+        work, diagnostics, per-operation terminality, and valid pool
+        generations. Choose insufficient_context when terminality or the
+        governing contract is not visible.
+      criteria:
+        terminal_reentry: >-
+          A source-established terminal state has a reachable operation that
+          accepts new work, performs a stateful effect, or reacquires a
+          resource without rejection and without a proven restart, reset,
+          reinitialization, or fresh generation.
+        valid_restart_or_reuse: >-
+          An explicit restart, reset, reinitialization, or fresh generation
+          governs the new operation.
+        allowed_terminal_operation: >-
+          The terminal operation is explicitly allowed, idempotent close/stop,
+          draining accepted work, per-operation terminality, read-only
+          diagnostics, or another stated terminal contract.
+        no_terminal_reentry: >-
+          No qualifying terminal-state reentry is visible.
+        insufficient_context: >-
+          The terminal state or the restart/reinitialization contract is not
+          established by the supplied evidence.
+    report:
+      message: "A terminal state appears to be resurrected without an explicit restart or reinitialization contract."
+      choices: [terminal_reentry]
+      uncertain_choices: [insufficient_context]
+      levels:
+        warning:
+          min_probability: 0.45
+          min_confidence: 0.50
+        error:
+          min_probability: 0.92
+          min_confidence: 0.70
+  - name: JEV12
+    title: hidden-caller-relevant-effect
+    ruleset: JEV
+    enabled: true
+    languages:
+    - python
+    - rust
+    - perl
+    - typescript
+    - javascript
+    enrich_on:
+    - missing_evidence
+    - reduced_context
+    enrichment_families:
+    - callers
+    - callees
+    - tests
+    - enclosing_context
+    target: unit
+    context: owner
+    applies_to:
+    - function
+    - method
+    - closure
+    require_body: true
+    targeted_enrichment:
+      when_choices:
+      - insufficient_context
+    question:
+      type: choice
+      instructions: 'Select exactly one outcome for the complete callable. First ask
+        the counterfactual: if this effect were made explicit at the caller-facing boundary,
+        would a caller have to reason differently about sequencing, failure, state,
+        ownership, retries, lifecycle, correctness, or externally visible behavior?
+        Choose hidden_caller_relevant_effect only when the target itself visibly owns
+        or directly coordinates a material consequence, that counterfactual is yes,
+        and the consequence is not reasonably signaled by the callable name, typed contract,
+        effect-bearing type or result, explicit operation, or surrounding control flow.
+        Reviewer visibility inside a callee is not the test: an opaque callee is insufficient_context
+        unless the target''s caller-facing consequence is established. Do not infer
+        a finding from effect existence, density, line count, I/O syntax, a helper call,
+        or a surprising implementation. Dense pure pipelines are not_applicable. Dense
+        explicitly effectful pipelines, conventional verbs such as commit, flush, send,
+        refresh_cache, and retry_request, explicit typed contracts, and honest encapsulation
+        are explicit_effect_contract when the caller-facing consequence is appropriately
+        signaled. Choose non_observable_memoization for cache fill that does not change
+        caller correctness, ownership, lifecycle, retry, sequencing, or visible behavior.
+        Choose observability_only for diagnostics that do not alter caller obligations.
+        Choose not_applicable when no material caller-relevant consequence is visible.
+        Choose insufficient_context when materiality, attribution, caller relevance,
+        transparency, or the transitive contract cannot be established.'
+      criteria:
+        hidden_caller_relevant_effect: The target visibly owns or coordinates a material
+          effect or consequence that would change a caller's reasoning about sequencing,
+          failure, state, ownership, retries, lifecycle, correctness, or externally
+          visible behavior if made explicit, and the target does not reasonably signal
+          that consequence through its name, type, result, operation, or surrounding
+          flow.
+        explicit_effect_contract: A material effect is appropriately signaled to callers
+          by a conventional effect verb, explicit typed contract or effect-bearing result,
+          visible operation, surrounding control flow, documented ownership, or honest
+          encapsulation. Effect existence alone is not a defect.
+        non_observable_memoization: Cache fill or memoization is not caller-observable
+          and does not change caller correctness, ownership, lifecycle, retry, sequencing,
+          or visible behavior.
+        observability_only: Logging, metrics, tracing, or equivalent diagnostics do
+          not alter caller-facing semantic obligations.
+        not_applicable: No material caller-relevant consequence is visible, including
+          a pure pipeline.
+        insufficient_context: A possible consequence is visible, but its materiality,
+          attribution, caller relevance, caller-facing transparency, or transitive contract
+          cannot be established from the supplied evidence.
+    report:
+      message: A callable may conceal a material consequence that callers need for correct
+        local reasoning.
+      blocks_exit: false
+      choices:
+      - hidden_caller_relevant_effect
+      not_applicable_choices:
+      - not_applicable
+      uncertain_choices:
+      - insufficient_context
+      levels:
+        warning:
+          min_probability: 0.49
+          min_confidence: 0.38
+        error:
+          min_probability: 0.92
+          min_confidence: 0.7
+  - name: JEV13
+    title: hidden-caller-relevant-prerequisite
+    ruleset: JEV
+    enabled: true
+    languages:
+    - python
+    - rust
+    - perl
+    - typescript
+    - javascript
+    enrich_on:
+    - missing_evidence
+    - reduced_context
+    enrichment_families:
+    - callers
+    - callees
+    - tests
+    - enclosing_context
+    target: unit
+    context: owner
+    applies_to:
+    - function
+    - method
+    - closure
+    require_body: true
+    targeted_enrichment:
+      when_choices:
+      - insufficient_context
+    question:
+      type: choice
+      instructions: 'Select exactly one outcome for an apparently self-contained operation
+        in the target. Choose hidden_caller_relevant_prerequisite only when the source
+        establishes that the operation is valid only after a prior setup, initialization,
+        phase transition, or temporal obligation, the operation relies on state established
+        by that prior phase, and the visible API, type, state model, name, and local
+        contract do not communicate the ordering. Require a source-visible valid path
+        or caller that performs the prior phase before the operation, and require that
+        the prerequisite is not represented by a phase-specific handle, typestate, state-bearing
+        API, context manager, RAII or ownership mechanism, transaction object, or equivalent.
+        Do not report explicit prepare/execute sequencing, phase-specific handles, context
+        managers, RAII, transaction objects, type- or state-encoded prerequisites, clear
+        local rejection of an explicitly communicated prerequisite, or ordinary local
+        lifecycle pairing. Do not infer a finding from a method call sequence, mutable
+        field, null assertion, panic, unwrap, exception, or caller convention alone.
+        Apply the outcomes exclusively and in precedence order: not_applicable when
+        no genuine required prior phase exists, including a transaction object that
+        does not encode such a phase; ordinary_lifecycle_pairing for a conventional
+        locally established open/use/close, scope/RAII, start/stop, lock/unlock, or
+        acquire/release pairing with no hidden caller prerequisite; encoded_phase_state
+        only when a genuine required prior phase exists and a phase-specific type, handle,
+        context, RAII, transaction, or equivalent representation communicates or prevents
+        invalid ordering. Choose explicit_phase_contract when the API or local contract
+        clearly communicates the required ordering. Choose explicit_local_rejection
+        when the operation clearly rejects an unmet and communicated prerequisite before
+        performing its operation. Choose insufficient_context when the dependency, valid
+        ordering, contract, enforcement, or caller burden cannot be established.'
+      criteria:
+        hidden_caller_relevant_prerequisite: The target visibly relies on state or a
+          temporal condition established by a prior phase; a valid caller or owner path
+          performs that phase first; and the visible API, type, state model, name, and
+          local contract neither communicate nor encode the obligation nor clearly reject
+          an unmet prerequisite.
+        explicit_phase_contract: The required ordering is explicitly communicated by the
+          API, method contract, documentation, or visible phase protocol.
+        encoded_phase_state: A genuine required prior phase exists, and a phase-specific
+          handle, typestate, state transition, context manager, RAII or ownership mechanism,
+          transaction object, or equivalent representation communicates or prevents
+          invalid ordering.
+        explicit_local_rejection: The operation checks and clearly rejects an unmet
+          prerequisite before doing the operation under a visible contract.
+        ordinary_lifecycle_pairing: Conventional local ownership or lifecycle pairing
+          is itself visible and creates no hidden caller prerequisite.
+        not_applicable: No genuine required prior phase, setup, initialization, or temporal
+          prerequisite exists, including a transaction object that does not encode such
+          a phase.
+        insufficient_context: A possible prerequisite is visible, but dependency, ordering,
+          contract, enforcement, caller path, or burden is unresolved.
+    report:
+      message: An operation appears to require an uncommunicated prior phase or setup
+        step.
+      blocks_exit: false
+      choices:
+      - hidden_caller_relevant_prerequisite
+      not_applicable_choices:
+      - not_applicable
+      uncertain_choices:
+      - insufficient_context
+      levels:
+        warning:
+          min_probability: 0.6
+          min_confidence: 0.5
+        error:
+          min_probability: 0.92
+          min_confidence: 0.7
+  - name: JEV14
+    title: stale-derived-representation
+    ruleset: JEV
+    enrich_on:
+    - missing_evidence
+    - reduced_context
+    enrichment_families:
+    - callers
+    - callees
+    - tests
+    - enclosing_context
+    target: unit
+    context: owner
+    applies_to:
+    - function
+    - method
+    - closure
+    require_body: true
+    targeted_enrichment:
+      when_choices:
+      - insufficient_context
+    question:
+      type: choice
+      instructions: Select exactly one outcome for derived state in the target. Choose
+        derived_incoherence only when exactly one visible authoritative representation
+        and one derived cache, index, denormalized value, or projection describe the
+        same fact, a reachable normal mutation leaves the derived form usable without
+        update, invalidation, or version check, and a consumer can observe a wrong or
+        conflicting result. Exclude metrics, diagnostics, ranking, competing authorities,
+        and failure-only partial writes. Choose coherent_or_intentional when the derivation
+        is maintained, invalidated, boundedly stale by contract, or no qualifying relation
+        is visible. Choose insufficient_context when authority, derivation, reachability,
+        or the freshness contract is not visible.
+      criteria:
+        derived_incoherence: Exactly one authoritative representation and a derived
+          representation of the same fact are visible; a normal reachable mutation leaves
+          the derived form usable without update, invalidation, or version check; and
+          a consumer can observe a wrong or conflicting result.
+        coherent_or_intentional: The derivation is updated, recomputed, invalidated,
+          versioned, replaced from one snapshot, explicitly boundedly stale, or no qualifying
+          relationship is visible. Metrics, diagnostics, ranking, competing authorities,
+          and failure-only partial writes do not qualify.
+        insufficient_context: The source, derived relationship, or freshness contract
+          cannot be established by the supplied evidence.
+    report:
+      message: Derived state appears to remain stale after its authoritative source
+        changes.
+      blocks_exit: false
+      choices:
+      - derived_incoherence
+      uncertain_choices:
+      - insufficient_context
+      levels:
+        warning:
+          min_probability: 0.4
+          min_confidence: 0.25
+        error:
+          min_probability: 0.92
+          min_confidence: 0.7
+  - name: JEV15
+    title: unsafe-retry-after-source-established-unknown-completion
+    ruleset: JEV
+    enabled: true
+    languages:
+    - python
+    - rust
+    - perl
+    - typescript
+    - javascript
+    enrich: true
+    enrich_on:
+    - missing_evidence
+    - reduced_context
+    enrichment_families:
+    - callers
+    - callees
+    - tests
+    target: unit
+    context: owner
+    applies_to:
+    - function
+    - method
+    - closure
+    require_body: true
+    targeted_enrichment:
+      when_choices:
+      - insufficient_context
+    question:
+      type: choice
+      instructions: Select exactly one outcome for retry behavior in the target. Use
+        only the supplied source. Before unsafe_retry, require (1) a dispatch of one
+        logical externally visible effect, (2) source-visible evidence that the effect
+        occurred or was committed before completion became unknown, (3) a reachable
+        replay of the same logical effect, and (4) a concrete duplicate or reorder consequence
+        visible in the supplied source. A timeout, generic exception, API name, argument
+        name, comment, type shape, test, caller, or provider convention does not establish
+        post-dispatch ambiguity or deduplication when the relevant implementation or
+        contract is absent. Choose unsafe_retry only when all four facts are visible
+        and no source-visible stable-key deduplication, operation-ID transaction, replay-safe
+        implementation contract, or compensation/reconciliation prevents the consequence.
+        Choose safe_retry when such protection is visible. Choose explicitly_nonretryable
+        when ambiguity is surfaced as pending/non-retryable and the target does not
+        replay. Choose not_applicable when no dispatch/replay shape is visible. Choose
+        insufficient_context when a retry shape is visible but ambiguity, consequence,
+        logical identity, or the safety contract is not established.
+      criteria:
+        unsafe_retry: The supplied source visibly shows an externally visible dispatch
+          whose effect occurs before an unknown completion, a reachable replay of the
+          same logical effect, and a concrete duplicate or reorder consequence; no source-visible
+          deduplication, operation-ID transaction, replay-safe implementation contract,
+          or compensation/reconciliation prevents it.
+        safe_retry: The supplied source visibly shows a replay after an ambiguous completion
+          and also shows stable-key deduplication, an operation-ID transaction, a replay-safe
+          implementation contract, or compensation/reconciliation that prevents the
+          duplicate or reorder.
+        explicitly_nonretryable: The supplied source visibly shows an ambiguous completion
+          being recorded or returned as pending/non-retryable, with no replay of the
+          logical externally visible effect.
+        not_applicable: No externally visible dispatch followed by an ambiguous completion
+          and reachable replay of one logical effect is visible.
+        insufficient_context: A possible retry or external call is visible, but the
+          source does not establish post-dispatch ambiguity, the logical effect, its
+          duplicate or reorder consequence, or the governing safety contract. Do not
+          infer these facts from an opaque provider, names, comments, tests, callers,
+          types, or API convention.
+    report:
+      message: An externally visible effect appears to be replayed after a source-established
+        ambiguous completion without a retry-safety contract.
+      blocks_exit: false
+      choices:
+      - unsafe_retry
+      not_applicable_choices:
+      - not_applicable
+      uncertain_choices:
+      - insufficient_context
+      levels:
+        warning:
+          min_probability: 0.46
+          min_confidence: 0.33
+        error:
+          min_probability: 0.92
+          min_confidence: 0.7
+  - name: JEV16
+    title: untruthful-success-signal
+    ruleset: JEV
+    enrich_on:
+    - missing_evidence
+    - reduced_context
+    enrichment_families:
+    - callers
+    - callees
+    - tests
+    - enclosing_context
+    target: unit
+    context: owner
+    applies_to:
+    - function
+    - method
+    - closure
+    require_body: true
+    targeted_enrichment:
+      when_choices:
+      - insufficient_context
+    question:
+      type: choice
+      instructions: Select exactly one outcome for a completion or readiness signal
+        in the target. Require a visible success/completion/readiness signal, a required
+        externally observable postcondition such as output, flush, commit, delivery,
+        acknowledgement, or registration, and a reachable path where that postcondition
+        is absent. Choose false_success only when the success claim hides failure or
+        partial state. Choose truthful_success when failure is propagated or success is
+        claimed only after the required postcondition, and explicit_partial_success
+        when an accepted or partial state is surfaced honestly. Optional best-effort
+        telemetry does not invalidate truthful success, and atomic publication is a
+        clean contract. Choose not_applicable when no required externally observable
+        postcondition or success signal is established. Choose insufficient_context
+        when requiredness, the postcondition, reachability, or signal semantics are
+        not visible. Do not infer requiredness from names alone.
+      criteria:
+        false_success: A visible success, completion, or readiness signal is reachable
+          despite a required externally observable output, flush, commit, delivery,
+          acknowledgement, registration, or equivalent postcondition being absent on
+          that path, without exposing failure or partial state.
+        truthful_success: Failure is propagated or the success/completion/readiness
+          signal is reachable only after the required externally observable postcondition
+          succeeds. Atomic publication and optional best-effort telemetry are compatible
+          with this outcome.
+        explicit_partial_success: The target explicitly exposes an accepted, pending,
+          partial, or otherwise non-complete status when the required postcondition
+          is not yet complete, rather than claiming full success.
+        not_applicable: No visible required externally observable postcondition paired
+          with a success/completion/readiness signal is established.
+        insufficient_context: A signal or externally visible operation is present, but
+          the postcondition's requiredness, its reachable failure path, or the meaning
+          of the success claim is not established by the supplied evidence.
+    report:
+      message: A success signal appears reachable without a required externally observable
+        postcondition.
+      blocks_exit: false
+      choices:
+      - false_success
+      not_applicable_choices:
+      - not_applicable
+      uncertain_choices:
+      - insufficient_context
+      levels:
+        warning:
+          min_probability: 0.59
+          min_confidence: 0.49
+        error:
+          min_probability: 0.92
+          min_confidence: 0.7

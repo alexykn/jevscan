@@ -5,7 +5,7 @@ was established before this call; no frozen thresholds were applied during
 capture, and no further calls were made.
 
 * Snapshot:
-  `sha256:91f1e9e84c8149f2aa08b5150d8f7d7de4d5f58cb0d6eba9e3af0820a39294aa`
+  `omitted digest`
 * Scenarios: 36 across 18 heldout groups.
 * Requests: 36.
 * Reserved: `$0.001248072`.

@@ -67,7 +67,11 @@ class TargetResults:
             "target": self.target.metadata(),
             "answers": {name: item.answer.model_dump(mode="json") for name, item in sorted(self.judgments.items())},
             "rule_metadata": {
-                name: {"title": item.check.rule.title, "ruleset": item.check.rule.ruleset}
+                name: {
+                    "title": item.check.rule.title,
+                    "ruleset": item.check.rule.ruleset,
+                    "blocks_exit": item.check.rule.report.blocks_exit,
+                }
                 for name, item in self.judgments.items()
             },
             "statuses": statuses,
@@ -141,6 +145,8 @@ class TargetResults:
             summary.file_targets_skipped += bool(self.skipped) and not self.judgments
         for finding in event["findings"]:
             summary.findings[finding["severity"]] += 1
+            if not self.judgments[finding["rule"]].check.rule.report.blocks_exit:
+                summary.advisory_findings[finding["severity"]] += 1
         for finding in event["tentative_findings"]:
             summary.tentative_findings[finding["severity"]] += 1
         self.diagnostics(sink, summary, aborted)

@@ -113,6 +113,7 @@ class ReportLevels(StrictModel):
 class ReportPolicy(StrictModel):
     message: str = Field(min_length=1)
     levels: ReportLevels
+    blocks_exit: bool = Field(default=True, exclude_if=lambda value: value is True)
     choices: list[str] | None = None
     expected: bool = True
     uncertain_choices: list[str] = Field(default_factory=list)

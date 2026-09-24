@@ -19,17 +19,21 @@ def write_config(path: Path, document: dict) -> Path:
 def test_packaged_default_and_empty_project_are_additive(tmp_path: Path, text: str) -> None:
     original = load_config([tmp_path], cwd=tmp_path)
     assert original.source == "packaged default"
-    assert list(original.config.rules) == [f"JEV{i:02}" for i in range(1, 11)]
+    packaged_rules = set(original.config.rules)
+    assert {"JEV01", "JEV11", "JEV16"} <= packaged_rules
     (tmp_path / "jevscan.yaml").write_text(text)
     child = tmp_path / "src" / "nested"
     child.mkdir(parents=True)
     loaded = load_config([child], cwd=child)
     assert loaded.root == tmp_path
     assert loaded.config == original.config
-    assert len(loaded.config.selected_rules()) == 10
+    assert set(loaded.config.selected_rules()) == set(original.config.selected_rules())
 
 
 def test_rule_overrides_custom_sets_and_selection_are_independent(tmp_path, basic_rule):
+    packaged = load_config([tmp_path], cwd=tmp_path).config
+    packaged_rules = set(packaged.rules)
+    packaged_selected = set(packaged.selected_rules())
     document: dict[str, Any] = {
         "rulesets": {"TEAM": {"description": "Team rules"}},
         "rules": [
@@ -46,10 +50,11 @@ def test_rule_overrides_custom_sets_and_selection_are_independent(tmp_path, basi
     }
     write_config(tmp_path, document)
     config = load_config([tmp_path], cwd=tmp_path).config
-    assert len(config.rules) == 12
+    assert packaged_rules <= set(config.rules)
+    assert {"TEAM01", "TEAM02"} <= set(config.rules)
     assert config.rules["JEV02"].report.levels.warning.min_score == 1.2
     assert config.rules["JEV02"].report.levels.error.min_score == 2
-    assert set(config.selected_rules()) == ({f"JEV{i:02}" for i in range(1, 11)} - {"JEV09"} | {"TEAM01"})
+    assert set(config.selected_rules()) == (packaged_selected - {"JEV09"} | {"TEAM01"})
     # Ignore a whole built-in set, without deleting its definitions.
     document["lint"] = {"ignore": ["JEV"]}
     write_config(tmp_path, document)
@@ -251,6 +256,167 @@ def test_packaged_partial_transition_rule_uses_static_admission_and_uncertainty(
     exclusion = "Do not classify an explicitly progressive or restartable workflow as unaccounted_partial_transition"
     assert exclusion in rule.question.instructions
     assert exclusion in rule.question.criteria["accounted_transition"]
+
+
+def test_packaged_terminal_reentry_contract(tmp_path):
+    rule = load_config([tmp_path], cwd=tmp_path).config.rules["JEV11"]
+    assert isinstance(rule.question, ChoiceQuestion)
+    assert rule.title == "terminal-state-reentry"
+    assert rule.ruleset == "JEV"
+    assert rule.target == "unit"
+    assert rule.context == "owner"
+    assert rule.applies_to == ["function", "method", "closure"]
+    assert rule.require_body is True
+    assert rule.enrich_on == ["missing_evidence", "reduced_context"]
+    assert rule.enrichment_families == ["callers", "callees", "tests", "enclosing_context"]
+    assert rule.targeted_enrichment is not None
+    assert rule.targeted_enrichment.when_choices == ["insufficient_context"]
+    assert set(rule.question.criteria) == {
+        "terminal_reentry",
+        "valid_restart_or_reuse",
+        "allowed_terminal_operation",
+        "no_terminal_reentry",
+        "insufficient_context",
+    }
+    assert rule.report.choices == ["terminal_reentry"]
+    assert rule.report.uncertain_choices == ["insufficient_context"]
+    assert rule.report.levels.warning.min_probability == 0.45
+    assert rule.report.levels.warning.min_confidence == 0.50
+    assert rule.report.levels.error.min_probability == 0.92
+    assert rule.report.levels.error.min_confidence == 0.70
+    assert rule.report.blocks_exit is True
+    assert "blocks_exit" not in rule.report.model_dump(mode="json")
+
+
+@pytest.mark.parametrize(
+    (
+        "name",
+        "title",
+        "criteria",
+        "enrichment_families",
+        "choices",
+        "not_applicable_choices",
+        "uncertain_choices",
+        "warning",
+        "error",
+    ),
+    [
+        (
+            "JEV12",
+            "hidden-caller-relevant-effect",
+            {
+                "hidden_caller_relevant_effect",
+                "explicit_effect_contract",
+                "non_observable_memoization",
+                "observability_only",
+                "not_applicable",
+                "insufficient_context",
+            },
+            ["callers", "callees", "tests", "enclosing_context"],
+            ["hidden_caller_relevant_effect"],
+            ["not_applicable"],
+            ["insufficient_context"],
+            (0.49, 0.38),
+            (0.92, 0.7),
+        ),
+        (
+            "JEV13",
+            "hidden-caller-relevant-prerequisite",
+            {
+                "hidden_caller_relevant_prerequisite",
+                "explicit_phase_contract",
+                "encoded_phase_state",
+                "explicit_local_rejection",
+                "ordinary_lifecycle_pairing",
+                "not_applicable",
+                "insufficient_context",
+            },
+            ["callers", "callees", "tests", "enclosing_context"],
+            ["hidden_caller_relevant_prerequisite"],
+            ["not_applicable"],
+            ["insufficient_context"],
+            (0.6, 0.5),
+            (0.92, 0.7),
+        ),
+        (
+            "JEV14",
+            "stale-derived-representation",
+            {"derived_incoherence", "coherent_or_intentional", "insufficient_context"},
+            ["callers", "callees", "tests", "enclosing_context"],
+            ["derived_incoherence"],
+            [],
+            ["insufficient_context"],
+            (0.4, 0.25),
+            (0.92, 0.7),
+        ),
+        (
+            "JEV15",
+            "unsafe-retry-after-source-established-unknown-completion",
+            {
+                "unsafe_retry",
+                "safe_retry",
+                "explicitly_nonretryable",
+                "not_applicable",
+                "insufficient_context",
+            },
+            ["callers", "callees", "tests"],
+            ["unsafe_retry"],
+            ["not_applicable"],
+            ["insufficient_context"],
+            (0.46, 0.33),
+            (0.92, 0.7),
+        ),
+        (
+            "JEV16",
+            "untruthful-success-signal",
+            {
+                "false_success",
+                "truthful_success",
+                "explicit_partial_success",
+                "not_applicable",
+                "insufficient_context",
+            },
+            ["callers", "callees", "tests", "enclosing_context"],
+            ["false_success"],
+            ["not_applicable"],
+            ["insufficient_context"],
+            (0.59, 0.49),
+            (0.92, 0.7),
+        ),
+    ],
+)
+def test_packaged_new_rule_contracts(
+    tmp_path,
+    name,
+    title,
+    criteria,
+    enrichment_families,
+    choices,
+    not_applicable_choices,
+    uncertain_choices,
+    warning,
+    error,
+):
+    rule = load_config([tmp_path], cwd=tmp_path).config.rules[name]
+    assert rule.title == title
+    assert rule.ruleset == "JEV"
+    assert rule.target == "unit"
+    assert rule.context == "owner"
+    assert rule.applies_to == ["function", "method", "closure"]
+    assert rule.require_body is True
+    assert rule.enrich_on == ["missing_evidence", "reduced_context"]
+    assert rule.enrichment_families == enrichment_families
+    assert isinstance(rule.question, ChoiceQuestion)
+    assert set(rule.question.criteria) == criteria
+    assert rule.report.choices == choices
+    assert rule.report.not_applicable_choices == not_applicable_choices
+    assert rule.report.uncertain_choices == uncertain_choices
+    assert rule.report.levels.warning.min_probability == warning[0]
+    assert rule.report.levels.warning.min_confidence == warning[1]
+    assert rule.report.levels.error.min_probability == error[0]
+    assert rule.report.levels.error.min_confidence == error[1]
+    assert rule.report.blocks_exit is False
+    assert rule.report.model_dump(mode="json")["blocks_exit"] is False
 
 
 @pytest.mark.parametrize(

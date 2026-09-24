@@ -69,7 +69,7 @@ def parser() -> argparse.ArgumentParser:
         "--fail-on",
         choices=("info", "warning", "error", "never"),
         default="warning",
-        help="minimum confirmed finding severity for exit 1; uncertain findings do not fail; operational failures exit 2",
+        help="minimum exit-blocking confirmed finding severity for exit 1; uncertain/advisory findings do not fail",
     )
     result.add_argument(
         "--max-display",

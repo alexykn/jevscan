@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "status": "complete_public_aggregate",
+  "purpose": "Final aggregate usefulness review of the frozen eight-rule candidate configuration; five promoted candidates are installed as non-blocking JEV12-JEV16 rules.",
+  "scope": {
+    "rules": [
+      "EXPOSED_MUTABLE_AUTHORITY",
+      "HIDDEN_CALLER_RELEVANT_EFFECT",
+      "HIDDEN_CALLER_RELEVANT_PREREQUISITE",
+      "NEW01_CONSUMER_CONFIRMED",
+      "NEW09_UNSAFE_RETRY",
+      "NEW11_FALSE_SUCCESS",
+      "NEW04_AMBIENT_EFFECT_A",
+      "NEW05_DERIVED_INCOHERENCE"
+    ],
+    "anonymous_repository_slots": 5,
+    "files": {
+      "per_slot": 3,
+      "total": 15,
+      "roles": [
+        "candidate-rich",
+        "control",
+        "test"
+      ]
+    },
+    "production_scan": {
+      "complete": true,
+      "judgments": 1264,
+      "requests": 41,
+      "reportable_signals_reviewed": 4,
+      "stratified_nonfindings_reviewed": 70,
+      "reviewed_cases": 74,
+      "review_blindly": true,
+      "all_rule_and_slot_coverage": true
+    }
+  },
+  "method": {
+    "frozen_configuration": true,
+    "blind_source_review": true,
+    "all_reportable_signals_reviewed": true,
+    "reportable_signals_reviewed_blindly": true,
+    "stratified_nonfindings_reviewed": true,
+    "stratified_nonfindings_reviewed_blindly": true,
+    "utility_and_review_burden_evaluated": true,
+    "retuning": false,
+    "labels": {
+      "A": "Agree",
+      "P": "Partial",
+      "D": "Disagree"
+    }
+  },
+  "rule_results": [
+    {
+      "rule": "EXPOSED_MUTABLE_AUTHORITY",
+      "reviewed_cases": 10,
+      "reviewed_groups": 9,
+      "labels": {
+        "A": 1,
+        "P": 3,
+        "D": 6
+      },
+      "signals": {
+        "confirmed": 0,
+        "none": 10,
+        "total": 0
+      },
+      "utility": -4,
+      "missed_positives": 1,
+      "false_confirmed": 0,
+      "disposition": "defer",
+      "real_positive_recall": "unverified"
+    },
+    {
+      "rule": "HIDDEN_CALLER_RELEVANT_EFFECT",
+      "reviewed_cases": 9,
+      "reviewed_groups": 6,
+      "labels": {
+        "A": 0,
+        "P": 0,
+        "D": 9
+      },
+      "signals": {
+        "confirmed": 0,
+        "none": 9,
+        "total": 0
+      },
+      "utility": 0,
+      "missed_positives": 0,
+      "false_confirmed": 0,
+      "disposition": "promote_low_noise",
+      "real_positive_recall": "unverified"
+    },
+    {
+      "rule": "HIDDEN_CALLER_RELEVANT_PREREQUISITE",
+      "reviewed_cases": 10,
+      "reviewed_groups": 8,
+      "labels": {
+        "A": 0,
+        "P": 0,
+        "D": 10
+      },
+      "signals": {
+        "confirmed": 0,
+        "none": 10,
+        "total": 0
+      },
+      "utility": 0,
+      "missed_positives": 0,
+      "false_confirmed": 0,
+      "disposition": "promote_low_noise",
+      "real_positive_recall": "unverified"
+    },
+    {
+      "rule": "NEW01_CONSUMER_CONFIRMED",
+      "reviewed_cases": 7,
+      "reviewed_groups": 5,
+      "labels": {
+        "A": 2,
+        "P": 0,
+        "D": 5
+      },
+      "signals": {
+        "confirmed": 0,
+        "none": 7,
+        "total": 0
+      },
+      "utility": -6,
+      "missed_positives": 2,
+      "false_confirmed": 0,
+      "disposition": "defer",
+      "real_positive_recall": "unverified"
+    },
+    {
+      "rule": "NEW09_UNSAFE_RETRY",
+      "reviewed_cases": 5,
+      "reviewed_groups": 5,
+      "labels": {
+        "A": 0,
+        "P": 0,
+        "D": 5
+      },
+      "signals": {
+        "confirmed": 0,
+        "none": 5,
+        "total": 0
+      },
+      "utility": 0,
+      "missed_positives": 0,
+      "false_confirmed": 0,
+      "disposition": "promote_low_noise",
+      "real_positive_recall": "unverified"
+    },
+    {
+      "rule": "NEW11_FALSE_SUCCESS",
+      "reviewed_cases": 10,
+      "reviewed_groups": 7,
+      "labels": {
+        "A": 0,
+        "P": 4,
+        "D": 6
+      },
+      "signals": {
+        "confirmed": 0,
+        "none": 10,
+        "total": 0
+      },
+      "utility": 0,
+      "missed_positives": 0,
+      "false_confirmed": 0,
+      "disposition": "promote_low_noise",
+      "real_positive_recall": "unverified"
+    },
+    {
+      "rule": "NEW04_AMBIENT_EFFECT_A",
+      "reviewed_cases": 13,
+      "reviewed_groups": 8,
+      "labels": {
+        "A": 1,
+        "P": 1,
+        "D": 11
+      },
+      "signals": {
+        "confirmed": 4,
+        "none": 9,
+        "total": 4,
+        "all_confirmed_are_disagree": true
+      },
+      "utility": -8.4,
+      "missed_positives": 1,
+      "false_confirmed": 4,
+      "disposition": "reject_this_release",
+      "real_positive_recall": "unverified"
+    },
+    {
+      "rule": "NEW05_DERIVED_INCOHERENCE",
+      "reviewed_cases": 10,
+      "reviewed_groups": 8,
+      "labels": {
+        "A": 0,
+        "P": 2,
+        "D": 8
+      },
+      "signals": {
+        "confirmed": 0,
+        "none": 10,
+        "total": 0
+      },
+      "utility": 0,
+      "missed_positives": 0,
+      "false_confirmed": 0,
+      "disposition": "promote_low_noise",
+      "real_positive_recall": "unverified"
+    }
+  ],
+  "decisions": {
+    "promote_low_noise": [
+      "HIDDEN_CALLER_RELEVANT_EFFECT",
+      "HIDDEN_CALLER_RELEVANT_PREREQUISITE",
+      "NEW05_DERIVED_INCOHERENCE",
+      "NEW09_UNSAFE_RETRY",
+      "NEW11_FALSE_SUCCESS"
+    ],
+    "defer": [
+      "EXPOSED_MUTABLE_AUTHORITY",
+      "NEW01_CONSUMER_CONFIRMED"
+    ],
+    "reject_this_release": [
+      "NEW04_AMBIENT_EFFECT_A"
+    ],
+    "promoted_candidates_passed_development_selector": true,
+    "promoted_candidates_passed_frozen_heldout": true
+  },
+  "guidance": {
+    "reporting": "non_blocking_review_guidance",
+    "independent_disable": true,
+    "independent_rollback": true,
+    "production_defaults_changed": true,
+    "real_positive_recall": "unverified_for_all_promoted_candidates"
+  },
+  "privacy": {
+    "aggregate_only": true,
+    "anonymous_slots_only": true,
+    "private_material_excluded": true,
+    "raw_review_content_excluded": true,
+    "location_metadata_excluded": true,
+    "identity_digests_excluded": true
+  }
+}

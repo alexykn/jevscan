@@ -29,7 +29,7 @@ candidate under the stated objective, not a claim of global or product optimum.
 The pre-heldout selected-YAML SHA-256 was:
 
 ```text
-b7e33930fdeaa5ee72d2b768a3550de7268bda0a474e6bc259c91b4ee5d0e7d4
+omitted digest
 ```
 
 The final CLI `--select --apply` run reproduced that exact selected YAML.
@@ -63,7 +63,7 @@ gates changed. Original YAML formatting was restored separately for review.
 Expanded source snapshot:
 
 ```text
-91f1e9e84c8149f2aa08b5150d8f7d7de4d5f58cb0d6eba9e3af0820a39294aa
+omitted digest
 ```
 
 These experiments captured initial production Planner/ContextBuilder judgments,

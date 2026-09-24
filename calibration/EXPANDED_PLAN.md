@@ -22,7 +22,7 @@ members remain in the same group.
 Snapshot assertion:
 
 ```text
-sha256:cfbae8b30d58b78ab6d8de51c9c2501e167138da17aad172a2bf33a0eb411977
+omitted digest
 ```
 
 ## Offline plans
@@ -59,7 +59,7 @@ are not sent to the model and are not imported as adjudications.
 The generator's reviewed revision is now:
 
 ```text
-sha256:91f1e9e84c8149f2aa08b5150d8f7d7de4d5f58cb0d6eba9e3af0820a39294aa
+omitted digest
 ```
 
 Fresh private normalized manifests and plans are:

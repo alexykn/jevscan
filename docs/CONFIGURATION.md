@@ -14,7 +14,7 @@ Both existing YAML filenames are supported. If both occur in one directory, disc
 
 The packaged rules are **always loaded**. Project settings merge into them: mappings recursively merge, lists replace, and the `rules` array is merged by `name`, not by array position. `rules: []` adds nothing; it does not delete defaults. There is no `extends` field.
 
-Each rule's `name` is its stable unique identity. `title` is a human-readable description; `ruleset` names its group. Rule and ruleset names must start with an ASCII letter and contain at most 64 letters/digits/hyphens/underscores. They are case-sensitive and cannot overlap. `ALL` is a reserved selector. Names need not follow a numeric convention, but built-ins use JEV01–JEV10.
+Each rule's `name` is its stable unique identity. `title` is a human-readable description; `ruleset` names its group. Rule and ruleset names must start with an ASCII letter and contain at most 64 letters/digits/hyphens/underscores. They are case-sensitive and cannot overlap. `ALL` is a reserved selector. Names need not follow a numeric convention, but built-ins use JEV01–JEV16.
 
 | Name | Title |
 |---|---|
@@ -28,8 +28,24 @@ Each rule's `name` is its stable unique identity. `title` is a human-readable de
 | JEV08 | incohesive-owner |
 | JEV09 | duplicated-behavior |
 | JEV10 | unaccounted-partial-state-transition |
+| JEV11 | terminal-state-reentry |
+| JEV12 | hidden-caller-relevant-effect |
+| JEV13 | hidden-caller-relevant-prerequisite |
+| JEV14 | stale-derived-representation |
+| JEV15 | unsafe-retry-after-source-established-unknown-completion |
+| JEV16 | untruthful-success-signal |
 
 The `JEV` ruleset contains built-ins. An initially empty `project` ruleset is available for custom rules that omit `ruleset`. Declare other sets using `rulesets.NAME`; `description` is optional and `enabled` defaults to true.
+
+JEV12–JEV16 are non-blocking review signals, not correctness gates.
+They are deliberately narrow: JEV12 requires a material caller-relevant
+effect that the callable does not clearly signal; JEV13 a required prior step
+that the interface does not explain; JEV14 one source of truth plus stale
+copied state and a visible consumer; JEV15 an uncertain completion followed by
+an unsafe replay; and JEV16 a success signal that omits a required result
+visible outside the target.
+Names, opaque callees, and unstated external contracts are insufficient evidence.
+These rules have no real-positive recall claim.
 
 ```yaml
 version: 4
@@ -163,7 +179,7 @@ Mass levels must be nonempty, unique, in-range, and use the same mode at warning
 
 ### Confirmation and tentative severity
 
-The highest matching numeric signal gives severity; confidence determines confirmation at **that** level. An error-level result lacking error-level confidence is an uncertain error, not a confirmed warning. Confident outcomes create `findings`; uncertain above-threshold outcomes create `tentative_findings`. The latter remain unknown, appear by default with cyan `?`, and do not trigger `--fail-on`.
+The highest matching numeric signal gives severity; confidence determines confirmation at **that** level. An error-level result lacking error-level confidence is an uncertain error, not a confirmed warning. Confident outcomes create `findings`; uncertain above-threshold outcomes create `tentative_findings`. The latter remain unknown, appear by default with cyan `?`, and do not trigger `--fail-on`. `report.blocks_exit` defaults to `true`; set it to `false` for a rule that should still appear as a confirmed finding but never trigger `--fail-on`. The summary counts these in `advisory_findings` as well as `findings`. JEV12–JEV16 set it to `false`.
 
 Benign Choice labels and missing-evidence labels never acquire an invented defect severity. Ordinary unknown results below reporting thresholds require `-v`. Per-rule messages and all numerical thresholds are customizable. Thresholds remain heuristic and are not measured correctness probabilities.
 
@@ -276,7 +292,11 @@ rc7 does not add a new question primitive. It uses System One's existing map of 
 
 When a shared owner exceeds the context ceiling, its sibling checks are kept together long enough for bounded recovery to prepare smaller evidence. Checks that arrive at identical compacted evidence are repacked before transport. Independent ready batches within a large file may run concurrently, while one client semaphore and one request limiter enforce scan-wide concurrency and pacing.
 
-The built-in rules also use narrower primary context where the question permits it. JEV04, JEV05, JEV06, and JEV08 start from owner context rather than a complete file. Targeted enrichment then supplies only rule-declared relationship families when missing evidence warrants it. JEV07 and JEV09 already judge a complete file and do not perform cross-source enrichment by default.
+The built-in rules also use narrower primary context where the question permits it. JEV04, JEV05, JEV06, JEV08,
+JEV10, and JEV12–JEV16 start from owner context rather than a complete file. Targeted enrichment then supplies only
+rule-declared relationship families when missing evidence warrants it. JEV07 and JEV09 already judge a complete file and
+do not perform cross-source enrichment by default. JEV12–JEV16 are non-blocking code review signals: they require
+source-visible facts and do not enforce runtime behavior or claim recall on real positive cases.
 
 The packaged additions are:
 

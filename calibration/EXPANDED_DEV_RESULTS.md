@@ -4,7 +4,7 @@ This is the authorized development-only capture for the final expanded
 snapshot. Heldout data has not been captured or selected against.
 
 * Snapshot:
-  `sha256:91f1e9e84c8149f2aa08b5150d8f7d7de4d5f58cb0d6eba9e3af0820a39294aa`
+  `omitted digest`
 * Scenarios: 72 across 34 development groups.
 * Requests: 72.
 * Reserved input: 58,273 tokens / `$0.002447466`.

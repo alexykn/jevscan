@@ -404,10 +404,10 @@ def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monke
     assert "\x1b" not in text
     if format_name == "json":
         decoded = json.loads(text)
-        assert decoded["schema_version"] == 8 and decoded["events"] == events
+        assert decoded["schema_version"] == 9 and decoded["events"] == events
     else:
         decoded = [json.loads(line) for line in text.splitlines()]
-        assert decoded[0]["schema_version"] == 8 and decoded[1:-1] == events
+        assert decoded[0]["schema_version"] == 9 and decoded[1:-1] == events
 
 
 @pytest.mark.parametrize("width", [32, 80])
@@ -499,7 +499,7 @@ def test_review_audit_and_unknown_reasons_survive_reporting(format_name):
         assert "? test" in text and "probability ambiguous" in text and "no relevant evidence" in text
     else:
         payload = json.loads(text) if format_name == "json" else json.loads(text.splitlines()[0])
-        assert payload["schema_version"] == 8
+        assert payload["schema_version"] == 9
         actual = payload["events"][0] if format_name == "json" else json.loads(text.splitlines()[1])
         assert actual == event
 
@@ -584,7 +584,7 @@ def test_rule_metadata_is_presented_but_not_used_as_a_model_instruction(tmp_path
     results = FileResults(planner)
     results.accept(planner.request(evidence, (check,)), {check.id: NoulAnswer(type="noul", noul=0.95)}, "test", False)
     event = results.records[check.target.id].event()
-    assert event["rule_metadata"]["JEV01"] == {"title": "mixed-responsibilities", "ruleset": "JEV"}
+    assert event["rule_metadata"]["JEV01"] == {"title": "mixed-responsibilities", "ruleset": "JEV", "blocks_exit": True}
     stream = io.StringIO()
     Reporter(stream, "text", _report_metadata(), width=120).emit(event)
     assert "JEV01 mixed-responsibilities" in stream.getvalue()

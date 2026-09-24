@@ -15,10 +15,10 @@ It fixes the selection procedure, not the desired thresholds or results.
   reviewer generator labels or model answers. Preserve disagreements and
   missing-context cases as such rather than forcing binary labels.
 - Verify production parsing, target selection, applicability, and source
-  hashes before capture. Applicability skips are not correct negatives.
-- Complete the previously labeled lookup-daemon evaluation. Preserve its
-  original splits. Previously inspected real-project held-out results are
-  supplementary diagnostics, not a newly untouched acceptance set.
+  identity before capture. Applicability skips are not correct negatives.
+- Keep any previously labeled external-source review as a local-only
+  supplementary diagnostic. It is not a newly untouched acceptance set and
+  does not belong in the public synthetic replay.
 
 ## Selection
 
@@ -27,8 +27,8 @@ budget, grouping, baseline tie preference, and positive-signal safeguard.
 Use direct rule adjudications where available; retain the original label view
 for sensitivity reporting rather than double-counting the same source.
 
-Select from development data only. Record selected policy hashes before
-examining expanded held-out outcomes. Apply the algorithm's selected warning
+Select from development data only. Record the selected policy before examining
+expanded held-out outcomes. Apply the algorithm's selected warning
 policies, including unchanged baselines when selection lacks support or finds
 no improvement. Do not manually substitute a preferred threshold.
 

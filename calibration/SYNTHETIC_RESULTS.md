@@ -8,7 +8,7 @@ directory rather than being copied into this report.
 ## Capture identity
 
 * Snapshot assertion:
-  `sha256:6393505d40cd945c81a27481ebbbda894f19338cef864f7ce138b748ec11568b`
+  `omitted digest`
 * Model: `jev-1.13.0`
 * Manifest scenarios: 32
 * Applicable provider answers: 29

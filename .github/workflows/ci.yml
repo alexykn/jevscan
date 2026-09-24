@@ -100,7 +100,9 @@ jobs:
           assert 'site-packages' in str(Path(jevscan.__file__)), jevscan.__file__
           assert jevscan.__version__ == '0.2.0rc7'
           config = yaml.safe_load(Path('resolved.yaml').read_text())
-          assert config['version'] == 4 and len(config['rules']) == 10
+          assert config['version'] == 4
+          packaged_rules = {rule['name'] for rule in config['rules']}
+          assert {'JEV01', 'JEV11', 'JEV12', 'JEV13', 'JEV14', 'JEV15', 'JEV16'} <= packaged_rules
           assert config['evaluation']['max_context_tokens'] == 28000
           assert config['evaluation']['max_total_tokens'] == 56000
           assert config['scan']['max_full_file_lines'] == 3000
@@ -108,9 +110,9 @@ jobs:
           assert config['budget']['max_requests'] == 1500
           assert config['budget']['max_input_tokens'] == 5000000
           assert config['compaction']['max_rounds'] == 3
-          assert {rule['name'] for rule in config['rules']} == {f'JEV{i:02}' for i in range(1, 11)}
+          assert all(name in packaged_rules for name in ('JEV01', 'JEV11', 'JEV16'))
           report = json.loads(Path('inventory.json').read_text())
-          assert report['schema_version'] == 8
+          assert report['schema_version'] == 9
           assert not report['summary']['incomplete'], report['summary']
           assert report['summary']['units_found'] > 0
           languages = {event['language'] for event in report['events'] if event['event'] == 'file'}

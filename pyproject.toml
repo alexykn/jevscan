@@ -63,7 +63,16 @@ line-length = 120
 target-version = "py312"
 # Frozen semantic evidence includes deliberate defects and partial programs.
 # Production parser/planner and snapshot tests validate these data files.
-extend-exclude = ["examples/calibration/**/sources"]
+# The additional Markdown files are frozen calibration reports whose embedded
+# snippets intentionally preserve source examples rather than formatter output.
+extend-exclude = [
+  "examples/calibration/**",
+  "calibration/candidate-revisions/NEW01.md",
+  "calibration/candidate-revisions/NEW09.md",
+  "calibration/recovery/subagent-reports/exposed-mutable-authority.md",
+  "calibration/recovery/subagent-reports/semantic-projection-fanout.md",
+  "calibration/recovery/subagent-reports/split-operational-policy.md",
+]
 
 [tool.ruff.lint]
 extend-select = ["I", "B", "UP", "S", "N", "C4", "SIM", "RET", "PTH", "LOG", "TRY", "PERF", "ARG"]
@@ -76,7 +85,9 @@ ignore = [
 preview = true
 
 [tool.ty.src]
-exclude = ["examples/calibration/**/sources/**"]
+# Calibration fixtures are frozen parser/planner evidence. They intentionally
+# contain semantic defects, partial programs, and cross-language source.
+exclude = ["examples/calibration/**"]
 
 [tool.ty.environment]
 python-version = "3.12"

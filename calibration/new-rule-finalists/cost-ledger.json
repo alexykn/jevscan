@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "status": "complete_public_aggregate",
+  "purpose": "Cumulative calibration request and cost accounting without private run identity.",
+  "currency": "USD",
+  "phases": [
+    {
+      "phase": "prior_baseline",
+      "requests": 157,
+      "attempts": 157,
+      "reported_input_tokens": 2212244,
+      "reported_output_tokens": 243215,
+      "reported_cost_usd": 0.092915758,
+      "reserved_input_tokens": 3215801,
+      "reserved_cost_usd": 0.135063354
+    },
+    {
+      "phase": "finalist_development",
+      "requests": 55,
+      "attempts": 55,
+      "reported_input_tokens": 294612,
+      "reported_output_tokens": 29193,
+      "reported_cost_usd": 0.012373704,
+      "reserved_input_tokens": 428549,
+      "reserved_cost_usd": 0.017999058
+    },
+    {
+      "phase": "support_extension",
+      "requests": 10,
+      "attempts": 10,
+      "reported_input_tokens": 10248,
+      "reported_output_tokens": 775,
+      "reported_cost_usd": 0.000430416,
+      "reserved_input_tokens": 12182,
+      "reserved_cost_usd": 0.000511644
+    },
+    {
+      "phase": "heldout",
+      "requests": 45,
+      "attempts": 45,
+      "reported_input_tokens": 242929,
+      "reported_output_tokens": 24135,
+      "reported_cost_usd": 0.010203018,
+      "reserved_input_tokens": 351378,
+      "reserved_cost_usd": 0.014757876
+    },
+    {
+      "phase": "incomplete_usefulness_excluded",
+      "requests": 75,
+      "attempts": 75,
+      "reported_input_tokens": 973980,
+      "reported_output_tokens": 70470,
+      "reported_cost_usd": 0.040907160,
+      "reserved_input_tokens": 1279112,
+      "reserved_cost_usd": 0.053722704,
+      "records": 0,
+      "evidence_included": false,
+      "complete": false
+    },
+    {
+      "phase": "rejected_exact_excluded",
+      "requests": 0,
+      "attempts": 1,
+      "reported_input_tokens": 0,
+      "reported_output_tokens": 0,
+      "reported_cost_usd": 0,
+      "reserved_input_tokens": 0,
+      "reserved_cost_usd": 0,
+      "authorized_cap_usd": 0.14,
+      "failure": "HTTP400",
+      "durable_rows": 0,
+      "usage_records": 0,
+      "evidence_included": false
+    },
+    {
+      "phase": "complete_usefulness",
+      "requests": 41,
+      "attempts": 41,
+      "records": 1264,
+      "reported_input_tokens": 968276,
+      "reported_output_tokens": 98215,
+      "reported_cost_usd": 0.040667592,
+      "reserved_input_tokens": 1450867,
+      "reserved_cost_usd": 0.060936414,
+      "retries": 0,
+      "cache_hits": 0,
+      "enrichment_requests": 0,
+      "complete": true,
+      "evidence_included": true
+    }
+  ],
+  "cumulative": {
+    "accepted_requests": 383,
+    "total_attempts": 384,
+    "accepted_request_scope": "successful_and_incomplete",
+    "reserved_input_tokens_exclude_failed_cap": true,
+    "reserved_input_tokens": 6737889,
+    "reported_input_tokens": 4702289,
+    "reported_output_tokens": 466003,
+    "reported_cost_usd": 0.197497648,
+    "reserved_cost_usd": 0.282991050
+  },
+  "budget": {
+    "task_budget_usd": 1,
+    "recorded_reserved_cost_usd": 0.282991050,
+    "failed_attempt_authorized_cap_usd": 0.14,
+    "conservative_committed_authorized_cost_usd": 0.422991050,
+    "remaining_against_task_budget_usd": 0.577008950
+  },
+  "arithmetic": {
+    "accepted_requests_include_successful_and_incomplete": true,
+    "phase_request_sum_matches_accepted_requests": true,
+    "phase_attempt_sum_matches_total_attempts": true,
+    "phase_usage_sums_match_cumulative": true,
+    "recorded_reserved_plus_failed_authorized_cap_matches_conservative_commitment": true,
+    "task_budget_minus_conservative_commitment_matches_remaining": true
+  },
+  "privacy": {
+    "aggregate_only": true,
+    "phase_names_are_anonymous": true,
+    "private_material_excluded": true,
+    "locations_and_targets_excluded": true,
+    "identity_digests_excluded": true,
+    "local_output_details_excluded": true
+  }
+}

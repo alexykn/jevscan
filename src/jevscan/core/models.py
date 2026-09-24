@@ -246,6 +246,7 @@ class Summary:
     diagnostics: int = 0
     incomplete: bool = False
     findings: dict[str, int] = field(default_factory=lambda: {str(s): 0 for s in Severity})
+    advisory_findings: dict[str, int] = field(default_factory=lambda: {str(s): 0 for s in Severity})
     tentative_findings: dict[str, int] = field(default_factory=lambda: {"warning": 0, "error": 0})
     elapsed_seconds: float = 0.0
 
@@ -255,7 +256,12 @@ class Summary:
         if fail_on == "never" or self.mode == "offline":
             return 0
         threshold = SEVERITY_RANK[Severity(fail_on)]
-        return int(any(count and SEVERITY_RANK[Severity(level)] >= threshold for level, count in self.findings.items()))
+        return int(
+            any(
+                count > self.advisory_findings[level] and SEVERITY_RANK[Severity(level)] >= threshold
+                for level, count in self.findings.items()
+            )
+        )
 
 
 def emit_diagnostic(sink: EventSink, summary: Summary, diagnostic: Diagnostic) -> None:

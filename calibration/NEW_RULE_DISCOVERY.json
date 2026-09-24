@@ -1,0 +1,740 @@
+{
+  "schema_version": 2,
+  "status": "complete_public_aggregate",
+  "report_type": "new_rule_discovery_final",
+  "headline": "NEW RULES ACTUALLY LIVE-TESTED: 15",
+  "live_tested_candidates": 15,
+  "production_state": {
+    "current_rule_range": "JEV01-JEV16",
+    "current_new_rules": [
+      "JEV11",
+      "JEV12",
+      "JEV13",
+      "JEV14",
+      "JEV15",
+      "JEV16"
+    ],
+    "installed_non_blocking_rules": [
+      "JEV12",
+      "JEV13",
+      "JEV14",
+      "JEV15",
+      "JEV16"
+    ],
+    "production_defaults_changed": true,
+    "future_mapping_is_not_installed": false
+  },
+  "infrastructure_reuse": [
+    "Production Tree-sitter extraction, planning, context assembly, target selection, request packing, and bounded reservations",
+    "Normal rule, check, import, replay, and assessment contracts",
+    "Shared-state request batching, completion accounting, and no-retry budgets",
+    "Development-only policy selection followed by fresh held-out evaluation without held-out tuning or writeback",
+    "Separate Agree, Partial, and Disagree judgments; Partial is never converted into a positive"
+  ],
+  "measurement_controls": {
+    "cache": "off",
+    "enrichment": "off",
+    "heldout_used_for_tuning": false,
+    "writeback_performed": false,
+    "relabeling_performed": false
+  },
+  "source_derived_principles": [
+    {
+      "name": "lifecycle_state",
+      "requirement": "Visible terminal marker, reachable stateful effect, and no rejection or proven restart, reset, reinitialization, or fresh generation",
+      "controls": [
+        "Idempotent close",
+        "Draining",
+        "Diagnostics",
+        "Per-operation terminality",
+        "Valid generations"
+      ],
+      "uncertainty": "An absent external contract remains uncertain"
+    },
+    {
+      "name": "representation_publication",
+      "requirement": "One authority, a reachable mutation, and a visible consumer consequence",
+      "controls": [
+        "Fresh snapshots",
+        "Bounded staleness",
+        "Progressive protocols",
+        "Atomic publication",
+        "Metrics and telemetry when their contract is visible"
+      ]
+    },
+    {
+      "name": "coordination_completion",
+      "requirement": "Overlap on the same logical resource plus a concrete lost update, duplicate effect, or duplicate work; success claims also require a visible required postcondition and reachable omission",
+      "controls": [
+        "Adequate coordination",
+        "Duplicate-safe contracts",
+        "Visible completion contracts"
+      ],
+      "uncertainty": "Unknown transitive behavior does not prove a finding"
+    },
+    {
+      "name": "caller_facing_contracts",
+      "requirement": "Hidden effects, prerequisites, and outcome partitions require visible caller burden",
+      "controls": [
+        "Names",
+        "Comments",
+        "Tests",
+        "Generic types",
+        "Ordinary conventions"
+      ],
+      "uncertainty": "The controls are not proof of a defect or of a universal contract"
+    }
+  ],
+  "jev01_11_coverage": [
+    {
+      "id": "JEV01",
+      "dimension": "mixed responsibilities",
+      "boundary": "not a lifecycle-state claim"
+    },
+    {
+      "id": "JEV02",
+      "dimension": "unclear control flow",
+      "boundary": "structural traceability, not terminal reentry"
+    },
+    {
+      "id": "JEV03",
+      "dimension": "mixed abstraction levels",
+      "boundary": "abstraction boundary, not lifecycle correctness"
+    },
+    {
+      "id": "JEV04",
+      "dimension": "redundant validation",
+      "boundary": "validation ownership, not terminal reentry"
+    },
+    {
+      "id": "JEV05",
+      "dimension": "hidden invariant failure",
+      "boundary": "failure-path handling, not every state defect"
+    },
+    {
+      "id": "JEV06",
+      "dimension": "unhelpful decomposition",
+      "boundary": "helper usefulness, not hidden caller burden"
+    },
+    {
+      "id": "JEV07",
+      "dimension": "fragmented ownership",
+      "boundary": "authority ownership, not every alias or projection"
+    },
+    {
+      "id": "JEV08",
+      "dimension": "incohesive owner",
+      "boundary": "cohesion, not state-machine reentry"
+    },
+    {
+      "id": "JEV09",
+      "dimension": "duplicated behavior",
+      "boundary": "duplication, not every repeated representation"
+    },
+    {
+      "id": "JEV10",
+      "dimension": "unaccounted partial state transition",
+      "boundary": "coupled temporal effects, not every completion claim"
+    },
+    {
+      "id": "JEV11",
+      "dimension": "terminal-state reentry",
+      "boundary": "terminal operation without visible restart or reuse contract"
+    }
+  ],
+  "candidate_inventory": [
+    {
+      "id": "NEW01",
+      "dimension": "representation loss requiring a consumer distinction",
+      "wave": "original",
+      "development": {
+        "disposition": "research_only",
+        "selected_signal": false
+      },
+      "fresh_heldout": {
+        "disposition": "not_selected"
+      },
+      "usefulness": {
+        "id": "NEW01_CONSUMER_CONFIRMED",
+        "disposition": "defer",
+        "utility": -6,
+        "missed_positives": 2,
+        "false_confirmed": 0
+      },
+      "final_disposition": "defer"
+    },
+    {
+      "id": "NEW02",
+      "dimension": "coupled invalid-state escape",
+      "wave": "original",
+      "development": {
+        "disposition": "research_only",
+        "selected_signal": false
+      },
+      "fresh_heldout": {
+        "disposition": "not_selected"
+      },
+      "usefulness": {
+        "disposition": "not_reviewed"
+      },
+      "final_disposition": "research_only"
+    },
+    {
+      "id": "NEW04",
+      "dimension": "hidden ambient effect",
+      "wave": "original",
+      "development": {
+        "disposition": "promising_but_insufficient_recall",
+        "selected_signal": true
+      },
+      "fresh_heldout": {
+        "disposition": "not_selected"
+      },
+      "usefulness": {
+        "id": "NEW04_AMBIENT_EFFECT_A",
+        "disposition": "reject_this_release",
+        "utility": -8.4,
+        "missed_positives": 1,
+        "false_confirmed": 4
+      },
+      "final_disposition": "reject_this_release"
+    },
+    {
+      "id": "NEW05",
+      "dimension": "stale derived representation",
+      "wave": "original",
+      "development": {
+        "disposition": "selected_with_development_support",
+        "selected_signal": true
+      },
+      "fresh_heldout": {
+        "agree_case_recall": 0.666666667,
+        "agree_group_recall": 0.666666667,
+        "confirmed_recall": 0.333333333,
+        "disposition": "not_promoted"
+      },
+      "usefulness": {
+        "id": "NEW05_DERIVED_INCOHERENCE",
+        "disposition": "promote_low_noise",
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0
+      },
+      "final_disposition": "production_JEV14_non_blocking"
+    },
+    {
+      "id": "NEW06",
+      "dimension": "mixed-version decision",
+      "wave": "original",
+      "development": {
+        "disposition": "research_only",
+        "selected_signal": false
+      },
+      "fresh_heldout": {
+        "disposition": "not_selected"
+      },
+      "usefulness": {
+        "disposition": "not_reviewed"
+      },
+      "final_disposition": "research_only"
+    },
+    {
+      "id": "NEW07",
+      "dimension": "incomplete aggregate exposure",
+      "wave": "original",
+      "development": {
+        "disposition": "research_only",
+        "selected_signal": false
+      },
+      "fresh_heldout": {
+        "disposition": "not_selected"
+      },
+      "usefulness": {
+        "disposition": "not_reviewed"
+      },
+      "final_disposition": "research_only"
+    },
+    {
+      "id": "NEW08",
+      "dimension": "terminal-state reentry",
+      "wave": "original",
+      "development": {
+        "disposition": "selected",
+        "selected_signal": true
+      },
+      "fresh_heldout": {
+        "agree_case_recall": 1.0,
+        "agree_group_recall": 1.0,
+        "confirmed_recall": 1.0,
+        "false_reviews": 0,
+        "false_confirmed": 0,
+        "disposition": "promoted_as_JEV11"
+      },
+      "usefulness": {
+        "disposition": "not_in_final_usefulness_review"
+      },
+      "final_disposition": "production_JEV11"
+    },
+    {
+      "id": "NEW09",
+      "dimension": "unsafe retry",
+      "wave": "original",
+      "development": {
+        "disposition": "insufficient_labeled_support",
+        "selected_signal": true
+      },
+      "fresh_heldout": {
+        "disposition": "not_selected"
+      },
+      "usefulness": {
+        "id": "NEW09_UNSAFE_RETRY",
+        "disposition": "promote_low_noise",
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0
+      },
+      "final_disposition": "production_JEV15_non_blocking"
+    },
+    {
+      "id": "NEW10",
+      "dimension": "uncoordinated same-key operation",
+      "wave": "original",
+      "development": {
+        "disposition": "selected",
+        "selected_signal": true
+      },
+      "fresh_heldout": {
+        "agree_case_recall": 1.0,
+        "agree_group_recall": 1.0,
+        "confirmed_recall": 1.0,
+        "false_reviews": 0,
+        "false_confirmed": 0,
+        "disposition": "not_promoted_after_bounded_external_review"
+      },
+      "usefulness": {
+        "disposition": "not_in_final_usefulness_review"
+      },
+      "final_disposition": "not_promoted"
+    },
+    {
+      "id": "NEW11",
+      "dimension": "untruthful success",
+      "wave": "original",
+      "development": {
+        "disposition": "selected",
+        "selected_signal": true
+      },
+      "fresh_heldout": {
+        "agree_case_recall": 1.0,
+        "agree_group_recall": 1.0,
+        "confirmed_recall": 1.0,
+        "false_reviews": 2,
+        "false_confirmed": 0,
+        "disposition": "not_promoted_as_blocking_rule"
+      },
+      "usefulness": {
+        "id": "NEW11_FALSE_SUCCESS",
+        "disposition": "promote_low_noise",
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0
+      },
+      "final_disposition": "production_JEV16_non_blocking"
+    },
+    {
+      "id": "EXPOSED_MUTABLE_AUTHORITY",
+      "dimension": "exposed mutable authority",
+      "wave": "recovered",
+      "development": {
+        "exact_choice_correct": 22,
+        "exact_choice_total": 35,
+        "disposition": "development_only"
+      },
+      "fresh_heldout": {
+        "disposition": "not_run"
+      },
+      "usefulness": {
+        "disposition": "defer",
+        "utility": -4,
+        "missed_positives": 1,
+        "false_confirmed": 0
+      },
+      "final_disposition": "defer"
+    },
+    {
+      "id": "SPLIT_OPERATIONAL_POLICY",
+      "dimension": "split operational policy",
+      "wave": "recovered",
+      "development": {
+        "exact_choice_correct": 44,
+        "exact_choice_total": 50,
+        "disposition": "development_only; follow-up stopped at gate"
+      },
+      "fresh_heldout": {
+        "disposition": "not_run"
+      },
+      "usefulness": {
+        "disposition": "not_reviewed"
+      },
+      "final_disposition": "defer_for_refinement"
+    },
+    {
+      "id": "IMPLICIT_OUTCOME_PARTITIONS",
+      "dimension": "implicit outcome partitions",
+      "wave": "recovered",
+      "development": {
+        "exact_choice_correct": 28,
+        "exact_choice_total": 40,
+        "disposition": "development_only"
+      },
+      "fresh_heldout": {
+        "disposition": "not_run"
+      },
+      "usefulness": {
+        "disposition": "excluded_from_final_usefulness_review"
+      },
+      "final_disposition": "defer_for_refinement"
+    },
+    {
+      "id": "HIDDEN_CALLER_RELEVANT_EFFECT",
+      "dimension": "hidden caller-relevant effect",
+      "wave": "recovered",
+      "development": {
+        "exact_choice_correct": 38,
+        "exact_choice_total": 60,
+        "disposition": "development_only"
+      },
+      "fresh_heldout": {
+        "disposition": "not_run"
+      },
+      "usefulness": {
+        "disposition": "promote_low_noise",
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0
+      },
+      "final_disposition": "production_JEV12_non_blocking"
+    },
+    {
+      "id": "HIDDEN_CALLER_RELEVANT_PREREQUISITE",
+      "dimension": "hidden caller-relevant prerequisite",
+      "wave": "recovered",
+      "development": {
+        "exact_choice_correct": 53,
+        "exact_choice_total": 70,
+        "disposition": "development_only"
+      },
+      "fresh_heldout": {
+        "disposition": "not_run"
+      },
+      "usefulness": {
+        "disposition": "promote_low_noise",
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0
+      },
+      "final_disposition": "production_JEV13_non_blocking"
+    }
+  ],
+  "development_waves": {
+    "original": {
+      "candidate_count": 10,
+      "judgments": 930,
+      "selected_for_production": [
+        "NEW08"
+      ],
+      "summary": "NEW08 was promoted as JEV11; NEW05, NEW09, NEW10, and NEW11 remained evidence-gated at that stage; the other candidates stayed research-only"
+    },
+    "recovered": {
+      "candidate_count": 5,
+      "judgments": 255,
+      "independent_groups": 51,
+      "fresh_heldout_run": false,
+      "summary": "The recovered wave was development-only; the finalist usefulness review later supplied the held-out evidence for five non-blocking production mappings"
+    }
+  },
+  "fresh_heldout": {
+    "candidate_count": 4,
+    "judgments": 116,
+    "candidates": [
+      "NEW05",
+      "NEW08",
+      "NEW10",
+      "NEW11"
+    ],
+    "selection_or_tuning_performed": false,
+    "partial_converted_to_positive": false
+  },
+  "usefulness_authority": {
+    "status": "complete_public_aggregate",
+    "frozen_candidate_count": 8,
+    "anonymous_repository_slots": 5,
+    "files_per_slot": 3,
+    "reviewed_files": 15,
+    "judgments": 1264,
+    "requests": 41,
+    "reportable_signals_reviewed": 4,
+    "stratified_nonfindings_reviewed": 70,
+    "reviewed_cases": 74,
+    "blind_review": true,
+    "retuning": false,
+    "rule_results": [
+      {
+        "rule": "EXPOSED_MUTABLE_AUTHORITY",
+        "reviewed_cases": 10,
+        "reviewed_groups": 9,
+        "labels": {
+          "A": 1,
+          "P": 3,
+          "D": 6
+        },
+        "confirmed_signals": 0,
+        "utility": -4,
+        "missed_positives": 1,
+        "false_confirmed": 0,
+        "disposition": "defer",
+        "real_positive_recall": "unverified"
+      },
+      {
+        "rule": "HIDDEN_CALLER_RELEVANT_EFFECT",
+        "reviewed_cases": 9,
+        "reviewed_groups": 6,
+        "labels": {
+          "A": 0,
+          "P": 0,
+          "D": 9
+        },
+        "confirmed_signals": 0,
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0,
+        "disposition": "promote_low_noise",
+        "real_positive_recall": "unverified"
+      },
+      {
+        "rule": "HIDDEN_CALLER_RELEVANT_PREREQUISITE",
+        "reviewed_cases": 10,
+        "reviewed_groups": 8,
+        "labels": {
+          "A": 0,
+          "P": 0,
+          "D": 10
+        },
+        "confirmed_signals": 0,
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0,
+        "disposition": "promote_low_noise",
+        "real_positive_recall": "unverified"
+      },
+      {
+        "rule": "NEW01_CONSUMER_CONFIRMED",
+        "reviewed_cases": 7,
+        "reviewed_groups": 5,
+        "labels": {
+          "A": 2,
+          "P": 0,
+          "D": 5
+        },
+        "confirmed_signals": 0,
+        "utility": -6,
+        "missed_positives": 2,
+        "false_confirmed": 0,
+        "disposition": "defer",
+        "real_positive_recall": "unverified"
+      },
+      {
+        "rule": "NEW09_UNSAFE_RETRY",
+        "reviewed_cases": 5,
+        "reviewed_groups": 5,
+        "labels": {
+          "A": 0,
+          "P": 0,
+          "D": 5
+        },
+        "confirmed_signals": 0,
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0,
+        "disposition": "promote_low_noise",
+        "real_positive_recall": "unverified"
+      },
+      {
+        "rule": "NEW11_FALSE_SUCCESS",
+        "reviewed_cases": 10,
+        "reviewed_groups": 7,
+        "labels": {
+          "A": 0,
+          "P": 4,
+          "D": 6
+        },
+        "confirmed_signals": 0,
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0,
+        "disposition": "promote_low_noise",
+        "real_positive_recall": "unverified"
+      },
+      {
+        "rule": "NEW04_AMBIENT_EFFECT_A",
+        "reviewed_cases": 13,
+        "reviewed_groups": 8,
+        "labels": {
+          "A": 1,
+          "P": 1,
+          "D": 11
+        },
+        "confirmed_signals": 4,
+        "all_confirmed_are_disagree": true,
+        "utility": -8.4,
+        "missed_positives": 1,
+        "false_confirmed": 4,
+        "disposition": "reject_this_release",
+        "real_positive_recall": "unverified"
+      },
+      {
+        "rule": "NEW05_DERIVED_INCOHERENCE",
+        "reviewed_cases": 10,
+        "reviewed_groups": 8,
+        "labels": {
+          "A": 0,
+          "P": 2,
+          "D": 8
+        },
+        "confirmed_signals": 0,
+        "utility": 0,
+        "missed_positives": 0,
+        "false_confirmed": 0,
+        "disposition": "promote_low_noise",
+        "real_positive_recall": "unverified"
+      }
+    ],
+    "decisions": {
+      "promote_low_noise": [
+        "HIDDEN_CALLER_RELEVANT_EFFECT",
+        "HIDDEN_CALLER_RELEVANT_PREREQUISITE",
+        "NEW05_DERIVED_INCOHERENCE",
+        "NEW09_UNSAFE_RETRY",
+        "NEW11_FALSE_SUCCESS"
+      ],
+      "defer": [
+        "EXPOSED_MUTABLE_AUTHORITY",
+        "NEW01_CONSUMER_CONFIRMED"
+      ],
+      "reject_this_release": [
+        "NEW04_AMBIENT_EFFECT_A"
+      ],
+      "promoted_candidates_passed_development_selector": true,
+      "promoted_candidates_passed_frozen_heldout": true
+    },
+    "guidance": {
+      "reporting": "non_blocking_review_guidance",
+      "independent_disable": true,
+      "independent_rollback": true,
+      "production_defaults_changed": true,
+      "real_positive_recall": "unverified_for_all_promoted_candidates"
+    }
+  },
+  "production_mapping": {
+    "JEV12": {
+      "candidate": "HIDDEN_CALLER_RELEVANT_EFFECT",
+      "title": "hidden-caller-relevant-effect",
+      "status": "installed_non_blocking_guidance",
+      "installed": true
+    },
+    "JEV13": {
+      "candidate": "HIDDEN_CALLER_RELEVANT_PREREQUISITE",
+      "title": "hidden-caller-relevant-prerequisite",
+      "status": "installed_non_blocking_guidance",
+      "installed": true
+    },
+    "JEV14": {
+      "candidate": "NEW05_DERIVED_INCOHERENCE",
+      "title": "stale-derived-representation",
+      "status": "installed_non_blocking_guidance",
+      "installed": true
+    },
+    "JEV15": {
+      "candidate": "NEW09_UNSAFE_RETRY",
+      "title": "unsafe-retry-after-source-established-unknown-completion",
+      "status": "installed_non_blocking_guidance",
+      "installed": true
+    },
+    "JEV16": {
+      "candidate": "NEW11_FALSE_SUCCESS",
+      "title": "untruthful-success-signal",
+      "status": "installed_non_blocking_guidance",
+      "installed": true
+    }
+  },
+  "deferred_or_rejected": [
+    {
+      "candidate": "EXPOSED_MUTABLE_AUTHORITY",
+      "disposition": "defer",
+      "reason": "Usefulness utility was negative and one positive was missed"
+    },
+    {
+      "candidate": "NEW01_CONSUMER_CONFIRMED",
+      "disposition": "defer",
+      "reason": "Usefulness utility was negative and two positives were missed"
+    },
+    {
+      "candidate": "NEW04_AMBIENT_EFFECT_A",
+      "disposition": "reject_this_release",
+      "reason": "All four confirmed usefulness signals were Disagree"
+    },
+    {
+      "candidate": "NEW10_UNCOORDINATED_SHARED_OPERATION",
+      "disposition": "not_promoted",
+      "reason": "Bounded external review produced unacceptable false-review workload"
+    },
+    {
+      "candidate": "SPLIT_OPERATIONAL_POLICY",
+      "disposition": "defer_for_refinement",
+      "reason": "Development gate stopped its follow-up path"
+    },
+    {
+      "candidate": "IMPLICIT_OUTCOME_PARTITIONS",
+      "disposition": "defer_for_refinement",
+      "reason": "Excluded from the final usefulness set"
+    }
+  ],
+  "aggregate_cost": {
+    "currency": "USD",
+    "accepted_requests": 383,
+    "total_attempts": 384,
+    "reported_input_tokens": 4702289,
+    "reported_output_tokens": 466003,
+    "reported_cost_usd": 0.197497648,
+    "reserved_input_tokens": 6737889,
+    "reserved_cost_usd": 0.28299105,
+    "failed_attempt_authorized_cap_usd": 0.14,
+    "conservative_committed_authorized_cost_usd": 0.42299105,
+    "task_budget_usd": 1.0,
+    "remaining_against_task_budget_usd": 0.57700895,
+    "incomplete_work_included": true,
+    "failed_attempt_included": true
+  },
+  "caveats": [
+    "Samples are small, correlated, and not a representative estimate of real-project precision or recall",
+    "A missing contract remains uncertain; thresholds cannot repair a candidate whose positive and negative cases are misordered",
+    "No confirmed usefulness signal supported a low-noise promotion, so real-positive recall is unverified for every one",
+    "The recovered-only development wave had no separate fresh held-out evaluation; the finalist set received a fresh held-out evaluation before the final usefulness review",
+    "The cost aggregate includes incomplete work and a failed attempt; conclusions use completed aggregate usefulness and evidence-gated synthetic waves"
+  ],
+  "privacy": {
+    "aggregate_only": true,
+    "anonymous_slots_only": true,
+    "private_repository_identities_excluded": true,
+    "local_paths_excluded": true,
+    "source_text_excluded": true,
+    "source_locators_excluded": true,
+    "target_identities_excluded": true,
+    "revision_identifiers_excluded": true,
+    "digests_excluded": true,
+    "raw_captures_excluded": true,
+    "raw_responses_excluded": true,
+    "local_source_review_excluded": true,
+    "raw_files_committed": false
+  }
+}
