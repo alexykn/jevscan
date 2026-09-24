@@ -112,6 +112,7 @@ class TargetResults:
                     "context-reduced",
                     f"{self.target.qualified_name}: reduced surrounding evidence for {', '.join(reduced)}; target is complete",
                     line=self.target.start_line,
+                    incomplete=False,
                 ),
             )
         if self.skipped:

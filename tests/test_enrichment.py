@@ -661,7 +661,9 @@ async def test_reduced_context_is_actionable_even_when_reason_is_low_confidence(
     )
     review = events[0]["reviews"]["contract"]
     assert review["trigger"] == "reduced_context" and review["initial_reason"] == "low_confidence"
-    assert summary.enrichment_reviewed == 1 and summary.incomplete
+    assert summary.enrichment_reviewed == 1
+    assert summary.checks_skipped == 0 and not summary.incomplete
+    assert summary.exit_code("warning") == 0
 
 
 async def test_context_sensitive_rule_can_opt_into_low_confidence(tmp_path, evidence_rule):
