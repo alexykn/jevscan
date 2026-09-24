@@ -112,7 +112,7 @@ jobs:
           assert config['compaction']['max_rounds'] == 3
           assert all(name in packaged_rules for name in ('JEV01', 'JEV11', 'JEV16'))
           report = json.loads(Path('inventory.json').read_text())
-          assert report['schema_version'] == 8
+          assert report['schema_version'] == 9
           assert not report['summary']['incomplete'], report['summary']
           assert report['summary']['units_found'] > 0
           languages = {event['language'] for event in report['events'] if event['event'] == 'file'}
