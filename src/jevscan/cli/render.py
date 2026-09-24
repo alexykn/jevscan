@@ -17,7 +17,7 @@ from jevscan.cli.terminal import (
     safe_text,
 )
 
-REPORT_SCHEMA_VERSION = 8
+REPORT_SCHEMA_VERSION = 9
 
 
 class Reporter:
