@@ -259,7 +259,7 @@ class Compactor:
         return [item for _, item in ranked] + [item for item in candidates if item.id not in scored]
 
     async def compact(
-        self, check: Check, previous_bytes: int, round_number: int, trace: dict[str, Any]
+        self, check: Check, previous_bytes: int, round_number: int, trace: dict[str, Any], rubric: PromptRegistry
     ) -> Evidence | None:
         if check.target.scope == "file" or self.planner.limits.oversized_context == "skip":
             return None
@@ -267,11 +267,11 @@ class Compactor:
         budget = self._budget(previous_bytes, round_number)
         wire = {check.id: self.planner.question_wires[check.id]}
         base = self._compose(recipe, [], False)
-        base_state = self.planner.state(base)
+        base_state = self.planner.state(base, (check,), rubric)
         # The target alone must fit; no amount of relevance guessing permits editing it.
         if not budget.fits(base_state, wire):
             return None
-        scaffold = budget.fits(self.planner.state(self._compose(recipe, [], True)), wire)
+        scaffold = budget.fits(self.planner.state(self._compose(recipe, [], True), (check,), rubric), wire)
         base = self._compose(recipe, [], scaffold)
         candidates = list(recipe.candidates)
         entry: dict[str, Any] = {
@@ -289,13 +289,13 @@ class Compactor:
         if (
             candidates
             and self.limits.semantic
-            and not budget.fits(self.planner.state(self._compose(recipe, candidates, scaffold)), wire)
+            and not budget.fits(self.planner.state(self._compose(recipe, candidates, scaffold), (check,), rubric), wire)
         ):
             candidates = await self._prioritize(check, base, candidates, budget, entry)
         selected: list[Candidate] = []
         for candidate in candidates:
             proposed = self._compose(recipe, [*selected, candidate], scaffold)
-            if budget.fits(self.planner.state(proposed), wire):
+            if budget.fits(self.planner.state(proposed, (check,), rubric), wire):
                 selected.append(candidate)
             else:
                 entry["omitted_candidates"].append({"id": candidate.id, "reason": "context_budget"})

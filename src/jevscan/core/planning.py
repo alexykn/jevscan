@@ -19,6 +19,7 @@ class Request:
     body: bytes
     state: bytes
     question_wires: dict[str, bytes]
+    registry: PromptRegistry
 
     @property
     def questions(self) -> dict[str, Question]:
@@ -110,7 +111,6 @@ class Planner:
         self.limits = config.evaluation
         self.compaction = config.compaction
         self.budget = RequestBudget(config.evaluation, config.jev.model, calibration)
-        self.rubric = PromptRegistry.from_rules(config.selected_rules())
         self.targets = (self.context.file, *(Target.from_unit(unit) for unit in self.context.parsed.units))
         self.applicability_skips: dict[str, dict[str, str]] = {}
         checks = self._checks(config)
@@ -137,6 +137,11 @@ class Planner:
             self.omissions = tuple(omitted)
         self.checks = checks
         self.question_wires = {check.id: encode(check.question()) for check in self.checks}
+        self._groups = self._evidence_groups()
+        self._registry_by_check: dict[str, PromptRegistry] = {}
+        for _, group_checks in self._groups:
+            registry = PromptRegistry.from_questions(check.rule.question for check in group_checks)
+            self._registry_by_check.update({check.id: registry for check in group_checks})
 
     def _facts(self, target: Target) -> frozenset[str]:
         if target.scope == "file":
@@ -199,57 +204,76 @@ class Planner:
             return self.context.envelope(check.target.start_byte, check.target.end_byte)
         return self.context.requested(check)
 
-    def state(self, evidence: Evidence) -> bytes:
-        return self.rubric.state_bytes(evidence.state)
+    def registry_for(self, checks: tuple[Check, ...]) -> PromptRegistry:
+        """Return the stable registry for the shared evidence/target-scope groups."""
+        if not checks:
+            raise ValueError("a request requires at least one check")
+        registry = self._registry_by_check[checks[0].id]
+        if any(self._registry_by_check[check.id] is not registry for check in checks[1:]):
+            raise ValueError("request checks belong to different evidence groups")
+        return registry
+
+    def state(self, evidence: Evidence, checks: tuple[Check, ...], registry: PromptRegistry | None = None) -> bytes:
+        active_registry = registry or self.registry_for(checks)
+        active_registry.validate_questions(check.rule.question for check in checks)
+        return active_registry.state_bytes(evidence.state)
 
     def _encoded_questions(self, checks: tuple[Check, ...]) -> dict[str, bytes]:
         return {check.id: self.question_wires[check.id] for check in checks}
 
-    def estimate(self, evidence: Evidence, checks: tuple[Check, ...]) -> tuple[int, int, int]:
-        return self.budget.estimate(self.state(evidence), self._encoded_questions(checks))
+    def estimate(
+        self, evidence: Evidence, checks: tuple[Check, ...], registry: PromptRegistry | None = None
+    ) -> tuple[int, int, int]:
+        return self.budget.estimate(self.state(evidence, checks, registry), self._encoded_questions(checks))
 
-    def fits(self, evidence: Evidence, checks: tuple[Check, ...]) -> bool:
-        return self.budget.fits(self.state(evidence), self._encoded_questions(checks))
+    def fits(self, evidence: Evidence, checks: tuple[Check, ...], registry: PromptRegistry | None = None) -> bool:
+        return self.budget.fits(self.state(evidence, checks, registry), self._encoded_questions(checks))
 
-    def violations(self, evidence: Evidence, checks: tuple[Check, ...]) -> frozenset[str]:
-        return self.budget.violations(self.state(evidence), self._encoded_questions(checks))
+    def violations(
+        self, evidence: Evidence, checks: tuple[Check, ...], registry: PromptRegistry | None = None
+    ) -> frozenset[str]:
+        return self.budget.violations(self.state(evidence, checks, registry), self._encoded_questions(checks))
 
-    def request(self, evidence: Evidence, checks: tuple[Check, ...]) -> Request:
-        state = self.state(evidence)
+    def request(self, evidence: Evidence, checks: tuple[Check, ...], registry: PromptRegistry | None = None) -> Request:
+        registry = registry or self.registry_for(checks)
+        state = self.state(evidence, checks, registry)
         question_wires = self._encoded_questions(checks)
         body = self.budget.body(state, question_wires)
-        return Request(evidence, checks, body, state, question_wires)
+        return Request(evidence, checks, body, state, question_wires, registry)
 
     def _evidence_groups(self) -> list[tuple[Evidence, list[Check]]]:
-        groups: dict[str, tuple[Evidence, list[Check]]] = {}
+        groups: dict[tuple[str, str], tuple[Evidence, list[Check]]] = {}
         for check in self.checks:
             evidence = self.requested_evidence(check)
-            groups.setdefault(evidence.key, (evidence, []))[1].append(check)
+            # File-wide and unit judgments can have identical source evidence but
+            # answer different questions. Keep their rubric registries independent.
+            group_key = evidence.key, check.target.scope
+            groups.setdefault(group_key, (evidence, []))[1].append(check)
         return list(groups.values())
 
-    def _pack_group(self, evidence: Evidence, checks: list[Check]) -> Iterator[Request]:
+    def _pack_group(self, evidence: Evidence, checks: list[Check], registry: PromptRegistry) -> Iterator[Request]:
         # Evidence that cannot fit even one question must reach recovery intact.
         # Fragmenting it here would prevent recovery from regrouping sibling checks
         # that converge on the same compacted evidence.
-        singleton_violations = self.violations(evidence, (checks[0],))
+        singleton_violations = self.violations(evidence, (checks[0],), registry)
         if singleton_violations & {"context", "bytes"}:
             step = self.limits.max_questions
             for start in range(0, len(checks), step):
-                yield self.request(evidence, tuple(checks[start : start + step]))
+                yield self.request(evidence, tuple(checks[start : start + step]), registry)
             return
 
         pending: tuple[Check, ...] = ()
         for check in checks:
             candidate = (*pending, check)
-            if pending and not self.fits(evidence, candidate):
-                yield self.request(evidence, pending)
+            if pending and not self.fits(evidence, candidate, registry):
+                yield self.request(evidence, pending, registry)
                 pending = ()
             pending = (*pending, check)
         if pending:
-            yield self.request(evidence, pending)
+            yield self.request(evidence, pending, registry)
 
     def plan(self) -> Iterator[Request]:
-        # Exact encoded evidence is the batching identity. Rule and target identity
-        # remain on each typed question and do not prevent sharing one System One state.
-        for evidence, checks in self._evidence_groups():
-            yield from self._pack_group(evidence, checks)
+        # Exact evidence and target scope define a shared group. Different targets
+        # within that scope can still share one state and be split into wire batches.
+        for evidence, checks in self._groups:
+            yield from self._pack_group(evidence, checks, self.registry_for(tuple(checks)))

@@ -707,14 +707,16 @@ def _prepare_candidate(
 
 
 def _pack_requests(planner: Planner, items: list[tuple[Check, Evidence]]) -> list[Request]:
-    grouped: dict[str, tuple[Evidence, list[Check]]] = {}
-    rubric = PromptRegistry.from_questions(check.rule.question for check, _ in items)
+    grouped: dict[tuple[str, str], tuple[Evidence, list[Check]]] = {}
     for check, evidence in items:
-        checks = grouped.setdefault(evidence.key, (evidence, []))[1]
+        group_key = evidence.key, check.target.scope
+        checks = grouped.setdefault(group_key, (evidence, []))[1]
         if check.id not in {item.id for item in checks}:
             checks.append(check)
     requests: list[Request] = []
-    for evidence, checks in sorted(grouped.values(), key=lambda item: item[0].key):
+    for evidence, checks in sorted(grouped.values(), key=lambda item: (item[0].key, item[1][0].target.scope)):
+        rubric = PromptRegistry.from_questions(check.rule.question for check in checks)
+        rubric.validate_questions(check.rule.question for check in checks)
         state = rubric.state_bytes(evidence.state)
         current: list[Check] = []
         for check in sorted(checks, key=lambda item: item.id):
@@ -723,13 +725,13 @@ def _pack_requests(planner: Planner, items: list[tuple[Check, Evidence]]) -> lis
             if current and not planner.budget.fits(state, proposed_wires):
                 question_wires = {item.id: encode(item.question()) for item in current}
                 body = planner.budget.body(state, question_wires)
-                requests.append(Request(evidence, tuple(current), body, state, question_wires))
+                requests.append(Request(evidence, tuple(current), body, state, question_wires, rubric))
                 current = []
             current.append(check)
         if current:
             question_wires = {item.id: encode(item.question()) for item in current}
             body = planner.budget.body(state, question_wires)
-            requests.append(Request(evidence, tuple(current), body, state, question_wires))
+            requests.append(Request(evidence, tuple(current), body, state, question_wires, rubric))
     return requests
 
 

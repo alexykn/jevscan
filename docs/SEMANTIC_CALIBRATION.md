@@ -96,8 +96,10 @@ Version-6 rubric references are the first 16 lowercase hex digits of the
 canonical question's SHA-256; registry construction detects a collision and
 rejects the request. The version-6 question hash is computed from the shared primary binding in
 `Check.question()` followed by `encode()`. The effective state hash includes the
-shared registry, so a changed selected-rubric set is not paired with a judgment
-made under a different state. Version 5 and version 4 use their exact historical
+shared registry for that evidence/target-scope group, so a change to its rubric
+set is not paired with a judgment made under a different state. Earlier version-6
+captures with scan-wide registries still replay but are not paired with the new
+scoped states. Version 5 and version 4 use their exact historical
 primary binders before `encode()`. These hashes are not hashes of the unbound
 YAML question. The full rule and report hashes are retained for audit even when
 they do not affect pairing.

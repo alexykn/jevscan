@@ -29,6 +29,7 @@ def selection_input(
         )
         for candidate in candidates
     }
+    rubric.validate_questions((check.rule.question,))
     state = rubric.state_bytes({**evidence.state, "candidate_context": [item.preview() for item in candidates]})
     return (
         state,

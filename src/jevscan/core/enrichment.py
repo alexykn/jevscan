@@ -208,11 +208,9 @@ class Enricher:
         limits: EnrichmentConfig,
         index: SourceIndex,
         inference: Inference,
-        rubric: PromptRegistry,
     ) -> None:
         self.context, self.budget, self.limits = context, budget, limits
         self.index, self.inference = index, inference
-        self.rubric = rubric
         self.calls = 0
         self.reviewed = 0
         self._snapshots: dict[str, str] = {context.parsed.path: context.parsed.source.decode("utf-8")}
@@ -266,6 +264,7 @@ class Enricher:
         questions = self._routing_questions(check)
         wire = self._wire(check, questions)
         rubric = PromptRegistry.for_question(check.rule.question)
+        rubric.validate_questions((check.rule.question,))
         state = rubric.state_bytes(evidence.state)
         pending: dict[str, Question] = {}
         answers: dict[str, Answer] = {}
@@ -336,6 +335,8 @@ class Enricher:
         if self.calls >= self.limits.max_calls_per_file:
             raise EnrichmentStoppedError("call_budget")
         candidates = await self._candidates(check, evidence, families, trace)
+        registry = PromptRegistry.for_question(check.rule.question)
+        registry.validate_questions((check.rule.question,))
         ranked = await rank_candidates(
             check,
             evidence,
@@ -343,12 +344,11 @@ class Enricher:
             self.budget,
             self._predict,
             trace,
-            PromptRegistry.for_question(check.rule.question),
+            registry,
         )
         ranked = [pair for pair in ranked if pair[0] >= self.limits.min_relevance]
         selected: list[Candidate] = []
         wire = {check.id: encode(check.question())}
-        registry = self.rubric
         for _, candidate in ranked:
             proposed = [*selected, candidate]
             if len(proposed) <= self.limits.max_evidence and self.budget.fits(
@@ -409,7 +409,9 @@ class Enricher:
                 trace["outcome"] = "no_relevant_evidence"
                 return None
             enriched = _augment(self.context, evidence, selected, trace["retrieval"])
-            request_state = self.rubric.state_bytes(enriched.state)
+            registry = PromptRegistry.for_question(check.rule.question)
+            registry.validate_questions((check.rule.question,))
+            request_state = registry.state_bytes(enriched.state)
             question_wire = check.question()
             self._snapshots.update({
                 candidate.snapshot.parsed.path: candidate.snapshot.parsed.source.decode("utf-8")

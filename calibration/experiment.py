@@ -488,8 +488,10 @@ def _request_batch(
     records: list[TargetRecord],
     questions: dict[str, Any],
     wires: dict[str, bytes],
+    rubric: PromptRegistry,
 ) -> RequestBatch:
-    state = PromptRegistry.from_questions(questions.values()).state_bytes(evidence.state)
+    rubric.validate_questions(questions.values())
+    state = rubric.state_bytes(evidence.state)
     return RequestBatch(evidence, state, tuple(records), questions, wires)
 
 
@@ -497,12 +499,19 @@ def _request_batches(
     records: list[TargetRecord], candidates: str | tuple[str, ...], rules: dict[str, Rule]
 ) -> list[RequestBatch]:
     candidate_names = (candidates,) if isinstance(candidates, str) else candidates
-    groups: dict[str, list[TargetRecord]] = defaultdict(list)
+    groups: dict[tuple[str, str], list[TargetRecord]] = defaultdict(list)
     for record in records:
-        groups[record.evidence.key].append(record)
+        groups[(record.evidence.key, record.target.scope)].append(record)
     batches: list[RequestBatch] = []
-    for evidence_key in sorted(groups):
-        group = sorted(groups[evidence_key], key=lambda item: item.case_key)
+    for group_key in sorted(groups):
+        group = sorted(groups[group_key], key=lambda item: item.case_key)
+        group_questions = []
+        for record in group:
+            for candidate in candidate_names:
+                for rule_id in sorted(record.judgments):
+                    variant = CANDIDATE_BUNDLES[candidate][rule_id]
+                    group_questions.append(_variant_rule(rules[rule_id], variant).question)
+        rubric = PromptRegistry.from_questions(group_questions)
         current: list[TargetRecord] = []
         current_questions: dict[str, Any] = {}
         current_wires: dict[str, bytes] = {}
@@ -519,7 +528,7 @@ def _request_batches(
                         Check(record.case_key, record.target, rule_id, rule).question()
                     )
             if current and len(proposed) > MAX_QUESTIONS:
-                batches.append(_request_batch(record.evidence, current, current_questions, current_wires))
+                batches.append(_request_batch(record.evidence, current, current_questions, current_wires, rubric))
                 current, current_questions, current_wires = [], {}, {}
                 proposed = {}
                 proposed_wires = {}
@@ -535,7 +544,7 @@ def _request_batches(
             current.append(record)
             current_questions, current_wires = proposed, proposed_wires
         if current:
-            batches.append(_request_batch(group[0].evidence, current, current_questions, current_wires))
+            batches.append(_request_batch(group[0].evidence, current, current_questions, current_wires, rubric))
     return batches
 
 
