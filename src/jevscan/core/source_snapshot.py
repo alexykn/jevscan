@@ -46,5 +46,8 @@ def read_source(root: Path, path: str, limit: int) -> bytes:
     parts = _relative_components(path)
     with _parent_directory(root, parts[:-1]) as directory:
         descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
-        with os.fdopen(descriptor, "rb") as stream:
-            return _read_stable_file(stream, limit)
+        try:
+            with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                return _read_stable_file(stream, limit)
+        finally:
+            os.close(descriptor)
