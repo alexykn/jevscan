@@ -1,34 +1,24 @@
 # Bounded JEV01/JEV02 experiment ledger
 
-This is an aggregate ledger only. Private manifests, source snapshots, JSONL
-cases, receipts, and freeze records remain under the ignored
-`.jevscan-calibration/` directory.
+This is an aggregate ledger only. Private manifests, source snapshots, raw
+cases, receipts, and freeze records remain local-only and are not required by
+the public synthetic replay.
 
 ## Corpus and split
 
-The live experiment used the exact frozen 33-target map:
+The live experiment used an exact frozen 33-target map:
 
 | Repository | Development | Heldout | Total |
 | --- | ---: | ---: | ---: |
-| `plto` | 6 | 2 | 8 |
-| `whi` | 6 | 6 | 12 |
-| `iyon` | 8 | 5 | 13 |
+| sample A | 6 | 2 | 8 |
+| sample B | 6 | 6 | 12 |
+| sample C | 8 | 5 | 13 |
 | **Total** | **20** | **13** | **33** |
 
-The lookup-daemon corpus and other targets from the larger prior pool are
-authorized but remain pending coverage in this live run. The recovered
-19-case lookup source review was collected without model answers; it requires
-the same source-hash validation and fresh inference as the other repositories.
-No lookup source was sent or paid for here, and no technical blocker has been
-established. This 33-target experiment is a measured subset of the collected
-corpus, not the complete corpus. The manifest enforced full source-hash and
-owner-group separation: no source file or owner group appeared in both splits.
-
-The private manifest identity was:
-
-```text
-manifest sha256:e39ab8caa1fbc67e4e9b73f5fd0c3840811d942f9fd6f11234756b7ed07afccc
-```
+The supplementary source review and other targets from the larger prior pool
+remain outside this public ledger. This 33-target experiment is a measured
+subset of the collected synthetic corpus, not a complete real-project sample.
+Owner-group separation was preserved without publishing source identity.
 
 ## Requests and cost
 
@@ -43,9 +33,8 @@ manifest sha256:e39ab8caa1fbc67e4e9b73f5fd0c3840811d942f9fd6f11234756b7ed07afccc
 * Cumulative: 67 requests, 311,319 reserved input tokens,
   `$0.013075398` reserved and `$0.009917670` reported
 
-All request receipts record body/evidence hashes, reservations, reported
-usage, and costs in the ignored private ledger. No API key or request body was
-stored.
+Request receipts and integrity details remain in local-only storage. No API key
+or request body was stored in the public artifact set.
 
 ## Development candidates
 
@@ -70,12 +59,6 @@ The reporting-only development sweep measured, but did not install:
 * JEV02 warning mass on levels `[2, 3]` at probability `0.6` with the
   existing confidence gate, and conservative level-3 error mass at
   probability/confidence `0.8`.
-
-The frozen alternative policy identity was:
-
-```text
-sha256:113a96985d851c4dbfae4a4a0bbe60b2fe7a4f8e60f829aea9e42d6c0886a336
-```
 
 Development baseline versus measured reporting alternative counts were:
 
@@ -114,7 +97,6 @@ not treated as the score truth.
 
 ## Reproduction
 
-See [`EXPERIMENTS.md`](EXPERIMENTS.md) for validation, three-round development
-preflight/live capture, reporting-only selection, freeze, and one-call
-heldout replay commands. The public code does not contain private source or
-labels.
+The public code does not contain private source, source locators, or private
+labels. Reproduction uses the synthetic manifests and evaluations described in
+the calibration README.

@@ -57,7 +57,6 @@ MODEL = "jev-1.13.0"
 INPUT_PRICE_PER_MILLION = 0.042
 TOKEN_RESERVE = 128
 BYTES_PER_TOKEN = 3.0
-MAX_QUESTIONS = 64
 ANSWER_ADAPTER = TypeAdapter(Answer)
 
 
@@ -245,8 +244,16 @@ def _load_manifest(
     config, rules = _rules_config(config_path)
     source_root_value = _string(document.get("source_root"), "source_root")
     source_root_path = Path(source_root_value).expanduser()
-    source_root = source_root_value if source_root_path.is_absolute() else _relative(source_root_value, "source_root")
-    root = source_root_path.resolve() if source_root_path.is_absolute() else (path.parent / source_root).resolve()
+    if source_root_value == "project":
+        # A portable manifest can name the checkout root without using an
+        # unsafe ``..`` traversal from its own directory.
+        source_root = source_root_value
+        root = PROJECT_ROOT
+    else:
+        source_root = (
+            source_root_value if source_root_path.is_absolute() else _relative(source_root_value, "source_root")
+        )
+        root = source_root_path.resolve() if source_root_path.is_absolute() else (path.parent / source_root).resolve()
     first_source = next(
         (item.get("source") for item in scenarios_data if isinstance(item, dict)),
         None,
@@ -345,7 +352,7 @@ def _load_manifest(
     metadata = {
         "manifest_path": str(path),
         "manifest_sha256": _sha256_bytes(path.read_bytes()),
-        "source_root": str(root),
+        "source_root": source_root if source_root == "project" else str(root),
         "corpus": document.get("corpus"),
         "provenance": document.get("provenance"),
         "scenario_count": len(result),
@@ -367,13 +374,14 @@ def _validate_groups(scenarios: list[Scenario]) -> None:
 
 
 def _prepare(scenarios: list[Scenario], config: Any) -> list[PreparedScenario]:
-    by_source: dict[str, Planner] = {}
+    by_source: dict[int, Planner] = {}
     prepared: list[PreparedScenario] = []
     for scenario in scenarios:
-        planner = by_source.get(scenario.source_path)
+        source_identity = id(scenario.parsed)
+        planner = by_source.get(source_identity)
         if planner is None:
             planner = Planner(ContextBuilder(scenario.parsed), config)
-            by_source[scenario.source_path] = planner
+            by_source[source_identity] = planner
         target_checks = [
             check for check in planner.checks if check.target == scenario.target and check.rule_id == scenario.rule_id
         ]
@@ -410,7 +418,12 @@ def _prepare(scenarios: list[Scenario], config: Any) -> list[PreparedScenario]:
     return prepared
 
 
-def _batches(prepared: list[PreparedScenario]) -> list[RequestBatch]:
+def _request_budget(config: Any) -> RequestBudget:
+    return RequestBudget(config.evaluation, MODEL, TokenCalibration())
+
+
+def _batches(prepared: list[PreparedScenario], config: Any) -> list[RequestBatch]:
+    budget = _request_budget(config)
     groups: dict[str, list[PreparedScenario]] = defaultdict(list)
     for item in prepared:
         if item.applicability_skip is None:
@@ -418,27 +431,35 @@ def _batches(prepared: list[PreparedScenario]) -> list[RequestBatch]:
     batches: list[RequestBatch] = []
     for evidence_key in sorted(groups):
         group = sorted(groups[evidence_key], key=lambda item: item.scenario.scenario_id)
+        evidence = group[0].evidence
         current: list[PreparedScenario] = []
         questions: dict[str, Any] = {}
         wires: dict[str, bytes] = {}
         for item in group:
             question_id = item.scenario.scenario_id
             question = item.scenario.rule.question
-            proposed = len(questions) + 1
-            if current and proposed > MAX_QUESTIONS:
-                batches.append(RequestBatch(item.evidence, tuple(current), questions, wires))
+            question_wire = encode(item.check.question())
+            proposed_questions = {**wires, question_id: question_wire}
+            violations = budget.violations(item.evidence.encoded, {question_id: question_wire})
+            if violations:
+                details = ", ".join(sorted(violations))
+                raise ValueError(
+                    f"{item.scenario.scenario_id}: single question/evidence request exceeds request budget ({details})"
+                )
+            if current and not budget.fits(item.evidence.encoded, proposed_questions):
+                batches.append(RequestBatch(evidence, tuple(current), questions, wires))
                 current, questions, wires = [], {}, {}
             current.append(item)
             questions[question_id] = question
-            wires[question_id] = encode(item.check.question())
+            wires[question_id] = question_wire
         if current:
-            batches.append(RequestBatch(group[0].evidence, tuple(current), questions, wires))
+            batches.append(RequestBatch(evidence, tuple(current), questions, wires))
     return batches
 
 
 def _plan(prepared: list[PreparedScenario], config: Any) -> dict[str, Any]:
-    budget = RequestBudget(config.evaluation, MODEL, TokenCalibration())
-    batches = _batches(prepared)
+    budget = _request_budget(config)
+    batches = _batches(prepared, config)
     records = []
     for index, batch in enumerate(batches):
         body = budget.body(batch.evidence.encoded, batch.wires)
@@ -659,11 +680,56 @@ def _load_answers(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]
     answers: dict[str, dict[str, Any]] = {}
     for line in lines:
         row = json.loads(line)
+        if not isinstance(row, dict):
+            raise TypeError("captured answer row must be an object")
         scenario_id = _string(row.get("scenario_id"), "answer.scenario_id")
         if scenario_id in answers:
             raise ValueError(f"duplicate captured answer {scenario_id}")
         answers[scenario_id] = row
     return metadata, answers
+
+
+def _validate_captured_answers(
+    prepared: list[PreparedScenario],
+    answers: Mapping[str, Mapping[str, Any]],
+) -> None:
+    expected = {item.scenario.scenario_id: item for item in prepared if item.applicability_skip is None}
+    unexpected = sorted(set(answers) - set(expected))
+    if unexpected:
+        raise ValueError(f"captured answers contain unknown or unexpected scenario IDs: {unexpected}")
+    for scenario_id, captured in answers.items():
+        item = expected[scenario_id]
+        captured_rule_id = captured.get("rule_id")
+        if captured_rule_id != item.scenario.rule_id:
+            raise ValueError(
+                f"{scenario_id}: captured rule_id {captured_rule_id!r} does not match "
+                f"manifest rule_id {item.scenario.rule_id!r}"
+            )
+        captured_evidence = captured.get("evidence_sha256")
+        if captured_evidence != item.evidence.key:
+            raise ValueError(
+                f"{scenario_id}: captured evidence_sha256 {captured_evidence!r} does not match "
+                f"prepared evidence {item.evidence.key!r}"
+            )
+
+
+def _capture_jev_config(config: Any) -> JevConfig:
+    return config.jev.model_copy(
+        update={
+            "model": MODEL,
+            "concurrency": 1,
+            "requests_per_minute": 600,
+        }
+    )
+
+
+def _capture_budget(request_count: int, max_cost: float, retries: int = 0) -> BudgetConfig:
+    return BudgetConfig(
+        max_requests=request_count * (retries + 1),
+        max_input_tokens=math.floor(max_cost * 1_000_000 / INPUT_PRICE_PER_MILLION),
+        max_cost=max_cost,
+        input_cost_per_million=INPUT_PRICE_PER_MILLION,
+    )
 
 
 async def _capture_live(
@@ -676,16 +742,15 @@ async def _capture_live(
     answers_path: Path,
     receipts_path: Path,
 ) -> None:
-    jev = JevConfig(model=MODEL, concurrency=1, requests_per_minute=600, retries=1)
-    budget = BudgetConfig(
-        max_requests=256,
-        max_input_tokens=math.floor(max_cost * 1_000_000 / INPUT_PRICE_PER_MILLION),
-        max_cost=max_cost,
-        input_cost_per_million=INPUT_PRICE_PER_MILLION,
-    )
-    request_budget = RequestBudget(config.evaluation, MODEL, TokenCalibration())
+    jev = _capture_jev_config(config)
+    budget = _capture_budget(len(batches), max_cost, config.jev.retries)
+    request_budget = _request_budget(config)
     plans = []
     for index, batch in enumerate(batches):
+        violations = request_budget.violations(batch.evidence.encoded, batch.wires)
+        if violations:
+            details = ", ".join(sorted(violations))
+            raise ValueError(f"request batch {index} exceeds request budget ({details})")
         body = request_budget.body(batch.evidence.encoded, batch.wires)
         plans.append({
             "request_index": index,
@@ -823,6 +888,8 @@ def cmd_normalize(args: argparse.Namespace) -> int:
 
 
 def cmd_capture(args: argparse.Namespace) -> int:
+    if args.live and args.max_cost is None:
+        raise ValueError("--live requires an explicit --max-cost")
     metadata, scenarios, config = _load_manifest(args.manifest, args.config, args.snapshot_sha256)
     prepared = _prepare(scenarios, config)
     plan = _plan(prepared, config)
@@ -831,12 +898,13 @@ def cmd_capture(args: argparse.Namespace) -> int:
         _dump_json(args.output.with_suffix(".plan.json"), output)
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
+    assert args.max_cost is not None
     api_key = os.environ.get("TYPESAFE_API_KEY")
     if not api_key:
         raise RuntimeError("TYPESAFE_API_KEY is unavailable; capture was not executed")
     asyncio.run(
         _capture_live(
-            _batches(prepared),
+            _batches(prepared, config),
             config,
             args.endpoint,
             api_key,
@@ -856,6 +924,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     answer_metadata, answers = _load_answers(args.answers)
     if answer_metadata.get("manifest_sha256") != metadata["manifest_sha256"]:
         raise ValueError("captured answers were made from a different manifest")
+    _validate_captured_answers(prepared, answers)
     adjudications = _adjudication_index(args.adjudications)
     adjudication_sha256 = _sha256_bytes(args.adjudications.read_bytes())
     cases: list[CalibrationCase] = []
@@ -904,7 +973,7 @@ def cmd_import(args: argparse.Namespace) -> int:
                 adjudication_sha256,
             )
         )
-    _dump_jsonl(args.output, [case.model_dump(mode="json") for case in sorted(cases, key=lambda case: case.case_id)])
+    _dump_jsonl(args.output, [case.model_dump(mode="json") for case in cases])
     summary = {
         **metadata,
         "captured_metadata": answer_metadata,
@@ -943,7 +1012,7 @@ def _parser() -> argparse.ArgumentParser:
     capture.add_argument("--output", type=Path, default=Path(".jevscan-calibration/synthetic-answers.jsonl"))
     capture.add_argument("--receipts", type=Path, default=Path(".jevscan-calibration/synthetic-receipts.jsonl"))
     capture.add_argument("--live", action="store_true", help="allow live API calls; omitted means plan-only")
-    capture.add_argument("--max-cost", type=float, default=0.05)
+    capture.add_argument("--max-cost", type=float, help="required hard cost cap for --live")
     capture.add_argument("--endpoint", default=os.environ.get("TYPESAFE_BASE_URL", "https://api.typesafe.ai"))
     capture.set_defaults(function=cmd_capture)
     import_parser = sub.add_parser("import", help="import captured answers using finalized blind adjudications")

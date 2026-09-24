@@ -34,7 +34,7 @@ therefore is not an untouched final acceptance set.
 The evaluated source snapshot is:
 
 ```text
-6393505d40cd945c81a27481ebbbda894f19338cef864f7ce138b748ec11568b
+omitted digest
 ```
 
 The corpus has 32 independently reviewed mapped scenarios: 29 provider
@@ -127,7 +127,7 @@ defaults.
   selected policies, objective values, label counts, and outcome counts match.
 
 Remaining evidence limitations include the small synthetic group counts.
-The authorized lookup-daemon evaluation is now complete: see
+The authorized external real-source repository B evaluation is now complete: see
 `LOOKUP_RESULTS.md` for its 38 baseline cases and the held-out positive misses.
 The larger independent synthetic evaluation follows `FINAL_EVALUATION_PLAN.md`.
 

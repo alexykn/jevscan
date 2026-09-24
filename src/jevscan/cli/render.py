@@ -243,6 +243,13 @@ class Reporter:
             f"{summary['uncertain']} uncertain checks; {summary['not_applicable']} not applicable",
             style=BOLD + style,
         )
+        advisory = summary.get("advisory_findings", {})
+        if any(advisory.values()):
+            self.terminal.write(
+                f"Advisory findings: {advisory.get('warning', 0)} warnings, {advisory.get('error', 0)} errors "
+                "(shown in findings; do not trigger --fail-on)",
+                style=CYAN,
+            )
         tentative = summary["tentative_findings"]
         if any(tentative.values()):
             self.terminal.write(

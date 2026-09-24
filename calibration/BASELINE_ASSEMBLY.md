@@ -18,10 +18,10 @@ It contains:
 * 66 total cases with no duplicate case IDs;
 * `provenance.source_group`, populated from the preserved `owner_group`.
 
-The assembly preserves every original `source_commit`, `source_sha256`, and
-`target_sha256`. The reviewed source-blob commit is the authoritative identity
-for each case; a later repository `HEAD` summary is not substituted or silently
-rewritten. The replay artifact is:
+The assembly preserves the original synthetic case identity and review
+boundaries without publishing machine-local source identity or digests. Any
+source-integrity records needed for a private replay remain in local-only
+storage. The replay artifact is:
 
 ```text
 .jevscan-calibration/baseline-replay.json

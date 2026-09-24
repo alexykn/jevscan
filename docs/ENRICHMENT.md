@@ -24,13 +24,28 @@ Module/tree scoring, persistent model sessions, compiler-resolved call graphs, a
 
 `review_trigger` uses the validated rule's `enrich_on` and assessment reason. It admits unknown checks only. Missing evidence precedes reduced context, applicability, explicit confidence/Choice ambiguity opt-ins, then explicit Noul ambiguity opt-ins. Reduced context can qualify even when low confidence is the primary displayed reason. File-local scheduling builds the priority queue before consuming the shared review budget, with deterministic source-position/rule-name ties. Source-order presentation is unaffected.
 
-The packaged default is missing/reduced evidence, plus applicability for JEV06. Ordinary low confidence/ambiguous Nouls do not invoke the router unless explicitly enabled. A possible not-applicable result is not a clean judgment. Above-threshold uncertain warnings/errors remain visible without verbose mode regardless of routing admission.
+The packaged default is missing/reduced evidence, plus applicability for JEV06. JEV01–JEV16 remain declarative built-ins;
+JEV12–JEV16 use the same bounded enrichment path and do not become blocking checks through enrichment. Ordinary low
+confidence/ambiguous Nouls do not invoke the router unless explicitly enabled. A possible not-applicable result is not a
+clean judgment. Above-threshold uncertain warnings/errors remain visible without verbose mode regardless of routing admission.
 
 For a rule with `targeted_enrichment`, a configured Choice label or admitted `enrich_on` trigger can select direct retrieval using
 the rule's declared `enrichment_families`. The packaged context-sensitive rules use this for their
 `insufficient_context` outcomes. If a declared applicability fact is absent, the planner records a deterministic
 not-applicable outcome instead of requesting hypothetical external context. Rules without targeted policy retain the
 generic routing path.
+
+## Built-in semantic-signal boundary
+
+The final five built-ins are narrow review signals: JEV12 asks whether a callable
+hides a material effect callers need to know about, JEV13 an unexplained required setup
+step, JEV14 stale derived state after a visible mutation, JEV15 an unsafe retry
+after uncertain completion, and JEV16 success before a required result is
+visible outside the target.
+Enrichment can supply missing local evidence for those contracts; it cannot infer
+opaque callees, external guarantees, or real-positive recall. The signals remain
+non-blocking review guidance unless a project separately changes its reporting
+policy.
 
 ## Disposition and independent evidence families
 
@@ -101,6 +116,13 @@ Recovery is audited in `context_selection` and its auxiliary requests in `compac
 
 ## RC7 targeted defaults
 
-The built-in catalogue deliberately narrows evidence direction before model routing. JEV04 (redundant validation) may inspect callers and callees; JEV05 may additionally inspect tests; JEV06 (unhelpful decomposition) uses callees/enclosing context and does not search arbitrary callers. JEV01–JEV03 and JEV08 use callees/enclosing context. The complete-file JEV07 and JEV09 checks disable cross-source enrichment by default because their questions concern the supplied file itself.
+The built-in catalogue deliberately narrows evidence direction before model routing. JEV04 (redundant validation) may
+inspect callers and callees; JEV05 may additionally inspect tests; JEV06 (unhelpful decomposition) uses
+callees/enclosing context and does not search arbitrary callers. JEV01–JEV03, JEV08, and JEV10 use
+callees/enclosing context. JEV11 and JEV12–JEV14 use callers, callees, tests, and enclosing context; JEV15 uses
+callers, callees, and tests; JEV16 uses all four families because its contracts may be established at those boundaries.
+The complete-file JEV07 and JEV09 checks disable cross-source enrichment by default because their questions concern the
+supplied file itself. JEV12–JEV16 remain non-blocking code review: enrichment supplies bounded evidence, not runtime
+enforcement, and no rule claims recall on real positive cases.
 
 This policy can be overridden per project. Broader retrieval may improve a custom rule, but it also increases candidate-selection and reassessment cost.

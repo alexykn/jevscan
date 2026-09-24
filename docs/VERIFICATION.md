@@ -2,7 +2,9 @@
 
 ## Baseline and environment
 
-The baseline is merged main commit `9906b0f556baaefdaf2dd17e631f2d15e26d49a8` (0.2.0rc6). This revision changes execution, caching, budgeting, enrichment policy, reporting, and documentation; runtime dependencies and the lockfile are unchanged.
+The baseline is the previously released 0.2.0rc6 revision. This revision
+changes execution, caching, budgeting, enrichment policy, reporting, and
+documentation; runtime dependencies and the lockfile are unchanged.
 
 Local verification used Linux x86-64 CPython 3.13.5 with the project's locked dependencies and real bundled Tree-sitter grammars. Transport tests use HTTPX `MockTransport`; no authenticated TypeSafe/Jev request was made while developing or verifying rc7.
 

@@ -24,7 +24,7 @@ labels therefore do not appear as measured results.
 | Starting commit | `b13bb159c62d688b6248773b2e858fa3c02cf98a` |
 | Requested model | `jev-1.13.0` |
 | Returned model | `jev-1.13.0` for every response |
-| Private split-manifest SHA-256 | `dc578ab5d654bf0781e224cdfe41cc36b31879d23060d46156c6f91b0eb43e14` |
+| Private split-manifest SHA-256 | `omitted digest` |
 | Development rounds | 3 of 3 |
 | Provider price used | USD 0.042 per million input tokens; output free |
 | Cumulative cap | USD 0.10 |

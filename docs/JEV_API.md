@@ -150,7 +150,14 @@ The raw source evidence is not copied into machine reports, but target/declarati
 
 ## Verification limits
 
-Automated tests use the actual HTTPX client with MockTransport and the real bundled grammar packages. They verify request construction, multiple target bindings, exact byte accounting, shuffled responses, bounded size recovery, caching, and failure transitions. They do not establish Jev's long-context accuracy, real account rate limits, latency, or current availability. No live authenticated Jev call was made for this release candidate. See [verification](VERIFICATION.md).
+Automated verification uses the actual HTTPX client with MockTransport and the
+real bundled grammar packages; it makes no live authenticated Jev calls. It
+verifies request construction, multiple target bindings, exact byte accounting,
+shuffled responses, bounded size recovery, caching, and failure transitions. It
+does not establish Jev's long-context accuracy, real account rate limits,
+latency, or current availability. Separately retained calibration captures may
+use authenticated inference and record that model, cost, and provenance under
+`calibration/`. See [verification](VERIFICATION.md).
 
 
 ## Enrichment and source sharing
@@ -161,6 +168,9 @@ In targeted mode, the routing request contains a disposition Choice plus only th
 
 Report reviews record disposition, all family probabilities, admitted families, per-family coverage, candidate memberships, selected source, omissions, and stopping outcomes. The resulting `retrieval_coverage` contains `families`, `candidate_families`, and combined-pool omission counts. Family membership is lexical/provenance information, not a resolved contract.
 
-Configuration version 4 is additive YAML. Rule names (JEV01–JEV10 for built-ins) are stable identifiers. Titles/rulesets are report metadata, not model instructions. Disabling a rule or set prevents creating those questions; selection may also change request batching/cache identities.
+Configuration version 4 is additive YAML. Rule names (JEV01–JEV16 for built-ins) are stable identifiers. Titles/rulesets
+are report metadata, not model instructions. JEV12–JEV16 are non-blocking code review signals: they require
+source-visible evidence, do not enforce runtime behavior, and make no recall claim for real positive cases. Disabling a
+rule or set prevents creating those questions; selection may also change request batching/cache identities.
 
 Source outside the scanned subdirectory can be selected only under the resolved project root and filters. Selected evidence does not imply all callers have been seen or that per-file snapshots form an atomic repository revision. See [ENRICHMENT.md](ENRICHMENT.md) for the precise algorithm, research basis, and live-acceptance boundary.

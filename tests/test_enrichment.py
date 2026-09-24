@@ -452,10 +452,7 @@ class Actual:
         config,
     )
     assert not any(check.target.qualified_name == "Contract.run" for check in planner.checks)
-    assert not any(
-        check.rule_id == "unhelpful-decomposition" and check.target.qualified_name != "Actual"
-        for check in planner.checks
-    )
+    assert not any(check.rule_id == "JEV06" and check.target.qualified_name != "Actual" for check in planner.checks)
     check = next(check for check in planner.checks if check.rule_id == "JEV01")
     for value, status in (
         (0.1, "ok"),

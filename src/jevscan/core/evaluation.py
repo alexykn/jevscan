@@ -141,6 +141,8 @@ class TargetResults:
             summary.file_targets_skipped += bool(self.skipped) and not self.judgments
         for finding in event["findings"]:
             summary.findings[finding["severity"]] += 1
+            if not self.judgments[finding["rule"]].check.rule.report.blocks_exit:
+                summary.advisory_findings[finding["severity"]] += 1
         for finding in event["tentative_findings"]:
             summary.tentative_findings[finding["severity"]] += 1
         self.diagnostics(sink, summary, aborted)

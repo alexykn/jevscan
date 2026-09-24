@@ -318,6 +318,30 @@ async def test_cache_reclassifies_thresholds_and_invalidates_changed_evidence(ba
             assert summary.units_cached == (2 if not requests else 0)
 
 
+@pytest.mark.parametrize(("probability", "severity"), [(0.95, "warning"), (0.995, "error")])
+async def test_advisory_findings_remain_visible_without_blocking_exit(
+    basic_rule: Rule, probability: float, severity: str
+) -> None:
+    advisory = Rule.model_validate({
+        **basic_rule.model_dump(),
+        "report": {**basic_rule.report.model_dump(), "blocks_exit": False},
+    })
+    source = "def work():\n    return 1\n"
+    for rules, blocking in (({"ADVISORY": advisory}, False), ({"ADVISORY": advisory, "BLOCKING": basic_rule}, True)):
+        config = Config(rules=rules, jev=JevConfig(requests_per_minute=0, retries=0))
+        sink, summary = Sink(), Summary("live")
+        async with JevClient(
+            config.jev, "test-key", transport=httpx.MockTransport(lambda request: answer(request, probability))
+        ) as client:
+            await evaluate_file(planned(source, config), client, None, sink, summary)
+        events = [event for event in sink.events if event["event"] == "evaluation"]
+        assert [finding["rule"] for event in events for finding in event["findings"]] == sorted(rules)
+        assert summary.findings[severity] == len(rules)
+        assert summary.advisory_findings[severity] == 1
+        assert summary.exit_code("warning") == blocking
+        assert summary.exit_code("error") == (blocking and severity == "error")
+
+
 async def test_out_of_order_answers_keep_method_attribution(basic_rule: Rule) -> None:
     rule = Rule.model_validate({**basic_rule.model_dump(), "applies_to": ["method"]})
     config = configured(rule)

@@ -65,8 +65,8 @@ Exit codes are:
 
 | Code | Meaning |
 | --- | --- |
-| `0` | No confirmed finding at or above `--fail-on`, or `--fail-on never` |
-| `1` | A confirmed finding meets `--fail-on` |
+| `0` | No exit-blocking confirmed finding at or above `--fail-on`, or `--fail-on never` |
+| `1` | An exit-blocking confirmed finding meets `--fail-on` |
 | `2` | The scan is incomplete or an operational/configuration error occurred |
 
 Reduced evidence, omitted checks, and isolated provider request failures are visible as incomplete coverage. A
@@ -76,7 +76,7 @@ missing syntax fact and rule are recorded separately in machine output.
 ## Configuration
 
 Configuration is YAML in `jevscan.yaml` or `jevscan.yml`. Version 4 is required. Project configuration is additive:
-the packaged JEV01–JEV10 rules remain active unless selected or ignored explicitly. Rules merge by `name`; mappings
+the packaged JEV01–JEV16 rules remain active unless selected or ignored explicitly. Rules merge by `name`; mappings
 merge recursively and lists replace. There is no `extends` setting.
 
 ```yaml
@@ -313,6 +313,17 @@ reassesses once only when useful evidence is admitted.
 | JEV08 | incohesive-owner | unit |
 | JEV09 | duplicated-behavior | file |
 | JEV10 | unaccounted-partial-state-transition | unit |
+| JEV11 | terminal-state-reentry | unit |
+| JEV12 | hidden-caller-relevant-effect | unit |
+| JEV13 | hidden-caller-relevant-prerequisite | unit |
+| JEV14 | stale-derived-representation | unit |
+| JEV15 | unsafe-retry-after-source-established-unknown-completion | unit |
+| JEV16 | untruthful-success-signal | unit |
+
+JEV12–JEV16 are advisory, non-blocking code reviews (`report.blocks_exit: false`). They require source-visible evidence of a material effect callers need
+to know about, an unexplained required setup step, stale derived state, an unsafe retry, or success before a required
+result; names, opaque calls, tests, and conventions alone are insufficient. They do not enforce runtime behavior or
+claim recall on real positive cases.
 
 Inspect the fully resolved catalogue with:
 
@@ -401,8 +412,8 @@ JSON/JSONL **schema 8** includes all raw answers, stable rule IDs, `rule_metadat
 
 | Exit | Meaning |
 |---|---|
-| 0 | Complete scan without confirmed findings at `--fail-on`, or complete offline inventory |
-| 1 | Confirmed findings meet `--fail-on` (warning by default) |
+| 0 | Complete scan without exit-blocking confirmed findings at `--fail-on`, or complete offline inventory |
+| 1 | Exit-blocking confirmed findings meet `--fail-on` (warning by default) |
 | 2 | Configuration/operational failure, omitted targets, or reduced requested context |
 | 130 | Interrupted |
 
