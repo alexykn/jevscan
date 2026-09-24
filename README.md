@@ -408,7 +408,7 @@ Coverage warnings no longer flood the terminal. While live requests are active, 
 
 All text, including messages and long titles, wraps to terminal display width with continuation indentation. Colors are automatic for terminals; `COLOR=yes|no` overrides detection and `NO_COLOR` disables them. Display limits count targets after filtering. Diagnostics and summaries are never hidden. Offline inventory lists units without `-v`.
 
-JSON/JSONL **schema 8** includes all raw answers, stable rule IDs, `rule_metadata` (title/ruleset), statuses, separate confirmed/tentative findings, evidence/model/cache provenance, review audits, context-selection traces, and sanitized provider-request-rejection counters/metadata. Verbosity and display limits do not filter machine reports. Review audits preserve initial answers, disposition/family predictions, candidate family membership, selected spans, omissions, and stopping outcomes. JSONL flushes each event. File results are grouped when evaluation finishes; files may finish in any order.
+JSON/JSONL **schema 9** includes all raw answers, stable rule IDs, `rule_metadata` (title/ruleset/`blocks_exit`), statuses, separate confirmed/tentative findings, advisory-finding counts, evidence/model/cache provenance, review audits, context-selection traces, and sanitized provider-request-rejection counters/metadata. Verbosity and display limits do not filter machine reports. Review audits preserve initial answers, disposition/family predictions, candidate family membership, selected spans, omissions, and stopping outcomes. JSONL flushes each event. File results are grouped when evaluation finishes; files may finish in any order.
 
 | Exit | Meaning |
 |---|---|
