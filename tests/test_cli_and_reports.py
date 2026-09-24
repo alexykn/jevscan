@@ -404,10 +404,10 @@ def test_machine_output_ignores_verbose_limits_and_color(format_name: str, monke
     assert "\x1b" not in text
     if format_name == "json":
         decoded = json.loads(text)
-        assert decoded["schema_version"] == 8 and decoded["events"] == events
+        assert decoded["schema_version"] == 9 and decoded["events"] == events
     else:
         decoded = [json.loads(line) for line in text.splitlines()]
-        assert decoded[0]["schema_version"] == 8 and decoded[1:-1] == events
+        assert decoded[0]["schema_version"] == 9 and decoded[1:-1] == events
 
 
 @pytest.mark.parametrize("width", [32, 80])
