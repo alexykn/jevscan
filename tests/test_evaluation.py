@@ -313,13 +313,17 @@ async def test_provider_state_rejection_reduces_to_owner_without_cutting_target(
         if len(body["state"]["documents"][0]["content"]) > 1000:
             return httpx.Response(413)
         accepted.append(body)
-        return answer(request)
+        return answer(request, 0.05)
 
     sink, summary = Sink(), Summary("live")
     async with JevClient(config.jev, "test-key", transport=httpx.MockTransport(handle)) as client:
         await evaluate_file(planner, client, None, sink, summary)
     assert accepted and all(body["state"]["documents"][0]["content"].startswith("class S:") for body in accepted)
-    assert summary.units_evaluated == 2 and summary.context_reduced == 2 and summary.incomplete
+    assert summary.units_evaluated == 2 and summary.context_reduced == 2
+    assert summary.checks_skipped == 0 and not summary.incomplete
+    assert summary.exit_code("warning") == 0
+    reduced = [event for event in sink.events if event.get("code") == "context-reduced"]
+    assert reduced and all(event["severity"] == "warning" and not event["incomplete"] for event in reduced)
 
 
 async def test_unrecoverable_provider_size_error_is_bounded(basic_rule: Rule) -> None:

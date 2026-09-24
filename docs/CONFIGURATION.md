@@ -284,7 +284,7 @@ Compaction selects source from the already parsed file only. It never silently e
 
 Auxiliary relevance instructions are assembled from `Check.auxiliary`: exact target metadata and the full active `rule.question`, including all criteria. Report thresholds/messages are not injected as semantic instructions, and neither an earlier verdict nor ranking scores enter the final assessment state. Changing a rule question or selected source changes cache identity. Compaction/recovery audits record source spans, budgets, candidate omissions, raw relevance answers, request hashes, request-local provider rejections and explicit stops.
 
-Report schema **7** adds the request-rejection counter and request-local rejection metadata while preserving rc5's `target.display_name`, `context_selection`, file `coverage` events and size/compaction counters. Text coverage now distinguishes `scan aborted` from ordinary compaction/omission; a file with zero compacted targets is no longer described as compacted merely because unfinished checks exist. Reduced contexts and skipped targets still set incomplete status.
+Report schema **7** adds the request-rejection counter and request-local rejection metadata while preserving rc5's `target.display_name`, `context_selection`, file `coverage` events and size/compaction counters. Text coverage distinguishes `scan aborted` from ordinary compaction/omission; a file with zero compacted targets is not described as compacted merely because unfinished checks exist. Reduced surrounding context for a complete target is a non-fatal yellow coverage warning and retains `context_complete: false` in machine reports. Skipped checks remain incomplete.
 
 ## RC7 cost-aware evidence batching (configuration stays YAML v4)
 

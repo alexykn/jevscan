@@ -651,6 +651,31 @@ def test_hundreds_of_coverage_details_are_aggregated_without_hiding_real_errors(
     assert "context-reduced" in machine.getvalue()
 
 
+def test_reduced_context_is_a_yellow_coverage_warning_not_an_incomplete_summary():
+    stream = io.StringIO()
+    reporter = Reporter(stream, "text", _report_metadata(), width=100)
+    reporter.terminal.color = True
+    reporter.emit({
+        "event": "coverage",
+        "path": "large.ts",
+        "context_reduced_targets": 2,
+        "skipped_checks": 0,
+        "skipped_file_checks": 0,
+        "aborted": False,
+    })
+    summary = Summary("live")
+    summary.context_reduced = 2
+    assert summary.exit_code("warning") == 0
+    reporter.emit({"event": "summary", **asdict(summary)})
+    output = stream.getvalue()
+    assert "coverage warning — context compacted for 2 targets" in output
+    assert "\x1b[33mcomplete: 0 warnings, 0 errors" in output
+    assert "incomplete:" not in output
+    summary.findings["warning"] = 1
+    assert summary.exit_code("warning") == 1
+    assert summary.exit_code("never") == 0
+
+
 @pytest.mark.usefixtures("grammar_runtime")
 def test_plan_mode_estimates_without_api_key(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)

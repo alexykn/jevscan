@@ -69,9 +69,11 @@ Exit codes are:
 | `1` | An exit-blocking confirmed finding meets `--fail-on` |
 | `2` | The scan is incomplete or an operational/configuration error occurred |
 
-Reduced evidence, omitted checks, and isolated provider request failures are visible as incomplete coverage. A
-deterministic applicability exclusion counts as not applicable, not as a skipped or incomplete model check; its declared
-missing syntax fact and rule are recorded separately in machine output.
+Reduced surrounding evidence for a complete target is a yellow, non-fatal coverage warning; its
+`context_complete: false` flag remains in machine output. Omitted checks and isolated provider request failures
+still make the scan incomplete (exit 2). Confirmed findings independently follow `--fail-on`. A deterministic
+applicability exclusion counts as not applicable, not as a skipped or incomplete model check; its declared missing
+syntax fact and rule are recorded separately in machine output.
 
 ## Configuration
 
@@ -371,7 +373,7 @@ Provider rejection remains a second line of defence because the local estimator 
 
 For units, recovery constructs exact AST source spans: the complete target, affordable lexical headers, referenced local definitions/types, fields, constructors, and imports. If the candidate source does not fit, optional Jev questions rank the remaining blocks. Those questions are built from **the active YAML rule's full instructions and criteria**, for custom and built-in rules alike. No rule ID such as JEV04 is hard-coded into relevance logic. Ranking is evidence selection, not proof that omitted code is irrelevant.
 
-The default recovery policy allows three progressively smaller compacted requests (24k estimated tokens initially, halved on further attempts; serialized bytes decrease too), then at most one final complete-target attempt. All selection calls share a bounded per-file budget. A file target is never pruned: if its complete source/question cannot be evaluated, it is explicitly omitted rather than scored from fragments. `evaluation.oversized_context: skip` forbids context reduction. Reduced requested evidence and omissions remain incomplete coverage, including exit status 2. See [recovery contracts and research](docs/CONTEXT_RECOVERY.md).
+The default recovery policy allows three progressively smaller compacted requests (24k estimated tokens initially, halved on further attempts; serialized bytes decrease too), then at most one final complete-target attempt. All selection calls share a bounded per-file budget. A file target is never pruned: if its complete source/question cannot be evaluated, it is explicitly omitted rather than scored from fragments. `evaluation.oversized_context: skip` forbids context reduction. Reduced surrounding evidence for a complete target is a non-fatal coverage warning; omitting a check still produces incomplete coverage and exit 2. See [recovery contracts and research](docs/CONTEXT_RECOVERY.md).
 
 ## Bounded evidence enrichment
 

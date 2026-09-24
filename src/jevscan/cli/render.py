@@ -196,8 +196,9 @@ class Reporter:
                     f"({event['skipped_file_checks']} file checks)"
                 )
             elif event["context_reduced_targets"]:
+                label = "coverage warning" if not event["skipped_checks"] else "coverage"
                 text = (
-                    f"coverage — context compacted for {event['context_reduced_targets']} targets; "
+                    f"{label} — context compacted for {event['context_reduced_targets']} targets; "
                     f"{event['skipped_checks']} checks omitted ({event['skipped_file_checks']} file checks)"
                 )
             else:
@@ -234,9 +235,14 @@ class Reporter:
     def _summary(self, summary: dict[str, Any]) -> None:
         status = "incomplete" if summary["incomplete"] else "complete"
         findings = summary["findings"]
-        style = RED if summary["incomplete"] or findings["error"] else YELLOW if findings["warning"] else GREEN
-        if style == GREEN and summary["uncertain"]:
+        if summary["incomplete"] or findings["error"]:
+            style = RED
+        elif findings["warning"] or summary["context_reduced"]:
+            style = YELLOW
+        elif summary["uncertain"]:
             style = CYAN
+        else:
+            style = GREEN
         self.stream.write("\n")
         self.terminal.write(
             f"{status}: {findings['warning']} warnings, {findings['error']} errors; "
