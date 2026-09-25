@@ -197,6 +197,8 @@ def compatibility_check(cases: Iterable[CalibrationCase]) -> CompatibilityCheck:
     if not complete:
         return CompatibilityCheck("missing_metadata", None, checked_case_ids, missing)
     return _compatibility_result(_authority_from_case(complete[0]), checked_case_ids, complete, missing)
+
+
 def compatibility_check_against(
     authority: CompatibilityAuthority | None,
     cases: Iterable[CalibrationCase],
