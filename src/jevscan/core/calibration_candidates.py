@@ -202,47 +202,75 @@ def _dimension_stream(
                 yield policy
 
 
+@dataclass(frozen=True, slots=True)
+class _SearchBudget:
+    limit: int
+    coordinate: int
+    pair: int
+    pairs: tuple[tuple[int, int], ...]
+    structurally_truncated: bool
+
+    @classmethod
+    def for_dimensions(cls, dimensions: list[_ThresholdDimension], max_candidates: int) -> "_SearchBudget":
+        limit = max(1, max_candidates)
+        pairs = tuple(
+            (index, other)
+            for index in range(len(dimensions))
+            for other in range(index + 1, len(dimensions))
+        )
+        coordinate = 1 if limit == 1 else max(2, limit // max(1, 2 * len(dimensions)))
+        pair = 1 if limit == 1 else max(2, limit // max(1, 2 * len(pairs)))
+        truncated = (
+            any(len(dimension.values) > coordinate for dimension in dimensions)
+            or any(len(dimensions[left].values) * len(dimensions[right].values) > pair for left, right in pairs)
+            or len(dimensions) > 2
+        )
+        return cls(limit, coordinate, pair, pairs, truncated)
+
+
+def _collect_candidates(
+    unique: dict[str, ReportPolicy],
+    streams: Iterable[Iterator[ReportPolicy]],
+    limit: int,
+) -> bool:
+    """Add interleaved unique candidates; return whether the global limit was reached."""
+    for policy in _interleave(list(streams)):
+        candidate_hash = policy_hash(policy)
+        if candidate_hash in unique:
+            continue
+        if len(unique) >= limit:
+            return True
+        unique[candidate_hash] = policy
+        if len(unique) >= limit:
+            return True
+    return False
+
+
 def _budgeted_candidates(
     rule: Rule,
     dimensions: list[_ThresholdDimension],
     max_candidates: int,
 ) -> tuple[tuple[ReportPolicy, ...], int, bool]:
-    limit = max(1, max_candidates)
-    coordinate_budget = 1 if limit == 1 else max(2, limit // max(1, 2 * len(dimensions)))
-    pair_indices = [(index, other) for index in range(len(dimensions)) for other in range(index + 1, len(dimensions))]
-    pair_budget = 1 if limit == 1 else max(2, limit // max(1, 2 * len(pair_indices)))
+    budget = _SearchBudget.for_dimensions(dimensions, max_candidates)
     unique: dict[str, ReportPolicy] = {policy_hash(rule.report): rule.report}
-    coordinate_truncated = any(len(dimension.values) > coordinate_budget for dimension in dimensions)
-    pair_truncated = any(
-        len(dimensions[left].values) * len(dimensions[right].values) > pair_budget for left, right in pair_indices
-    )
 
-    streams = [
-        _limited_stream(_dimension_stream(dimensions, (index,), rule), coordinate_budget)
+    coordinate_streams = (
+        _limited_stream(_dimension_stream(dimensions, (index,), rule), budget.coordinate)
         for index in range(len(dimensions))
-    ]
-    for policy in _interleave(streams):
-        candidate_hash = policy_hash(policy)
-        if candidate_hash in unique:
-            continue
-        if len(unique) >= limit:
-            return tuple(unique.values()), len(unique), True
-        unique[candidate_hash] = policy
-        if len(unique) >= limit:
-            return tuple(unique.values()), len(unique), True
+    )
+    if _collect_candidates(unique, coordinate_streams, budget.limit):
+        return tuple(unique.values()), len(unique), True
 
-    streams = [_limited_stream(_dimension_stream(dimensions, indices, rule), pair_budget) for indices in pair_indices]
-    for policy in _interleave(streams):
-        candidate_hash = policy_hash(policy)
-        if candidate_hash in unique:
-            continue
-        if len(unique) >= limit:
-            return tuple(unique.values()), len(unique), True
-        unique[candidate_hash] = policy
-        if len(unique) >= limit:
-            return tuple(unique.values()), len(unique), True
-    restricted = len(dimensions) > 2
-    return tuple(unique.values()), len(unique), coordinate_truncated or pair_truncated or restricted
+    pair_streams = (
+        _limited_stream(_dimension_stream(dimensions, indices, rule), budget.pair)
+        for indices in budget.pairs
+    )
+    reached_limit = _collect_candidates(unique, pair_streams, budget.limit)
+    return (
+        tuple(unique.values()),
+        len(unique),
+        reached_limit or budget.structurally_truncated,
+    )
 
 
 def candidate_policies(
