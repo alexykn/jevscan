@@ -1,9 +1,8 @@
-"""Deterministic offline selection of reporting thresholds.
+"""Orchestrate deterministic reporting-policy selection.
 
-This module deliberately does not interpret answers itself.  Candidate policies
-are evaluated by :func:`jevscan.core.semantic_calibration.replay_cases`, which
-reuses the production ``Check`` and ``assess`` path.  The selector only
-generates valid reporting-policy variants and scores their observed outcomes.
+Case validation, compatibility, candidate generation, scoring, and replay each
+have dedicated owners. This module prepares per-rule material, applies those
+contracts, and assembles the public selection audit.
 """
 
 from __future__ import annotations
@@ -12,8 +11,6 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from jevscan.core.protocol import encode
-from jevscan.core.rules import ReportPolicy, Rule
 from jevscan.core.calibration_candidates import candidate_policies, candidate_policies_with_metadata, policy_hash
 from jevscan.core.calibration_scoring import (
     CandidateMetrics,
@@ -31,6 +28,8 @@ from jevscan.core.calibration_compatibility import (
     support_key,
 )
 from jevscan.core.calibration_cases import CalibrationCase
+from jevscan.core.protocol import encode
+from jevscan.core.rules import ReportPolicy, Rule
 from jevscan.core.semantic_calibration import CalibrationReport, replay_cases
 
 SELECTION_VERSION = 1
