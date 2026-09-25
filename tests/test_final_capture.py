@@ -6,13 +6,13 @@ import pytest
 from jevscan.cli.calibrate import main as calibrate_main
 from jevscan.cli.import_calibration import main as import_main
 from jevscan.core.assessment import Assessment
+from jevscan.core.calibration_capture_validation import has_canonical_not_applicable_route
 from jevscan.core.capture import FinalJudgmentRecorder
 from jevscan.core.config import EnrichmentConfig
 from jevscan.core.context import Evidence
 from jevscan.core.enrichment_routing import DISPOSITIONS, allowed_families, routing_questions
 from jevscan.core.evaluation import Judgment, TargetResults
 from jevscan.core.models import Target
-from jevscan.core.calibration_capture_validation import has_canonical_not_applicable_route
 from jevscan.core.protocol import Check, NoulAnswer, PromptRegistry, encode
 from jevscan.core.semantic_calibration import FinalCaptureMaterial, load_cases
 
