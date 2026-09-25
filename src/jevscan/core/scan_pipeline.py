@@ -133,9 +133,7 @@ async def _parse_stage(
     async with asyncio.TaskGroup() as group:
         group.create_task(_produce(targets, loaded, file_queue, parsers, sink, summary))
         for _ in range(parsers):
-            group.create_task(
-                _parse_worker(file_queue, work_queue, parse, loaded, live, plan_only, sink, summary)
-            )
+            group.create_task(_parse_worker(file_queue, work_queue, parse, loaded, live, plan_only, sink, summary))
     for _ in range(evaluators):
         await work_queue.put(None)
 
@@ -215,5 +213,3 @@ async def pipeline(
                     capture,
                 )
             )
-
-
