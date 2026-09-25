@@ -13,11 +13,8 @@ from jevscan.core.enrichment import DISPOSITIONS, allowed_families, routing_ques
 from jevscan.core.evaluation import Judgment, TargetResults
 from jevscan.core.models import Target
 from jevscan.core.protocol import Check, NoulAnswer, PromptRegistry, encode
-from jevscan.core.semantic_calibration import (
-    FinalCaptureMaterial,
-    _has_canonical_not_applicable_route,
-    load_cases,
-)
+from jevscan.core.calibration_capture_validation import has_canonical_not_applicable_route
+from jevscan.core.semantic_calibration import FinalCaptureMaterial, load_cases
 
 
 def test_final_capture_preserves_final_evidence_review_and_imports(tmp_path, basic_rule, unit):
@@ -304,4 +301,4 @@ def test_routed_not_applicable_rejects_invalid_routing_thresholds(basic_rule, un
         "review": review,
     })
     with pytest.raises(ValueError, match=r"min_route_|invalid routing families"):
-        _has_canonical_not_applicable_route(capture, check)
+        has_canonical_not_applicable_route(capture, check)
