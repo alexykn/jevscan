@@ -19,25 +19,65 @@ from jevscan.core.result_reporting import Judgment, TargetResults
 from jevscan.core.retrieval import SourceIndex
 
 
+def _active_target_ids(planner: Planner) -> set[str]:
+    checks = [*planner.checks, *(omission.check for omission in planner.omissions)]
+    return {check.target.id for check in checks} | set(planner.applicability_skips)
+
+
+def _initial_records(planner: Planner) -> dict[str, TargetResults]:
+    active = _active_target_ids(planner)
+    return {target.id: TargetResults(target) for target in planner.targets if target.id in active}
+
+
+def _judgment_cached(cached: bool, trace: dict[str, Any]) -> bool:
+    predictions = (
+        prediction
+        for step in trace.get("compactions", ())
+        for prediction in step["predictions"]
+    )
+    return cached and all(prediction.get("cached", False) for prediction in predictions)
+
+
+def _inference_metrics(
+    planner: Planner,
+    check: Check,
+    cached: bool,
+    shared_request: bool,
+    inference: dict[str, Any] | None,
+) -> dict[str, Any]:
+    request_metrics = dict(inference or {})
+    phase = request_metrics.pop("phase", "initial")
+    metrics: dict[str, Any] = {
+        "phase": phase,
+        "question_id": check.id,
+        "question_bytes": len(planner.question_wires[check.id]),
+        "shared_request": shared_request,
+        "cached": cached,
+    }
+    if request_metrics:
+        metrics["request"] = request_metrics
+    return metrics
+
+
 class FileResults:
     """Own the answers for one file; serialize only when emitting a target report."""
 
     def __init__(self, planner: Planner) -> None:
         self.planner = planner
-        self.records: dict[str, TargetResults] = {}
+        self.records = _initial_records(planner)
         self._capture_reviews: dict[tuple[str, str], dict[str, Any]] = {}
         self.request_failures: dict[tuple[object, ...], dict[str, Any]] = {}
         self.request_rejected_checks = 0
-        all_checks = [*planner.checks, *(omission.check for omission in planner.omissions)]
-        active_ids = {check.target.id for check in all_checks} | set(planner.applicability_skips)
-        for target in planner.targets:
-            if target.id in active_ids:
-                self.records[target.id] = TargetResults(target)
-        for omission in planner.omissions:
+        self._seed_omissions(planner.omissions)
+        self._seed_applicability(planner.applicability_skips)
+
+    def _seed_omissions(self, omissions: tuple[Omission, ...]) -> None:
+        for omission in omissions:
             self.omit(omission)
-        for target_id, skipped in planner.applicability_skips.items():
-            for rule_id, reason in skipped.items():
-                self.records[target_id].applicability[rule_id] = reason
+
+    def _seed_applicability(self, skipped: dict[str, dict[str, str]]) -> None:
+        for target_id, rules in skipped.items():
+            self.records[target_id].applicability.update(rules)
 
     def recovery(self, check: Check) -> dict[str, Any]:
         return self.records[check.target.id].context_selection.setdefault(
@@ -90,30 +130,14 @@ class FileResults:
         assert check.rule_id not in record.judgments
         evidence = self.planner.context.describe(check, evidence_state)
         trace = record.context_selection.get(check.rule_id, {})
-        fully_cached = cached and all(
-            prediction.get("cached", False)
-            for step in trace.get("compactions", [])
-            for prediction in step["predictions"]
-        )
-        request_metrics = dict(inference or {})
-        phase = request_metrics.pop("phase", "initial")
-        metrics: dict[str, Any] = {
-            "phase": phase,
-            "question_id": check.id,
-            "question_bytes": len(self.planner.question_wires[check.id]),
-            "shared_request": shared_request,
-            "cached": cached,
-        }
-        if request_metrics:
-            metrics["request"] = request_metrics
         record.judgments[check.rule_id] = Judgment(
             check,
             answer,
             evidence,
             model,
-            fully_cached,
+            _judgment_cached(cached, trace),
             evidence_state,
-            metrics,
+            _inference_metrics(self.planner, check, cached, shared_request, inference),
             {},
             wire_state,
             question_wire or check.question(),
