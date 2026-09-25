@@ -90,12 +90,6 @@ class Inference:
         if self.calibration is not None:
             self.calibration.observe(len(body), response.usage.input_tokens)
 
-    def _record_cached(self, response: JevResponse, *, enrichment: bool, compaction: bool) -> None:
-        self.summary.cache_hits += 1
-        self.summary.enrichment_cache_hits += enrichment
-        self.summary.compaction_cache_hits += compaction
-        self._observe_calibration(b"", response)
-
     async def _cached_response(
         self,
         key: bytes,
