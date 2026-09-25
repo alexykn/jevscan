@@ -13,6 +13,7 @@ from typing import Any
 from jevscan.core.assessment import Assessment
 from jevscan.core.config import EnrichmentConfig
 from jevscan.core.context import ContextBuilder, Evidence
+from jevscan.core.evidence_merge import augment_evidence
 from jevscan.core.inference import Inference, Prediction
 from jevscan.core.planning import RequestBudget
 from jevscan.core.protocol import Answer, Check, ChoiceAnswer, ContextLimitError, NoulAnswer, PromptRegistry, encode
@@ -149,55 +150,6 @@ class Reassessment:
     evidence: Evidence
     wire_state: bytes
     question_wire: dict[str, Any]
-
-
-def _augment(
-    context: ContextBuilder, initial: Evidence, candidates: list[Candidate], retrieval: dict[str, Any]
-) -> Evidence:
-    """Union overlapping source spans, preserving every byte of the original evidence."""
-    sources = {context.parsed.path: context.parsed.source}
-    ranges: dict[str, list[tuple[int, int]]] = {}
-    languages = {}
-    for document in initial.state["documents"]:
-        path = document["path"]
-        languages[path] = document["language"]
-        ranges.setdefault(path, []).append((document["start_byte"], document["end_byte"]))
-    for candidate in candidates:
-        target = candidate.target
-        sources[target.path] = candidate.snapshot.parsed.source
-        languages[target.path] = target.language
-        ranges.setdefault(target.path, []).append((target.start_byte, target.end_byte))
-    documents = []
-    for path, spans in sorted(ranges.items()):
-        merged: list[tuple[int, int]] = []
-        for start, end in sorted(spans):
-            if merged and start <= merged[-1][1]:
-                merged[-1] = merged[-1][0], max(end, merged[-1][1])
-            else:
-                merged.append((start, end))
-        source = sources[path]
-        for start, end in merged:
-            documents.append({
-                "path": path,
-                "language": languages[path],
-                "start_byte": start,
-                "end_byte": end,
-                "start_line": source.count(b"\n", 0, start) + 1,
-                "end_line": source.count(b"\n", 0, max(start, end - 1)) + 1,
-                "content": source[start:end].decode("utf-8"),
-                "file_sha256": hashlib.sha256(source).hexdigest(),
-            })
-    state = {
-        **initial.state,
-        "documents": documents,
-        "coverage": {
-            **context.coverage(documents),
-            "external_references": "Selected syntax/name-based candidates only; no complete or resolved call graph. Sources are per-file snapshots, not an atomic repository snapshot.",
-        },
-        "supplemental_evidence": [candidate.model_metadata() for candidate in candidates],
-        "retrieval_coverage": retrieval,
-    }
-    return Evidence(state, encode(state))
 
 
 class Enricher:
@@ -352,7 +304,7 @@ class Enricher:
         for _, candidate in ranked:
             proposed = [*selected, candidate]
             if len(proposed) <= self.limits.max_evidence and self.budget.fits(
-                registry.state_bytes(_augment(self.context, evidence, proposed, trace["retrieval"]).state), wire
+                registry.state_bytes(augment_evidence(self.context, evidence, proposed, trace["retrieval"]).state), wire
             ):
                 selected.append(candidate)
             else:
@@ -361,9 +313,7 @@ class Enricher:
             raise EnrichmentStoppedError("evidence_budget")
         return selected
 
-    async def refine(
-        self, check: Check, answer: Answer, evidence: Evidence, trace: dict[str, Any]
-    ) -> Reassessment | None:
+    def _start_review(self, answer: Answer, evidence: Evidence, trace: dict[str, Any]) -> bool:
         trace.update({
             "initial_answer": answer.model_dump(mode="json"),
             "initial_state_sha256": hashlib.sha256(evidence.encoded).hexdigest(),
@@ -374,61 +324,90 @@ class Enricher:
         })
         if self.reviewed >= self.limits.max_checks_per_file:
             trace["outcome"] = "check_budget"
-            return None
+            return False
         self.reviewed += 1
         self.inference.summary.enrichment_reviewed += 1
-        trace["outcome"] = "failed"  # Retained if a genuine service/validation failure aborts the scan.
+        trace["outcome"] = "failed"
+        return True
+
+    async def _review_route(
+        self,
+        check: Check,
+        answer: Answer,
+        evidence: Evidence,
+        trace: dict[str, Any],
+    ) -> Routing | None:
+        allowed_families = self._allowed_families(check)
+        if not allowed_families:
+            trace["outcome"] = "enrichment_disabled"
+            return None
+
+        policy = check.rule.targeted_enrichment
+        declared = policy is not None and (
+            (isinstance(answer, ChoiceAnswer) and answer.choice in policy.when_choices)
+            or trace.get("trigger") in policy.when_reasons
+        )
+        if declared:
+            trace["routing_mode"] = "declared_rule_families"
+            routing = Routing("local_evidence", allowed_families)
+        else:
+            routing = await self._route(check, evidence, trace)
+
+        trace["disposition"] = routing.disposition
+        trace["evidence_families"] = list(routing.families)
+        if routing.disposition is None:
+            trace["outcome"] = "route_uncertain"
+            return None
+        if routing.disposition != "local_evidence":
+            trace["outcome"] = routing.disposition
+            return None
+        if not routing.families:
+            trace["outcome"] = "no_evidence_family"
+            return None
+        return routing
+
+    async def _reassess(
+        self,
+        check: Check,
+        evidence: Evidence,
+        selected: list[Candidate],
+        trace: dict[str, Any],
+    ) -> Reassessment:
+        enriched = augment_evidence(self.context, evidence, selected, trace["retrieval"])
+        registry = PromptRegistry.for_question(check.rule.question)
+        registry.validate_questions((check.rule.question,))
+        request_state = registry.state_bytes(enriched.state)
+        question_wire = check.question()
+        self._snapshots.update({
+            candidate.snapshot.parsed.path: candidate.snapshot.parsed.source.decode("utf-8")
+            for candidate in selected
+        })
+        trace["selected"] = [candidate.metadata() for candidate in selected]
+        prediction = await self._predict(
+            "reassess",
+            request_state,
+            {check.id: check.rule.question},
+            {check.id: encode(question_wire)},
+            trace,
+        )
+        self.inference.summary.enrichment_reruns += 1
+        trace["outcome"] = "reassessed"
+        return Reassessment(prediction, enriched, request_state, question_wire)
+
+    async def refine(
+        self, check: Check, answer: Answer, evidence: Evidence, trace: dict[str, Any]
+    ) -> Reassessment | None:
+        if not self._start_review(answer, evidence, trace):
+            return None
         try:
-            allowed_families = self._allowed_families(check)
-            if not allowed_families:
-                trace["outcome"] = "enrichment_disabled"
-                return None
-            policy = check.rule.targeted_enrichment
-            declared = policy is not None and (
-                (isinstance(answer, ChoiceAnswer) and answer.choice in policy.when_choices)
-                or (trace.get("trigger") in policy.when_reasons)
-            )
-            if declared:
-                routing = Routing("local_evidence", allowed_families)
-                trace["routing_mode"] = "declared_rule_families"
-            else:
-                routing = await self._route(check, evidence, trace)
-            trace["disposition"] = routing.disposition
-            trace["evidence_families"] = list(routing.families)
-            if routing.disposition is None:
-                trace["outcome"] = "route_uncertain"
-                return None
-            if routing.disposition != "local_evidence":
-                trace["outcome"] = routing.disposition
-                return None
-            if not routing.families:
-                trace["outcome"] = "no_evidence_family"
+            routing = await self._review_route(check, answer, evidence, trace)
+            if routing is None:
                 return None
             selected = await self._select(check, evidence, routing.families, trace)
             if not selected:
                 trace["outcome"] = "no_relevant_evidence"
                 return None
-            enriched = _augment(self.context, evidence, selected, trace["retrieval"])
-            registry = PromptRegistry.for_question(check.rule.question)
-            registry.validate_questions((check.rule.question,))
-            request_state = registry.state_bytes(enriched.state)
-            question_wire = check.question()
-            self._snapshots.update({
-                candidate.snapshot.parsed.path: candidate.snapshot.parsed.source.decode("utf-8")
-                for candidate in selected
-            })
-            trace["selected"] = [candidate.metadata() for candidate in selected]
-            # Fresh judgment: no initial answer, route, relevance score, or expected label in state.
-            prediction = await self._predict(
-                "reassess",
-                request_state,
-                {check.id: check.rule.question},
-                {check.id: encode(question_wire)},
-                trace,
-            )
-            self.inference.summary.enrichment_reruns += 1
-            trace["outcome"] = "reassessed"
-            return Reassessment(prediction, enriched, request_state, question_wire)
+            return await self._reassess(check, evidence, selected, trace)
         except EnrichmentStoppedError as exc:
             trace["outcome"] = str(exc)
         except ContextLimitError:
