@@ -58,45 +58,9 @@ class SelectionObjective:
     def from_mapping(cls, value: Mapping[str, Any] | None) -> SelectionObjective:
         if value is None:
             return cls.default()
-        document = dict(value)
-        unknown = set(document) - {
-            "utility",
-            "labels",
-            "min_positive_support",
-            "min_negative_support",
-            "max_candidates",
-            "min_review_list_recall",
-        }
-        if unknown:
-            raise ValueError(f"unknown selection objective fields: {', '.join(sorted(unknown))}")
-        if "utility" in document and "labels" in document:
-            raise ValueError("selection objective must use utility or labels, not both")
-        utility_value = document.get("utility", document.get("labels"))
-        if utility_value is None:
-            utility_value = {label: dict(values) for label, values in _DEFAULT_UTILITY.items()}
-        if not isinstance(utility_value, Mapping):
-            raise TypeError("selection objective utility must be a mapping")
-        unknown_labels = set(utility_value) - set(_LABELS)
-        if unknown_labels:
-            raise ValueError(f"unknown selection objective labels: {', '.join(sorted(unknown_labels))}")
-        utility: dict[str, dict[str, float]] = {}
-        for label in _LABELS:
-            row = utility_value.get(label)
-            if not isinstance(row, Mapping):
-                raise TypeError(f"selection objective is missing {label} utility")
-            unknown_outcomes = set(row) - set(_OUTCOMES)
-            if unknown_outcomes:
-                raise ValueError(f"unknown {label} utility outcomes: {', '.join(sorted(unknown_outcomes))}")
-            utility[label] = {}
-            for outcome in _OUTCOMES:
-                raw = row.get(outcome)
-                if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-                    raise TypeError(f"selection objective {label}.{outcome} must be numeric")
-                if not math.isfinite(float(raw)):
-                    raise ValueError(f"selection objective {label}.{outcome} must be finite")
-                utility[label][outcome] = float(raw)
+        document = _objective_document(value)
         return cls(
-            utility=utility,
+            utility=_utility_matrix(document),
             min_positive_support=_positive_int(document.get("min_positive_support", 1), "min_positive_support"),
             min_negative_support=_positive_int(document.get("min_negative_support", 1), "min_negative_support"),
             max_candidates=_positive_int(document.get("max_candidates", 4096), "max_candidates"),
@@ -111,6 +75,62 @@ class SelectionObjective:
             "max_candidates": self.max_candidates,
             "min_review_list_recall": self.min_review_list_recall,
         }
+
+
+_OBJECTIVE_FIELDS = {
+    "utility",
+    "labels",
+    "min_positive_support",
+    "min_negative_support",
+    "max_candidates",
+    "min_review_list_recall",
+}
+
+
+def _objective_document(value: Mapping[str, Any]) -> dict[str, Any]:
+    document = dict(value)
+    unknown = set(document) - _OBJECTIVE_FIELDS
+    if unknown:
+        raise ValueError(f"unknown selection objective fields: {', '.join(sorted(unknown))}")
+    if "utility" in document and "labels" in document:
+        raise ValueError("selection objective must use utility or labels, not both")
+    return document
+
+
+def _utility_value(document: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = document.get("utility", document.get("labels"))
+    if value is None:
+        return {label: dict(values) for label, values in _DEFAULT_UTILITY.items()}
+    if not isinstance(value, Mapping):
+        raise TypeError("selection objective utility must be a mapping")
+    unknown = set(value) - set(_LABELS)
+    if unknown:
+        raise ValueError(f"unknown selection objective labels: {', '.join(sorted(unknown))}")
+    return value
+
+
+def _numeric_utility(raw: Any, label: str, outcome: str) -> float:
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise TypeError(f"selection objective {label}.{outcome} must be numeric")
+    value = float(raw)
+    if not math.isfinite(value):
+        raise ValueError(f"selection objective {label}.{outcome} must be finite")
+    return value
+
+
+def _utility_row(utility: Mapping[str, Any], label: str) -> dict[str, float]:
+    row = utility.get(label)
+    if not isinstance(row, Mapping):
+        raise TypeError(f"selection objective is missing {label} utility")
+    unknown = set(row) - set(_OUTCOMES)
+    if unknown:
+        raise ValueError(f"unknown {label} utility outcomes: {', '.join(sorted(unknown))}")
+    return {outcome: _numeric_utility(row.get(outcome), label, outcome) for outcome in _OUTCOMES}
+
+
+def _utility_matrix(document: Mapping[str, Any]) -> dict[str, dict[str, float]]:
+    utility = _utility_value(document)
+    return {label: _utility_row(utility, label) for label in _LABELS}
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -188,6 +208,71 @@ def _outcome(record: ReplayRecord) -> str:
     return "none"
 
 
+def _label_counts(records: list[ReplayRecord]) -> dict[str, int]:
+    return {label: sum(record.case.label == label for record in records) for label in _LABELS}
+
+
+def _outcome_counts(records: list[ReplayRecord]) -> dict[str, dict[str, int]]:
+    return {
+        label: {
+            outcome: sum(record.case.label == label and _outcome(record) == outcome for record in records)
+            for outcome in _OUTCOMES
+        }
+        for label in _LABELS
+    }
+
+
+def _group_sizes(records: list[ReplayRecord]) -> dict[str, int]:
+    sizes: dict[str, int] = defaultdict(int)
+    for record in records:
+        group = support_key(record.case)
+        if group:
+            sizes[group] += 1
+    return sizes
+
+
+def _weighted_utility(
+    records: list[ReplayRecord],
+    objective: SelectionObjective,
+    group_sizes: Mapping[str, int],
+) -> float:
+    return sum(
+        objective.utility[record.case.label][_outcome(record)] / group_sizes[support_key(record.case)]
+        for record in records
+        if record.case.label in objective.utility and support_key(record.case)
+    )
+
+
+def _support_groups(records: list[ReplayRecord]) -> tuple[dict[str, int], int]:
+    groups_by_label: dict[str, set[str]] = defaultdict(set)
+    missing = 0
+    for record in records:
+        group = support_key(record.case)
+        if group:
+            groups_by_label[record.case.label].add(group)
+        else:
+            missing += 1
+    return {label: len(groups_by_label[label]) for label in _LABELS}, missing
+
+
+def _support_summary(
+    records: list[ReplayRecord],
+    total_records: int,
+    outcome_counts: dict[str, dict[str, int]],
+) -> dict[str, Any]:
+    group_counts, missing = _support_groups(records)
+    return {
+        "positive_groups": group_counts["Agree"],
+        "negative_groups": group_counts["Disagree"],
+        "partial_groups": group_counts["Partial"],
+        "groups_by_label": group_counts,
+        "missing_support_groups": missing,
+        "positive_signal": outcome_counts["Agree"]["confirmed"] + outcome_counts["Agree"]["tentative"],
+        "review_list_recall": _review_list_recall(records),
+        "non_comparable": total_records - len(records),
+    }
+
+
 def candidate_metrics(
     policy: ReportPolicy,
     cases: list[CalibrationCase],
@@ -197,54 +282,17 @@ def candidate_metrics(
 ) -> CandidateMetrics:
     report = replay_cases(cases, {rule_id: policy})
     usable = [record for record in report.records if record.comparable]
-    label_counts = {label: sum(record.case.label == label for record in usable) for label in _LABELS}
-    outcome_counts = {
-        label: {
-            outcome: sum(record.case.label == label and _outcome(record) == outcome for record in usable)
-            for outcome in _OUTCOMES
-        }
-        for label in _LABELS
-    }
-    group_sizes: dict[str, int] = defaultdict(int)
-    for record in usable:
-        group = support_key(record.case)
-        if group:
-            group_sizes[group] += 1
-    utility = sum(
-        objective.utility[record.case.label][_outcome(record)] / group_sizes[support_key(record.case)]
-        for record in usable
-        if record.case.label in objective.utility and support_key(record.case)
-    )
-    review_list_recall = _review_list_recall(usable)
-    groups_by_label: dict[str, set[str]] = defaultdict(set)
-    missing_groups = 0
-    for record in usable:
-        group = support_key(record.case)
-        if group:
-            groups_by_label[record.case.label].add(group)
-        else:
-            missing_groups += 1
-    group_counts = {label: len(groups_by_label[label]) for label in _LABELS}
+    outcomes = _outcome_counts(usable)
     return CandidateMetrics(
         policy=_policy_document(policy),
         policy_hash=policy_hash(policy),
-        objective=utility,
+        objective=_weighted_utility(usable, objective, _group_sizes(usable)),
         records=len(report.records),
         comparable_records=len(usable),
-        label_counts=label_counts,
-        outcome_counts=outcome_counts,
-        support={
-            "positive_groups": group_counts["Agree"],
-            "negative_groups": group_counts["Disagree"],
-            "partial_groups": group_counts["Partial"],
-            "groups_by_label": group_counts,
-            "missing_support_groups": missing_groups,
-            "positive_signal": outcome_counts["Agree"]["confirmed"] + outcome_counts["Agree"]["tentative"],
-            "review_list_recall": review_list_recall,
-            "non_comparable": len(report.records) - len(usable),
-        },
+        label_counts=_label_counts(usable),
+        outcome_counts=outcomes,
+        support=_support_summary(usable, len(report.records), outcomes),
     )
-
 
 def _policy_distance(left: Any, right: Any) -> int:
     def distance(first: Any, second: Any) -> int:
