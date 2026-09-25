@@ -17,7 +17,7 @@ from jevscan.core.compaction import Compactor
 from jevscan.core.context import Evidence
 from jevscan.core.inference import Inference
 from jevscan.core.planning import Omission, Planner, Request
-from jevscan.core.protocol import Check, ContextLimitError, PromptRegistry, RequestRejectedError
+from jevscan.core.protocol import Answer, Check, ContextLimitError, PromptRegistry, RequestRejectedError
 
 if TYPE_CHECKING:
     from jevscan.core.evaluation import FileResults
@@ -53,12 +53,12 @@ class FileExecutor:
         self.rejected: dict[str, tuple[int, dict[str, Any]]] = {}
         self.rejected_requests: set[str] = set()
 
-    async def _without_cached_judgments(self, request: Request) -> Request | None:
-        cached = await self.inference.cached_judgments(
-            request.state,
-            request.question_wires,
-            request.questions,
-        )
+    def _accept_cached_judgments(
+        self,
+        request: Request,
+        cached: dict[str, tuple[Answer, str]],
+    ) -> Request | None:
+        """Publish cached answers and return only the checks that still need inference."""
         missing: list[Check] = []
         for check in request.checks:
             item = cached.get(check.id)
@@ -78,13 +78,12 @@ class FileExecutor:
             trace = self.results.records[check.target.id].context_selection.get(check.rule_id)
             if trace:
                 trace["outcome"] = "judgment_cache"
+
         if not missing:
             return None
-        return (
-            request
-            if len(missing) == len(request.checks)
-            else self.planner.request(request.evidence, tuple(missing), request.registry)
-        )
+        if len(missing) == len(request.checks):
+            return request
+        return self.planner.request(request.evidence, tuple(missing), request.registry)
 
     def _record_size_rejection(self, request: Request, error: ContextLimitError) -> None:
         for check in request.checks:
@@ -276,7 +275,12 @@ class FileExecutor:
 
     async def _process(self, attempt: Attempt) -> list[Attempt]:
         """Resolve an attempt into follow-up work; the worker owns queue mutation."""
-        request = await self._without_cached_judgments(attempt.request)
+        cached = await self.inference.cached_judgments(
+            attempt.request.state,
+            attempt.request.question_wires,
+            attempt.request.questions,
+        )
+        request = self._accept_cached_judgments(attempt.request, cached)
         if request is None:
             return []
         attempt = Attempt(request, attempt.round, attempt.final)
