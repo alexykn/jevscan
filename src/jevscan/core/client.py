@@ -151,11 +151,11 @@ def _request_rejection(response: httpx.Response) -> RequestRejectedError | None:
 
 @dataclass(slots=True)
 class RejectionTracker:
-    """Classify provider rejections and own the repeated-rejection circuit."""
+    """Record provider rejection state and classify the resulting failure."""
 
     counts: dict[tuple[object, ...], int]
 
-    def classify(self, response: httpx.Response) -> Exception | None:
+    def record(self, response: httpx.Response) -> Exception | None:
         context_rejection = _context_rejection(response)
         if context_rejection is not None:
             return context_rejection
@@ -324,7 +324,7 @@ class JevClient:
                 continue
             if response.is_success:
                 return validate_response(response.content, questions)
-            rejection = self.rejections.classify(response)
+            rejection = self.rejections.record(response)
             if rejection is not None:
                 raise rejection
             await self._retry_response(response, attempt)
