@@ -11,10 +11,7 @@ from jevscan.core.rules import ScoreQuestion
 
 
 def _review_predictions_cached(review: dict[str, Any]) -> bool:
-    return all(
-        prediction.get("cached") is True
-        for prediction in review.get("predictions", ())
-    )
+    return all(prediction.get("cached") is True for prediction in review.get("predictions", ()))
 
 
 @dataclass(frozen=True, slots=True)
