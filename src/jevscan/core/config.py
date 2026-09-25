@@ -12,6 +12,7 @@ import yaml.resolver
 from pydantic import Field, ValidationError, field_validator, model_validator
 
 from jevscan.core.rules import Rule, StrictModel
+from jevscan.core.validation import require
 
 MAX_CONFIG_BYTES = 1_048_576
 CONFIG_NAMES = ("jevscan.yaml", "jevscan.yml")
@@ -87,14 +88,16 @@ class EvaluationConfig(StrictModel):
 
     @model_validator(mode="after")
     def coherent_budgets(self) -> Self:
-        if (
-            self.max_context_tokens is not None
-            and self.max_total_tokens is not None
-            and self.max_total_tokens < self.max_context_tokens
-        ):
-            raise ValueError("max_total_tokens must be at least max_context_tokens")
-        if self.max_context_tokens is not None and self.token_reserve >= self.max_context_tokens:
-            raise ValueError("token_reserve must be smaller than max_context_tokens")
+        require(
+            self.max_context_tokens is None
+            or self.max_total_tokens is None
+            or self.max_total_tokens >= self.max_context_tokens,
+            "max_total_tokens must be at least max_context_tokens",
+        )
+        require(
+            self.max_context_tokens is None or self.token_reserve < self.max_context_tokens,
+            "token_reserve must be smaller than max_context_tokens",
+        )
         return self
 
 
@@ -126,8 +129,7 @@ class EnrichmentConfig(StrictModel):
 
     @model_validator(mode="after")
     def coherent_limits(self) -> Self:
-        if self.max_evidence > self.max_candidates:
-            raise ValueError("max_evidence cannot exceed max_candidates")
+        require(self.max_evidence <= self.max_candidates, "max_evidence cannot exceed max_candidates")
         return self
 
 
@@ -149,8 +151,10 @@ class CacheConfig(StrictModel):
     @classmethod
     def project_relative_path(cls, value: str) -> str:
         path = Path(value)
-        if not value.strip() or path.is_absolute() or ".." in path.parts or path == Path():
-            raise ValueError("cache.path must be a nonempty file path inside the project")
+        require(
+            bool(value.strip()) and not path.is_absolute() and ".." not in path.parts and path != Path(),
+            "cache.path must be a nonempty file path inside the project",
+        )
         return value
 
 
@@ -181,30 +185,48 @@ class Config(StrictModel):
 
     @model_validator(mode="after")
     def valid_catalogue(self) -> Self:
-        for name in (*self.rules, *self.rulesets):
-            if not IDENTIFIER.fullmatch(name) or name == "ALL":
-                raise ValueError(f"invalid or reserved rule/ruleset name: {name!r}")
-        if self.rules.keys() & self.rulesets.keys():
-            raise ValueError("rule and ruleset names must not overlap")
-        for name, rule in self.rules.items():
-            if rule.ruleset not in self.rulesets:
-                raise ValueError(f"{name}: unknown ruleset {rule.ruleset!r}")
-        known = {*self.rules, *self.rulesets, "ALL"}
-        unknown = set(self.lint.select + self.lint.ignore) - known
-        if unknown:
-            raise ValueError(f"unknown rule/ruleset selectors: {', '.join(sorted(unknown))}")
+        _validate_catalogue(self)
         return self
 
     def selected_rules(self) -> dict[str, Rule]:
-        selected, ignored = set(self.lint.select), set(self.lint.ignore)
+        selected = _selected_rule_names(self, set(self.lint.select))
+        ignored = _selected_rule_names(self, set(self.lint.ignore))
         return {
             name: rule
             for name, rule in self.rules.items()
-            if rule.enabled
-            and self.rulesets[rule.ruleset].enabled
-            and {name, rule.ruleset, "ALL"} & selected
-            and not {name, rule.ruleset, "ALL"} & ignored
+            if name in selected - ignored and _rule_enabled(self, rule)
         }
+
+
+def _validate_catalogue(config: Config) -> None:
+    names = (*config.rules, *config.rulesets)
+    invalid = next((name for name in names if not IDENTIFIER.fullmatch(name) or name == "ALL"), None)
+    require(invalid is None, f"invalid or reserved rule/ruleset name: {invalid!r}")
+    require(not (config.rules.keys() & config.rulesets.keys()), "rule and ruleset names must not overlap")
+
+    unknown_ruleset = next(
+        ((name, rule.ruleset) for name, rule in config.rules.items() if rule.ruleset not in config.rulesets),
+        None,
+    )
+    require(
+        unknown_ruleset is None,
+        f"{unknown_ruleset[0]}: unknown ruleset {unknown_ruleset[1]!r}" if unknown_ruleset else "",
+    )
+    known = {*config.rules, *config.rulesets, "ALL"}
+    unknown = set(config.lint.select + config.lint.ignore) - known
+    require(not unknown, f"unknown rule/ruleset selectors: {', '.join(sorted(unknown))}")
+
+
+def _selected_rule_names(config: Config, selectors: set[str]) -> set[str]:
+    return {
+        name
+        for name, rule in config.rules.items()
+        if {name, rule.ruleset, "ALL"} & selectors
+    }
+
+
+def _rule_enabled(config: Config, rule: Rule) -> bool:
+    return all((rule.enabled, config.rulesets[rule.ruleset].enabled))
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,21 +286,25 @@ def _decode_yaml(text: str, source: str) -> dict[str, Any]:
     return document
 
 
+def _named_rule(entry: Any, source: str) -> tuple[str, dict[str, Any]]:
+    if not isinstance(entry, dict):
+        raise ConfigError(f"{source}: each rule must be a mapping")
+    name = entry.get("name")
+    if not isinstance(name, str) or not IDENTIFIER.fullmatch(name) or name == "ALL":
+        raise ConfigError(f"{source}: each rule needs a valid name")
+    return name, {key: value for key, value in entry.items() if key != "name"}
+
+
 def _named_rules(entries: Any, source: str) -> dict[str, Any]:
     if not isinstance(entries, list):
         raise ConfigError(f"{source}: rules must be a list of mappings with a name")
-    rules = {}
+    rules: dict[str, Any] = {}
     for entry in entries:
-        if not isinstance(entry, dict):
-            raise ConfigError(f"{source}: each rule must be a mapping")
-        name = entry.get("name")
-        if not isinstance(name, str) or not IDENTIFIER.fullmatch(name) or name == "ALL":
-            raise ConfigError(f"{source}: each rule needs a valid name")
+        name, rule = _named_rule(entry, source)
         if name in rules:
             raise ConfigError(f"{source}: duplicate rule name {name!r}")
-        rules[name] = {key: value for key, value in entry.items() if key != "name"}
+        rules[name] = rule
     return rules
-
 
 def validate_config_path(path: Path) -> None:
     if path.suffix not in {".yaml", ".yml"}:
@@ -328,21 +354,40 @@ def _project_root(start: Path) -> Path:
     return start
 
 
-def load_config(targets: list[Path], explicit: Path | None = None, cwd: Path | None = None) -> LoadedConfig:
-    cwd = (cwd or Path.cwd()).resolve()
-    selected = explicit.resolve() if explicit else find_config(cwd)
-    if selected is None:
-        found = {p for target in targets if (p := find_config(target if target.is_dir() else target.parent))}
-        if len(found) > 1:
-            raise ConfigError("targets belong to different configs; scan separately or supply --config")
-        selected = next(iter(found), None)
+def _target_config(targets: list[Path]) -> Path | None:
+    found = {
+        path
+        for target in targets
+        if (path := find_config(target if target.is_dir() else target.parent))
+    }
+    if len(found) > 1:
+        raise ConfigError("targets belong to different configs; scan separately or supply --config")
+    return next(iter(found), None)
+
+
+def _selected_config(targets: list[Path], explicit: Path | None, cwd: Path) -> Path | None:
+    if explicit is not None:
+        return explicit.resolve()
+    return find_config(cwd) or _target_config(targets)
+
+
+def _root_and_source(targets: list[Path], selected: Path | None, cwd: Path) -> tuple[Path, str]:
+    if selected is not None:
+        return selected.parent, str(selected)
+    start = targets[0] if targets and targets[0].is_dir() else (targets[0].parent if targets else cwd)
+    return _project_root(start.resolve()), "packaged default"
+
+
+def _resolved_document(selected: Path | None) -> dict[str, Any]:
     document = _decode_yaml(default_yaml(), "packaged default")
-    if selected:
-        document = _merge(document, _read_project(selected))
-        root, source = selected.parent, str(selected)
-    else:
-        start = targets[0] if targets and targets[0].is_dir() else (targets[0].parent if targets else cwd)
-        root, source = _project_root(start.resolve()), "packaged default"
+    return _merge(document, _read_project(selected)) if selected is not None else document
+
+
+def load_config(targets: list[Path], explicit: Path | None = None, cwd: Path | None = None) -> LoadedConfig:
+    working_directory = (cwd or Path.cwd()).resolve()
+    selected = _selected_config(targets, explicit, working_directory)
+    document = _resolved_document(selected)
+    root, source = _root_and_source(targets, selected, working_directory)
     try:
         config = Config.model_validate(document)
     except (ValidationError, RecursionError) as exc:
