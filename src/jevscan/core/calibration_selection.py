@@ -14,13 +14,13 @@ from typing import Any, Iterable, Mapping
 
 from jevscan.core.protocol import encode
 from jevscan.core.rules import ReportPolicy, Rule
-from jevscan.core.calibration_candidates import _candidate_policies_with_metadata, candidate_policies, policy_hash
+from jevscan.core.calibration_candidates import candidate_policies, candidate_policies_with_metadata, policy_hash
 from jevscan.core.calibration_scoring import (
     CandidateMetrics,
     SelectionObjective,
-    _candidate_is_eligible,
-    _candidate_metrics,
-    _select_candidate,
+    candidate_is_eligible,
+    candidate_metrics,
+    select_candidate,
 )
 from jevscan.core.calibration_compatibility import (
     CompatibilityCheck,
@@ -453,14 +453,14 @@ def _choose_candidate(
     eligible = [
         candidate
         for candidate in metrics
-        if _candidate_is_eligible(candidate, require_positive_signal=requires_signal, objective=objective)
+        if candidate_is_eligible(candidate, require_positive_signal=requires_signal, objective=objective)
     ]
     if requires_signal and not any(candidate.support["positive_signal"] > 0 for candidate in metrics):
         return baseline_metrics, "no_positive_signal_candidate"
     if objective.min_review_list_recall is not None and not eligible:
         return baseline_metrics, "no_candidate_meets_review_list_recall"
     return (
-        _select_candidate(
+        select_candidate(
             prepared.baseline,
             metrics,
             require_positive_signal=requires_signal,
@@ -471,13 +471,13 @@ def _choose_candidate(
 
 
 def _evaluate_prepared_rule(prepared: _PreparedRule, objective: SelectionObjective) -> RuleSelection:
-    candidates, generated, truncated = _candidate_policies_with_metadata(
+    candidates, generated, truncated = candidate_policies_with_metadata(
         prepared.baseline_rule,
         prepared.development,
         max_candidates=objective.max_candidates,
     )
     metrics = [
-        _candidate_metrics(candidate, prepared.development, objective, rule_id=prepared.rule_id)
+        candidate_metrics(candidate, prepared.development, objective, rule_id=prepared.rule_id)
         for candidate in candidates
     ]
     baseline_hash = policy_hash(prepared.baseline)
