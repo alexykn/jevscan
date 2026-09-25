@@ -261,25 +261,34 @@ class PromptRegistry:
                 raise ValueError("shared prompt registry does not contain a bound question's rubric")
 
 
-def validate_prompt_registry(state: Mapping[str, Any], question: Question) -> None:
-    """Validate that captured shared state contains the exact rubric for its judgment."""
+def _shared_rubrics(state: Mapping[str, Any]) -> Mapping[str, Any]:
     material = state.get(RUBRIC_STATE_KEY)
     if not isinstance(material, Mapping):
         raise TypeError("version-6 evidence state is missing its shared prompt registry")
-    if material.get("version") != 6 or material.get("policy") != QUESTION_POLICY:
+    if (material.get("version"), material.get("policy")) != (6, QUESTION_POLICY):
         raise ValueError("version-6 evidence state has unsupported shared prompt material")
     rubrics = material.get("rubrics")
     if not isinstance(rubrics, Mapping) or not rubrics:
         raise ValueError("version-6 evidence state has no shared rubrics")
+    return rubrics
+
+
+def _validate_registered_rubric(reference: object, raw_question: object) -> None:
+    if not isinstance(reference, str) or not isinstance(raw_question, Mapping):
+        raise TypeError("version-6 evidence state contains an invalid shared rubric")
+    try:
+        registered = _QUESTION_ADAPTER.validate_python(raw_question)
+    except ValidationError as exc:
+        raise ValueError("version-6 evidence state contains an invalid shared rubric") from exc
+    if rubric_reference(registered) != reference:
+        raise ValueError("version-6 shared rubric reference does not match its question")
+
+
+def validate_prompt_registry(state: Mapping[str, Any], question: Question) -> None:
+    """Validate that captured shared state contains the exact rubric for its judgment."""
+    rubrics = _shared_rubrics(state)
     for reference, raw_question in rubrics.items():
-        if not isinstance(reference, str) or not isinstance(raw_question, Mapping):
-            raise TypeError("version-6 evidence state contains an invalid shared rubric")
-        try:
-            registered = _QUESTION_ADAPTER.validate_python(raw_question)
-        except ValidationError as exc:
-            raise ValueError("version-6 evidence state contains an invalid shared rubric") from exc
-        if rubric_reference(registered) != reference:
-            raise ValueError("version-6 shared rubric reference does not match its question")
+        _validate_registered_rubric(reference, raw_question)
     reference = rubric_reference(question)
     if rubrics.get(reference) != question.model_dump(mode="json"):
         raise ValueError("version-6 evidence state does not contain the judgment's rubric")
@@ -338,25 +347,42 @@ def encode(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
-def validate_answer(answer: Answer, question: Question, name: str) -> None:
-    if isinstance(question, NoulQuestion):
-        if not isinstance(answer, NoulAnswer):
-            raise JevError(f"{name}: expected a noul answer")
-        return
-    if isinstance(question, ChoiceQuestion):
-        if not isinstance(answer, ChoiceAnswer) or answer.choice not in question.criteria:
-            raise JevError(f"{name}: invalid choice answer")
-        expected = set(question.criteria)
-    else:
-        assert isinstance(question, ScoreQuestion)
-        if not isinstance(answer, ScoreAnswer) or not 0 <= answer.score <= len(question.criteria) - 1:
-            raise JevError(f"{name}: invalid score answer")
-        expected = {str(i) for i in range(len(question.criteria))}
+def _validate_probability_map(answer: ChoiceAnswer | ScoreAnswer, expected: set[str], name: str) -> None:
     if set(answer.probabilities) != expected:
         raise JevError(f"{name}: probability labels do not match the rubric")
     if any(not 0 <= probability <= 1 for probability in answer.probabilities.values()):
         raise JevError(f"{name}: invalid probability value")
     # Jev probabilities are provider values, not assumed to sum to exactly one.
+
+
+def _validate_noul_answer(answer: Answer, _question: Question, name: str) -> None:
+    if not isinstance(answer, NoulAnswer):
+        raise JevError(f"{name}: expected a noul answer")
+
+
+def _validate_choice_answer(answer: Answer, question: Question, name: str) -> None:
+    assert isinstance(question, ChoiceQuestion)
+    if not isinstance(answer, ChoiceAnswer) or answer.choice not in question.criteria:
+        raise JevError(f"{name}: invalid choice answer")
+    _validate_probability_map(answer, set(question.criteria), name)
+
+
+def _validate_score_answer(answer: Answer, question: Question, name: str) -> None:
+    assert isinstance(question, ScoreQuestion)
+    if not isinstance(answer, ScoreAnswer) or not 0 <= answer.score < len(question.criteria):
+        raise JevError(f"{name}: invalid score answer")
+    _validate_probability_map(answer, {str(index) for index in range(len(question.criteria))}, name)
+
+
+_ANSWER_VALIDATORS = {
+    NoulQuestion: _validate_noul_answer,
+    ChoiceQuestion: _validate_choice_answer,
+    ScoreQuestion: _validate_score_answer,
+}
+
+
+def validate_answer(answer: Answer, question: Question, name: str) -> None:
+    _ANSWER_VALIDATORS[type(question)](answer, question, name)
 
 
 def validate_response(raw: bytes | str, questions: dict[str, Question]) -> JevResponse:
