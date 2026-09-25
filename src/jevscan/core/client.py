@@ -228,6 +228,7 @@ def _retry_after(headers: httpx.Headers) -> float | None:
         return None
     return max(0.0, value) if math.isfinite(value) else None
 
+
 def _origin_only(parts: SplitResult) -> bool:
     return not any((parts.username, parts.password, parts.query, parts.fragment)) and parts.path in {"", "/"}
 
