@@ -12,7 +12,7 @@ from typing import Any, Iterable, Iterator, Mapping
 
 from jevscan.core.protocol import ChoiceAnswer, NoulAnswer, ScoreAnswer, encode
 from jevscan.core.rules import ReportPolicy, Rule, ScoreQuestion
-from jevscan.core.semantic_calibration import CalibrationCase
+from jevscan.core.calibration_cases import CalibrationCase
 
 
 @dataclass(frozen=True, slots=True)
