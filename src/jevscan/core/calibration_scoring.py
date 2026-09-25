@@ -294,6 +294,7 @@ def candidate_metrics(
         support=_support_summary(usable, len(report.records), outcomes),
     )
 
+
 def _policy_distance(left: Any, right: Any) -> int:
     def distance(first: Any, second: Any) -> int:
         if isinstance(first, Mapping) and isinstance(second, Mapping):
