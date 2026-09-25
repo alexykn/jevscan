@@ -21,7 +21,8 @@ from jevscan.core.calibration_compatibility import (
 from jevscan.core.calibration_preparation import (
     PreparedRule,
     fit_development_cases,
-    heldout_metrics,
+    heldout_metrics as evaluate_heldout_metrics,
+    not_searched_selection,
     prepare_rule,
 )
 from jevscan.core.calibration_scoring import (
@@ -37,6 +38,7 @@ from jevscan.core.calibration_selection_models import (
     selected_policy_document,
 )
 from jevscan.core.rules import ReportPolicy, Rule
+
 
 def _choose_candidate(
     prepared: PreparedRule,
@@ -92,7 +94,12 @@ def _evaluate_prepared_rule(prepared: PreparedRule, objective: SelectionObjectiv
     chosen, reason = _choose_candidate(prepared, metrics, baseline_metrics, objective)
     chosen_policy = ReportPolicy.model_validate(chosen.policy)
     heldout_compatibility = compatibility_check_against(prepared.compatibility.authority, prepared.heldout)
-    heldout_metrics = heldout_metrics(prepared.rule_id, chosen_policy, prepared.heldout, heldout_compatibility)
+    heldout_result = evaluate_heldout_metrics(
+        prepared.rule_id,
+        chosen_policy,
+        prepared.heldout,
+        heldout_compatibility,
+    )
 
     return RuleSelection(
         prepared.rule_id,
@@ -101,7 +108,7 @@ def _evaluate_prepared_rule(prepared: PreparedRule, objective: SelectionObjectiv
         reason,
         tuple(metrics),
         baseline_metrics,
-        heldout_metrics,
+        heldout_result,
         prepared.mismatches,
         {
             "limit": objective.max_candidates,
@@ -159,7 +166,7 @@ def _select_prepared_rule(
     )
     if not fit_rejected:
         return _evaluate_prepared_rule(prepared, objective)
-    return _not_searched_selection(
+    return not_searched_selection(
         rule_id,
         prepared.baseline,
         compatibility_reason(fit_compatibility, "requested_fit"),
