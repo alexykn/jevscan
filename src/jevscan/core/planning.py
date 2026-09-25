@@ -144,10 +144,7 @@ class Planner:
         return tuple(kept), tuple(omitted), True
 
     def _full_file_omission(self, line_limit: int | None) -> str:
-        return (
-            f"full-file context is {self.context.file.end_line} lines; "
-            f"configured limit is {line_limit}"
-        )
+        return f"full-file context is {self.context.file.end_line} lines; configured limit is {line_limit}"
 
     def _registries(self) -> dict[str, PromptRegistry]:
         registries: dict[str, PromptRegistry] = {}
