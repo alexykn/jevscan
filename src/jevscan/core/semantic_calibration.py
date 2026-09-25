@@ -32,7 +32,6 @@ __all__ = [
 ]
 
 
-
 @dataclass(frozen=True, slots=True)
 class Fraction:
     count: int
