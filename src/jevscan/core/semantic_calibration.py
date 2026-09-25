@@ -34,7 +34,6 @@ class Fraction:
     def as_dict(self) -> dict[str, int | float | None]:
         return {"count": self.count, "denominator": self.denominator, "fraction": self.value}
 
-
 @dataclass(frozen=True, slots=True)
 class ReplayRecord:
     record_index: int
@@ -56,7 +55,6 @@ class ReplayRecord:
     @property
     def reason(self) -> str:
         return ", ".join(str(item["field"]) for item in self.mismatches)
-
 
 @dataclass(frozen=True, slots=True)
 class RuleSplitReport:
@@ -97,7 +95,6 @@ class RuleSplitReport:
             "non_comparable": self.non_comparable,
         }
 
-
 @dataclass(frozen=True, slots=True)
 class CalibrationReport:
     records: tuple[ReplayRecord, ...]
@@ -120,20 +117,17 @@ class CalibrationReport:
             },
         }
 
-
 def _report_override(rule: Rule, override: ReportPolicy | Mapping[str, Any] | None) -> Rule:
     if override is None:
         return rule
     policy = override if isinstance(override, ReportPolicy) else ReportPolicy.model_validate(override)
     return Rule.model_validate({**rule.model_dump(mode="python"), "report": policy.model_dump(mode="python")})
 
-
 def _effective_hashes(case: CalibrationCase, rule: Rule) -> IdentityHashes:
     values = case.hashes.model_dump(mode="python")
     values["rule"] = _sha256_bytes(encode(rule.model_dump(mode="json")))
     values["report"] = _sha256_bytes(encode(rule.report.model_dump(mode="json")))
     return IdentityHashes.model_validate(values)
-
 
 def replay_case(
     case: CalibrationCase,
@@ -159,14 +153,11 @@ def replay_case(
         _effective_hashes(case, rule),
     )
 
-
 def _comparability_value(record: ReplayRecord, field: str) -> Any:
     return record.case.comparability.model_dump(mode="json")[field]
 
-
 def _value_key(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
 
 def _mark_non_comparable(
     records: list[ReplayRecord],
@@ -215,10 +206,8 @@ def _mark_non_comparable(
         ]
     return marked, tuple(notices)
 
-
 def _count(records: Iterable[ReplayRecord], predicate: Callable[[ReplayRecord], bool]) -> int:
     return sum(predicate(record) for record in records)
-
 
 def _fraction(
     records: Iterable[ReplayRecord],
@@ -228,14 +217,11 @@ def _fraction(
     values = list(records)
     return Fraction(_count(values, numerator), _count(values, denominator))
 
-
 def _label_count(records: list[ReplayRecord], label: str) -> int:
     return _count(records, lambda record: record.case.label == label)
 
-
 def _status_count(records: list[ReplayRecord], status: str) -> int:
     return _count(records, lambda record: record.assessment.status == status)
-
 
 def _tentative_count(records: list[ReplayRecord], severity: str) -> int:
     return _count(
@@ -246,7 +232,6 @@ def _tentative_count(records: list[ReplayRecord], severity: str) -> int:
         ),
     )
 
-
 SEVERITY_OUTCOMES = (
     "none",
     "confirmed_warning",
@@ -254,7 +239,6 @@ SEVERITY_OUTCOMES = (
     "tentative_warning",
     "tentative_error",
 )
-
 
 def _observed_severity(record: ReplayRecord, *, include_tentative: bool) -> str | None:
     if record.assessment.finding is not None:
@@ -265,11 +249,9 @@ def _observed_severity(record: ReplayRecord, *, include_tentative: bool) -> str 
         return severity if severity in {"warning", "error"} else None
     return None
 
-
 def _severity_agreement(record: ReplayRecord, *, include_tentative: bool) -> bool:
     expected = record.case.adjudicated_severity
     return expected is not None and _observed_severity(record, include_tentative=include_tentative) == expected
-
 
 def _severity_outcome(record: ReplayRecord) -> str:
     if record.assessment.finding is not None:
@@ -281,7 +263,6 @@ def _severity_outcome(record: ReplayRecord) -> str:
         if severity in {"warning", "error"}:
             return f"tentative_{severity}"
     return "none"
-
 
 def _severity_confusion(records: list[ReplayRecord]) -> dict[str, dict[str, int]]:
     return {
@@ -296,7 +277,6 @@ def _severity_confusion(records: list[ReplayRecord]) -> dict[str, dict[str, int]
         }
         for adjudicated in ("warning", "error")
     }
-
 
 def _make_report(rule_id: str, split: str, records: list[ReplayRecord]) -> RuleSplitReport:
     usable = [record for record in records if record.comparable]
@@ -352,7 +332,6 @@ def _make_report(rule_id: str, split: str, records: list[ReplayRecord]) -> RuleS
         non_comparable=len(records) - len(usable),
     )
 
-
 def replay_cases(
     cases: Iterable[CalibrationCase],
     report_overrides: Mapping[str, ReportPolicy | Mapping[str, Any]] | None = None,
@@ -375,7 +354,6 @@ def replay_cases(
         reports[rule_id][split] = _make_report(rule_id, split, group)
     return CalibrationReport(tuple(marked), dict(reports), notices)
 
-
 def _target_as_dict(target: Target) -> dict[str, Any]:
     return {
         "id": target.id,
@@ -391,7 +369,6 @@ def _target_as_dict(target: Target) -> dict[str, Any]:
         "display_name": target.display_name,
     }
 
-
 def _finding_as_dict(finding: Any) -> dict[str, Any] | None:
     if finding is None:
         return None
@@ -404,7 +381,6 @@ def _finding_as_dict(finding: Any) -> dict[str, Any] | None:
         "probability": finding.probability,
         "confidence": finding.confidence,
     }
-
 
 def _record_as_dict(record: ReplayRecord) -> dict[str, Any]:
     case = record.case
@@ -447,7 +423,6 @@ def _record_as_dict(record: ReplayRecord) -> dict[str, Any]:
         "tentative_finding": tentative,
         "outcome": outcome,
     }
-
 
 def write_report(report: CalibrationReport, destination: TextIO) -> None:
     json.dump(report.as_dict(), destination, ensure_ascii=False, sort_keys=True, indent=2)
