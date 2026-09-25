@@ -22,8 +22,6 @@ from jevscan.core.protocol import BudgetExhaustedError
 from jevscan.core.scan_events import report_progress, report_summary
 from jevscan.core.scan_pipeline import parser_worker_initializer, pipeline, worker_count
 
-ParseFunction = Callable[[list[FileJob]], Awaitable[list[ParsedFile]]]
-
 
 def _exception_message(exc: BaseException) -> str:
     if isinstance(exc, BaseExceptionGroup):
