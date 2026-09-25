@@ -304,8 +304,7 @@ def _validate_capture_disposition(case: "CalibrationCase", check: Check) -> None
     assert capture is not None
     disposition = capture.disposition
     routed_not_applicable = (
-        disposition.status == "not_applicable"
-        and disposition.reason == "model_routed_not_applicable"
+        disposition.status == "not_applicable" and disposition.reason == "model_routed_not_applicable"
     )
     if routed_not_applicable:
         require(
@@ -431,11 +430,7 @@ class CalibrationCase(StrictModel):
         computed_hashes: Mapping[str, Any],
     ) -> list[str]:
         declared = self.hashes.model_dump(mode="python")
-        return [
-            f"hashes.{name}"
-            for name, computed in computed_hashes.items()
-            if declared[name] != computed
-        ]
+        return [f"hashes.{name}" for name, computed in computed_hashes.items() if declared[name] != computed]
 
     def _comparability_mismatches(
         self,
