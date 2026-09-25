@@ -191,11 +191,7 @@ class Config(StrictModel):
     def selected_rules(self) -> dict[str, Rule]:
         selected = _selected_rule_names(self, set(self.lint.select))
         ignored = _selected_rule_names(self, set(self.lint.ignore))
-        return {
-            name: rule
-            for name, rule in self.rules.items()
-            if name in selected - ignored and _rule_enabled(self, rule)
-        }
+        return {name: rule for name, rule in self.rules.items() if name in selected - ignored and _rule_enabled(self, rule)}
 
 
 def _validate_catalogue(config: Config) -> None:
@@ -218,11 +214,7 @@ def _validate_catalogue(config: Config) -> None:
 
 
 def _selected_rule_names(config: Config, selectors: set[str]) -> set[str]:
-    return {
-        name
-        for name, rule in config.rules.items()
-        if {name, rule.ruleset, "ALL"} & selectors
-    }
+    return {name for name, rule in config.rules.items() if {name, rule.ruleset, "ALL"} & selectors}
 
 
 def _rule_enabled(config: Config, rule: Rule) -> bool:
@@ -355,11 +347,7 @@ def _project_root(start: Path) -> Path:
 
 
 def _target_config(targets: list[Path]) -> Path | None:
-    found = {
-        path
-        for target in targets
-        if (path := find_config(target if target.is_dir() else target.parent))
-    }
+    found = {path for target in targets if (path := find_config(target if target.is_dir() else target.parent))}
     if len(found) > 1:
         raise ConfigError("targets belong to different configs; scan separately or supply --config")
     return next(iter(found), None)
