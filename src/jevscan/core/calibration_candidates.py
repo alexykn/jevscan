@@ -211,7 +211,7 @@ class _SearchBudget:
     structurally_truncated: bool
 
     @classmethod
-    def for_dimensions(cls, dimensions: list[_ThresholdDimension], max_candidates: int) -> "_SearchBudget":
+    def for_dimensions(cls, dimensions: list[_ThresholdDimension], max_candidates: int) -> _SearchBudget:
         limit = max(1, max_candidates)
         pairs = tuple((index, other) for index in range(len(dimensions)) for other in range(index + 1, len(dimensions)))
         coordinate = 1 if limit == 1 else max(2, limit // max(1, 2 * len(dimensions)))
