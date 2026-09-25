@@ -210,11 +210,7 @@ def _field_conflict(group: list[ReplayRecord], field: str) -> dict[str, Any] | N
 
 
 def _case_conflicts(group: list[ReplayRecord]) -> tuple[dict[str, Any], ...]:
-    return tuple(
-        conflict
-        for field in _COMPARABILITY_FIELDS
-        if (conflict := _field_conflict(group, field)) is not None
-    )
+    return tuple(conflict for field in _COMPARABILITY_FIELDS if (conflict := _field_conflict(group, field)) is not None)
 
 
 def _mark_case_group(
@@ -392,8 +388,7 @@ def _severity_fractions(records: list[ReplayRecord]) -> tuple[Fraction, Fraction
 
 def _severity_counts(records: list[ReplayRecord]) -> tuple[dict[str, int], dict[str, int]]:
     confirmed = {
-        status: _status_count(records, status)
-        for status in ("ok", "warning", "error", "unknown", "not_applicable")
+        status: _status_count(records, status) for status in ("ok", "warning", "error", "unknown", "not_applicable")
     }
     tentative = {severity: _tentative_count(records, severity) for severity in ("warning", "error")}
     return confirmed, tentative
