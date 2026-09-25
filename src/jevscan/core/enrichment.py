@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from itertools import zip_longest
 from typing import Any
 
+from jevscan.core.config import EnrichmentConfig
 from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.enrichment_routing import (
     DISPOSITIONS,
@@ -27,6 +28,7 @@ from jevscan.core.protocol import Answer, Check, ChoiceAnswer, ContextLimitError
 from jevscan.core.retrieval import Candidate, SourceIndex
 from jevscan.core.rules import Question
 from jevscan.core.selection import rank_candidates
+
 
 class EnrichmentStoppedError(Exception):
     """An explicit local limit, not a transport failure or a negative finding."""
