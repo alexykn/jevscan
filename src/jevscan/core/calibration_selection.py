@@ -776,33 +776,49 @@ def _baseline_rule(
     })
 
 
-def _prepare_rule(
+def _preparation_reference(
     rule_id: str,
     rule_cases: list[CalibrationCase],
+    development_split: str,
+    authoritative: Rule | None,
+    limit: int,
+) -> tuple[Rule, list[CalibrationCase]] | RuleSelection:
+    development = [case for case in rule_cases if case.split == development_split]
+    reference = _reference_rule(development, authoritative)
+    if reference is None:
+        return _not_searched_selection(rule_id, None, "no_cases", (), limit, retain_baseline=False)
+    if authoritative is None:
+        conflict = _baseline_conflict(rule_id, development, limit)
+        if conflict is not None:
+            return conflict
+    return reference, development
+
+
+def _preparation_material(
+    rule_id: str,
+    rule_cases: list[CalibrationCase],
+    reference: Rule,
+    development_all: list[CalibrationCase],
     authoritative: Rule | None,
     development_split: str,
     heldout_split: str | None,
     limit: int,
     allow_incompatible_model_prompt: bool,
-) -> _PreparedRule | RuleSelection:
-    development_all = [case for case in rule_cases if case.split == development_split]
-    reference = _reference_rule(development_all, authoritative)
-    if reference is None:
-        return _not_searched_selection(rule_id, None, "no_cases", (), limit, retain_baseline=False)
+) -> tuple[list[CalibrationCase], list[CalibrationCase], list[CalibrationCase], tuple[dict[str, Any], ...], tuple[dict[str, Any], ...], CompatibilityCheck] | RuleSelection:
     baseline = reference.report
-    if authoritative is None:
-        conflict = _baseline_conflict(rule_id, development_all, limit)
-        if conflict is not None:
-            return conflict
     mismatches = _rule_mismatches(reference, rule_cases)
     development_mismatches = _rule_mismatches(reference, development_all)
     if authoritative is None and development_mismatches:
         return _not_searched_selection(
             rule_id, baseline, "development_rule_semantics_mismatch", mismatches, limit, retain_baseline=False
         )
+
     eligible, development, heldout = _split_rule_cases(reference, rule_cases, development_split, heldout_split)
     compatibility = _compatibility_check(development)
-    if compatibility.incompatible and (compatibility.has_missing_metadata or not allow_incompatible_model_prompt):
+    rejected = compatibility.incompatible and (
+        compatibility.has_missing_metadata or not allow_incompatible_model_prompt
+    )
+    if rejected:
         return _not_searched_selection(
             rule_id,
             baseline,
@@ -813,6 +829,39 @@ def _prepare_rule(
             compatibility=compatibility,
         )
     _validate_group_split(rule_id, development, heldout, heldout_split)
+    return eligible, development, heldout, mismatches, development_mismatches, compatibility
+
+
+def _prepare_rule(
+    rule_id: str,
+    rule_cases: list[CalibrationCase],
+    authoritative: Rule | None,
+    development_split: str,
+    heldout_split: str | None,
+    limit: int,
+    allow_incompatible_model_prompt: bool,
+) -> _PreparedRule | RuleSelection:
+    reference_result = _preparation_reference(rule_id, rule_cases, development_split, authoritative, limit)
+    if isinstance(reference_result, RuleSelection):
+        return reference_result
+    reference, development_all = reference_result
+
+    material = _preparation_material(
+        rule_id,
+        rule_cases,
+        reference,
+        development_all,
+        authoritative,
+        development_split,
+        heldout_split,
+        limit,
+        allow_incompatible_model_prompt,
+    )
+    if isinstance(material, RuleSelection):
+        return material
+    eligible, development, heldout, mismatches, development_mismatches, compatibility = material
+
+    baseline = reference.report
     baseline_rule = _baseline_rule(authoritative, eligible, development_split, baseline)
     if baseline_rule is None:
         return _not_searched_selection(
@@ -834,6 +883,45 @@ def _prepare_rule(
     )
 
 
+def _choose_candidate(
+    prepared: _PreparedRule,
+    metrics: list[CandidateMetrics],
+    baseline_metrics: CandidateMetrics,
+    objective: SelectionObjective,
+) -> tuple[CandidateMetrics, str]:
+    if prepared.development_mismatches:
+        return baseline_metrics, "question_mismatch"
+    if not prepared.development:
+        return baseline_metrics, "no_development_cases"
+
+    sufficient = (
+        baseline_metrics.support["positive_groups"] >= objective.min_positive_support
+        and baseline_metrics.support["negative_groups"] >= objective.min_negative_support
+    )
+    if not sufficient:
+        return baseline_metrics, "insufficient_labeled_support"
+
+    requires_signal = baseline_metrics.label_counts["Agree"] > 0
+    eligible = [
+        candidate
+        for candidate in metrics
+        if _candidate_is_eligible(candidate, require_positive_signal=requires_signal, objective=objective)
+    ]
+    if requires_signal and not any(candidate.support["positive_signal"] > 0 for candidate in metrics):
+        return baseline_metrics, "no_positive_signal_candidate"
+    if objective.min_review_list_recall is not None and not eligible:
+        return baseline_metrics, "no_candidate_meets_review_list_recall"
+    return (
+        _select_candidate(
+            prepared.baseline,
+            metrics,
+            require_positive_signal=requires_signal,
+            objective=objective,
+        ),
+        "selected",
+    )
+
+
 def _evaluate_prepared_rule(prepared: _PreparedRule, objective: SelectionObjective) -> RuleSelection:
     candidates, generated, truncated = _candidate_policies_with_metadata(
         prepared.baseline_rule,
@@ -844,45 +932,13 @@ def _evaluate_prepared_rule(prepared: _PreparedRule, objective: SelectionObjecti
         _candidate_metrics(candidate, prepared.development, objective, rule_id=prepared.rule_id)
         for candidate in candidates
     ]
-    baseline_metrics = next(metric for metric in metrics if metric.policy_hash == policy_hash(prepared.baseline))
-    sufficient = (
-        baseline_metrics.support["positive_groups"] >= objective.min_positive_support
-        and baseline_metrics.support["negative_groups"] >= objective.min_negative_support
-    )
-    chosen, reason = baseline_metrics, "selected"
-    if prepared.development_mismatches:
-        reason = "question_mismatch"
-    elif not prepared.development:
-        reason = "no_development_cases"
-    elif not sufficient:
-        reason = "insufficient_labeled_support"
-    else:
-        requires_signal = baseline_metrics.label_counts["Agree"] > 0
-        eligible = [
-            candidate
-            for candidate in metrics
-            if _candidate_is_eligible(
-                candidate,
-                require_positive_signal=requires_signal,
-                objective=objective,
-            )
-        ]
-        if requires_signal and not any(candidate.support["positive_signal"] > 0 for candidate in metrics):
-            reason = "no_positive_signal_candidate"
-        elif objective.min_review_list_recall is not None and not eligible:
-            reason = "no_candidate_meets_review_list_recall"
-        else:
-            chosen = _select_candidate(
-                prepared.baseline,
-                metrics,
-                require_positive_signal=requires_signal,
-                objective=objective,
-            )
+    baseline_hash = policy_hash(prepared.baseline)
+    baseline_metrics = next(metric for metric in metrics if metric.policy_hash == baseline_hash)
+    chosen, reason = _choose_candidate(prepared, metrics, baseline_metrics, objective)
     chosen_policy = ReportPolicy.model_validate(chosen.policy)
-    heldout_compatibility = _compatibility_check_against(
-        prepared.compatibility.authority,
-        prepared.heldout,
-    )
+    heldout_compatibility = _compatibility_check_against(prepared.compatibility.authority, prepared.heldout)
+    heldout_metrics = _heldout_metrics(prepared.rule_id, chosen_policy, prepared.heldout, heldout_compatibility)
+
     return RuleSelection(
         prepared.rule_id,
         chosen_policy,
@@ -890,7 +946,7 @@ def _evaluate_prepared_rule(prepared: _PreparedRule, objective: SelectionObjecti
         reason,
         tuple(metrics),
         baseline_metrics,
-        _heldout_metrics(prepared.rule_id, chosen_policy, prepared.heldout, heldout_compatibility),
+        heldout_metrics,
         prepared.mismatches,
         {
             "limit": objective.max_candidates,
@@ -901,7 +957,6 @@ def _evaluate_prepared_rule(prepared: _PreparedRule, objective: SelectionObjecti
         chosen,
         prepared.compatibility,
     )
-
 
 def _validate_selection_splits(development_split: str, heldout_split: str | None) -> None:
     if not development_split.strip():
