@@ -379,8 +379,7 @@ class Enricher:
         request_state = registry.state_bytes(enriched.state)
         question_wire = check.question()
         self._snapshots.update({
-            candidate.snapshot.parsed.path: candidate.snapshot.parsed.source.decode("utf-8")
-            for candidate in selected
+            candidate.snapshot.parsed.path: candidate.snapshot.parsed.source.decode("utf-8") for candidate in selected
         })
         trace["selected"] = [candidate.metadata() for candidate in selected]
         prediction = await self._predict(
