@@ -156,9 +156,7 @@ class _DimensionBuilder:
         if self.warning["min_confidence"] is None:
             return
         answers = (
-            case.answer.confidence
-            for case in self.material
-            if isinstance(case.answer, (ChoiceAnswer, ScoreAnswer))
+            case.answer.confidence for case in self.material if isinstance(case.answer, (ChoiceAnswer, ScoreAnswer))
         )
         observed = _observed_values(answers, self.warning["min_confidence"])
         self._add(
@@ -266,10 +264,7 @@ def _search_is_truncated(
     pair: int,
 ) -> bool:
     coordinates_truncated = any(len(dimension.values) > coordinate for dimension in dimensions)
-    pairs_truncated = any(
-        len(dimensions[left].values) * len(dimensions[right].values) > pair
-        for left, right in pairs
-    )
+    pairs_truncated = any(len(dimensions[left].values) * len(dimensions[right].values) > pair for left, right in pairs)
     return coordinates_truncated or pairs_truncated or len(dimensions) > 2
 
 
