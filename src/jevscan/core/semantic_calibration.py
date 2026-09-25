@@ -9,6 +9,7 @@ from jevscan.core.assessment import Assessment, assess
 from jevscan.core.calibration_cases import (
     CALIBRATION_VERSION,
     CalibrationCase,
+    CalibrationLabel,
     FinalCaptureMaterial,
     IdentityHashes,
     TargetRecord,
@@ -21,6 +22,7 @@ from jevscan.core.rules import ReportPolicy, Rule
 
 __all__ = [
     "CalibrationCase",
+    "CalibrationLabel",
     "CalibrationReport",
     "FinalCaptureMaterial",
     "ReplayRecord",
