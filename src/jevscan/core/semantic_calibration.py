@@ -247,6 +247,7 @@ def _tentative_count(records: list[ReplayRecord], severity: str) -> int:
         ),
     )
 
+
 SEVERITY_OUTCOMES = (
     "none",
     "confirmed_warning",
