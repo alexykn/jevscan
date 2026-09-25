@@ -30,11 +30,7 @@ def _initial_records(planner: Planner) -> dict[str, TargetResults]:
 
 
 def _judgment_cached(cached: bool, trace: dict[str, Any]) -> bool:
-    predictions = (
-        prediction
-        for step in trace.get("compactions", ())
-        for prediction in step["predictions"]
-    )
+    predictions = (prediction for step in trace.get("compactions", ()) for prediction in step["predictions"])
     return cached and all(prediction.get("cached", False) for prediction in predictions)
 
 
