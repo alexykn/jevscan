@@ -5,6 +5,8 @@ selection objective, candidate metrics, eligibility, and deterministic winner
 choice.
 """
 
+from __future__ import annotations
+
 import json
 import math
 from collections import defaultdict
