@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from jevscan.core.assessment import Assessment, assess
 from jevscan.core.config import EnrichmentConfig
-from jevscan.core.enrichment import DISPOSITIONS, allowed_families, routing_questions
+from jevscan.core.enrichment_routing import DISPOSITIONS, allowed_families, routing_questions
 from jevscan.core.models import Kind, Target
 from jevscan.core.protocol import (
     PROMPT_VERSION,
