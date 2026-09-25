@@ -55,16 +55,25 @@ def _parent_of_type(node: Any, node_type: str) -> Any | None:
     return parent if parent is not None and parent.type == node_type else None
 
 
+def _parent_chain(node: Any, *node_types: str) -> Any | None:
+    """Follow an exact parent-type chain; return None on the first mismatch."""
+    current = node
+    for node_type in node_types:
+        current = _parent_of_type(current, node_type)
+        if current is None:
+            return None
+    return current
+
+
 def _is_nested_signature_type_annotation(node: Any) -> bool:
     if _is_signature_type_annotation(node):
         return True
-    property_signature = _parent_of_type(node, "property_signature")
-    object_type = _parent_of_type(property_signature, "object_type") if property_signature is not None else None
+    object_type = _parent_chain(node, "property_signature", "object_type")
     if object_type is None:
         return False
     container = object_type.parent
     if container is not None and container.type == "type_arguments":
-        generic = _parent_of_type(container, "generic_type")
+        generic = _parent_chain(object_type, "type_arguments", "generic_type")
         container = generic.parent if generic is not None else None
     return container is not None and _is_signature_type_annotation(container)
 
@@ -98,27 +107,29 @@ def _is_imported_member(node: Any) -> bool:
 
 
 def _is_nested_imported_member(node: Any, source: bytes) -> bool:
-    arguments = _parent_of_type(node, "type_arguments")
-    if arguments is None:
+    arguments = _parent_chain(node, "type_arguments")
+    inner_generic = _parent_chain(node, "type_arguments", "generic_type")
+    outer_generic = _parent_chain(node, "type_arguments", "generic_type", "type_arguments", "generic_type")
+    lookup = _parent_chain(
+        node,
+        "type_arguments",
+        "generic_type",
+        "type_arguments",
+        "generic_type",
+        "lookup_type",
+    )
+    if arguments is None or inner_generic is None or outer_generic is None or lookup is None:
         return False
-    inner_generic = _parent_of_type(arguments, "generic_type")
-    outer_arguments = _parent_of_type(inner_generic, "type_arguments") if inner_generic is not None else None
-    outer_generic = _parent_of_type(outer_arguments, "generic_type") if outer_arguments is not None else None
-    lookup = _parent_of_type(outer_generic, "lookup_type") if outer_generic is not None else None
-    annotation = lookup.parent if lookup is not None else None
-    if inner_generic is None or outer_arguments is None or outer_generic is None or lookup is None:
+    if lookup.parent is None or not _is_signature_type_annotation(lookup.parent):
         return False
-    if annotation is None or not _is_signature_type_annotation(annotation):
-        return False
+
     inner_name = _named_child(inner_generic, 0, "type_identifier")
     outer_name = _named_child(outer_generic, 0, "type_identifier")
-    if (
-        inner_name is None
-        or node_text(inner_name, source) != "NonNullable"
-        or outer_name is None
-        or node_text(outer_name, source) != "Parameters"
-    ):
+    if inner_name is None or outer_name is None:
         return False
+    if node_text(inner_name, source) != "NonNullable" or node_text(outer_name, source) != "Parameters":
+        return False
+
     inner_index = _named_child(arguments, 1, "tuple_type")
     lookup_index = _named_child(lookup, 1, "literal_type")
     return (
@@ -152,21 +163,29 @@ def _is_recoverable_export_type(node: Any, source: bytes) -> bool:
     return child_types in (["export", "ERROR", "*", "from", "string", ";"], ["export", "ERROR", "*", "from", "string"])
 
 
+def _recoverable_annotation_import(node: Any) -> bool:
+    children = node.named_children
+    if len(children) != 1:
+        return False
+    child = children[0]
+    if _is_imported_member(child):
+        return True
+    if child.type != "readonly_type":
+        return False
+    return (
+        [item.type for item in child.children] == ["readonly", "member_expression"]
+        and len(child.named_children) == 1
+        and _is_imported_member(child.named_children[0])
+    )
+
+
 def _is_recoverable_import_type(node: Any, source: bytes) -> bool:
     parent = node.parent
     if node.type != "ERROR" or parent is None:
         return False
-    children = node.named_children
     if parent.type == "type_annotation" and _is_nested_signature_type_annotation(parent):
-        if len(children) == 1 and _is_imported_member(children[0]):
-            return True
-        if len(children) == 1 and children[0].type == "readonly_type":
-            readonly = children[0]
-            return (
-                [child.type for child in readonly.children] == ["readonly", "member_expression"]
-                and len(readonly.named_children) == 1
-                and _is_imported_member(readonly.named_children[0])
-            )
+        return _recoverable_annotation_import(node)
+    children = node.named_children
     return (
         parent.type == "type_arguments"
         and len(children) == 1
