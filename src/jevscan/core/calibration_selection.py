@@ -17,6 +17,14 @@ from typing import Any, Iterable, Mapping
 from jevscan.core.protocol import encode
 from jevscan.core.rules import ReportPolicy, Rule
 from jevscan.core.calibration_candidates import _candidate_policies_with_metadata, candidate_policies, policy_hash
+from jevscan.core.calibration_compatibility import (
+    CompatibilityCheck,
+    SelectionCompatibility,
+    compatibility_check,
+    compatibility_check_against,
+    compatibility_reason,
+    support_key,
+)
 from jevscan.core.semantic_calibration import CalibrationCase, CalibrationReport, ReplayRecord, replay_cases
 
 SELECTION_VERSION = 1
@@ -170,7 +178,7 @@ def _review_list_recall(records: Iterable[ReplayRecord]) -> float | None:
     for record in records:
         if record.case.label != "Agree":
             continue
-        group = _support_key(record.case)
+        group = support_key(record.case)
         if not group:
             continue
         positive_groups.add(group)
@@ -179,89 +187,6 @@ def _review_list_recall(records: Iterable[ReplayRecord]) -> float | None:
     if not positive_groups:
         return None
     return len(retained_groups) / len(positive_groups)
-
-
-@dataclass(frozen=True, slots=True)
-class _CompatibilityAuthority:
-    """Frozen metadata authority for one selection scope."""
-
-    returned_model: str
-    prompt_version: int
-    prompt_policy: str
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "model_identity": "returned_model",
-            "returned_model": self.returned_model,
-            "prompt": {
-                "version": self.prompt_version,
-                "policy": self.prompt_policy,
-            },
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class CompatibilityCheck:
-    """Selection-only compatibility evidence for one set of cases."""
-
-    status: str
-    authority: _CompatibilityAuthority | None
-    checked_case_ids: tuple[str, ...]
-    mismatches: tuple[dict[str, Any], ...] = ()
-
-    @property
-    def incompatible_case_ids(self) -> tuple[str, ...]:
-        return tuple(sorted({str(item["case_id"]) for item in self.mismatches}))
-
-    @property
-    def has_missing_metadata(self) -> bool:
-        return any(item.get("reason") == "missing_metadata" for item in self.mismatches)
-
-    @property
-    def incompatible(self) -> bool:
-        return bool(self.mismatches)
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "status": self.status,
-            "authority": self.authority.as_dict() if self.authority is not None else None,
-            "checked_case_ids": list(self.checked_case_ids),
-            "rejected_case_ids": list(self.incompatible_case_ids),
-            "mismatches": list(self.mismatches),
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class SelectionCompatibility:
-    """Compatibility policy recorded for a complete requested fit."""
-
-    allow_incompatible_model_prompt: bool
-    development: CompatibilityCheck
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "mode": (
-                "allow_incompatible_model_prompt" if self.allow_incompatible_model_prompt else "strict_model_prompt"
-            ),
-            "model_identity": "returned_model",
-            "prompt_identity": ["version", "policy"],
-            "requested_model": "not_used_for_compatibility",
-            "allow_incompatible_model_prompt": self.allow_incompatible_model_prompt,
-            "development": self.development.as_dict(),
-        }
-
-
-def _compatibility_reason(check: CompatibilityCheck, scope: str) -> str:
-    if check.has_missing_metadata:
-        return f"{scope}_compatibility_metadata_missing"
-    fields = {str(item["field"]) for item in check.mismatches}
-    model = "returned_model" in fields
-    prompt = bool(fields & {"prompt.version", "prompt.policy"})
-    if model and not prompt:
-        return f"{scope}_model_mismatch"
-    if prompt and not model:
-        return f"{scope}_prompt_mismatch"
-    return f"{scope}_model_prompt_mismatch"
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,119 +281,6 @@ def selected_policy_document(audit: SelectionAudit) -> dict[str, Any]:
     }
 
 
-def _support_key(case: CalibrationCase) -> str:
-    """Return only an explicit, stable provenance grouping contract."""
-
-    for name in ("source_group", "scenario_group", "owner_group"):
-        value = case.provenance.get(name)
-        if isinstance(value, str) and value.strip():
-            return f"{name}:{value}"
-    return ""
-
-
-def _compatibility_values(case: CalibrationCase) -> tuple[str | None, int | None, str | None]:
-    returned_model = (
-        case.returned_model if isinstance(case.returned_model, str) and case.returned_model.strip() else None
-    )
-    prompt_version = case.prompt.version if isinstance(case.prompt.version, int) and case.prompt.version >= 1 else None
-    prompt_policy = case.prompt.policy if isinstance(case.prompt.policy, str) and case.prompt.policy.strip() else None
-    return returned_model, prompt_version, prompt_policy
-
-
-def _missing_compatibility_mismatches(case: CalibrationCase) -> list[dict[str, Any]]:
-    returned_model, prompt_version, prompt_policy = _compatibility_values(case)
-    missing: list[dict[str, Any]] = []
-    for field, actual in (
-        ("returned_model", returned_model),
-        ("prompt.version", prompt_version),
-        ("prompt.policy", prompt_policy),
-    ):
-        if actual is None:
-            missing.append({
-                "case_id": case.case_id,
-                "field": field,
-                "reason": "missing_metadata",
-                "actual": None,
-            })
-    return missing
-
-
-def _partition_compatibility_cases(
-    cases: Iterable[CalibrationCase],
-) -> tuple[list[CalibrationCase], tuple[dict[str, Any], ...]]:
-    complete: list[CalibrationCase] = []
-    missing: list[dict[str, Any]] = []
-    for case in cases:
-        case_missing = _missing_compatibility_mismatches(case)
-        if case_missing:
-            missing.extend(case_missing)
-        else:
-            complete.append(case)
-    return complete, tuple(missing)
-
-
-def _compatibility_mismatches(
-    authority: _CompatibilityAuthority,
-    case: CalibrationCase,
-) -> list[dict[str, Any]]:
-    returned_model, prompt_version, prompt_policy = _compatibility_values(case)
-    actual_values = {
-        "returned_model": returned_model,
-        "prompt.version": prompt_version,
-        "prompt.policy": prompt_policy,
-    }
-    expected_values = {
-        "returned_model": authority.returned_model,
-        "prompt.version": authority.prompt_version,
-        "prompt.policy": authority.prompt_policy,
-    }
-    return [
-        {
-            "case_id": case.case_id,
-            "field": field,
-            "expected": expected,
-            "actual": actual_values[field],
-        }
-        for field, expected in expected_values.items()
-        if actual_values[field] is None or actual_values[field] != expected
-    ]
-
-
-def _compatibility_check(cases: Iterable[CalibrationCase]) -> CompatibilityCheck:
-    material = sorted(cases, key=lambda case: (case.case_id, case.split))
-    checked_case_ids = tuple(case.case_id for case in material)
-    if not material:
-        return CompatibilityCheck("no_cases", None, checked_case_ids)
-    complete, missing = _partition_compatibility_cases(material)
-    if not complete:
-        return CompatibilityCheck("missing_metadata", None, checked_case_ids, missing)
-    first = complete[0]
-    returned_model, prompt_version, prompt_policy = _compatibility_values(first)
-    assert returned_model is not None and prompt_version is not None and prompt_policy is not None
-    authority = _CompatibilityAuthority(returned_model, prompt_version, prompt_policy)
-    mismatches = missing + tuple(
-        mismatch for case in complete for mismatch in _compatibility_mismatches(authority, case)
-    )
-    status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
-    return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
-
-
-def _compatibility_check_against(
-    authority: _CompatibilityAuthority | None,
-    cases: Iterable[CalibrationCase],
-) -> CompatibilityCheck:
-    material = sorted(cases, key=lambda case: (case.case_id, case.split))
-    checked_case_ids = tuple(case.case_id for case in material)
-    if authority is None:
-        return CompatibilityCheck("no_development_authority", None, checked_case_ids)
-    complete, missing = _partition_compatibility_cases(material)
-    mismatches = missing + tuple(
-        mismatch for case in complete for mismatch in _compatibility_mismatches(authority, case)
-    )
-    status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
-    return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
-
-
 def _outcome(record: ReplayRecord) -> str:
     if record.confirmed:
         return "confirmed"
@@ -496,19 +308,19 @@ def _candidate_metrics(
     }
     group_sizes: dict[str, int] = defaultdict(int)
     for record in usable:
-        group = _support_key(record.case)
+        group = support_key(record.case)
         if group:
             group_sizes[group] += 1
     utility = sum(
-        objective.utility[record.case.label][_outcome(record)] / group_sizes[_support_key(record.case)]
+        objective.utility[record.case.label][_outcome(record)] / group_sizes[support_key(record.case)]
         for record in usable
-        if record.case.label in objective.utility and _support_key(record.case)
+        if record.case.label in objective.utility and support_key(record.case)
     )
     review_list_recall = _review_list_recall(usable)
     groups_by_label: dict[str, set[str]] = defaultdict(set)
     missing_groups = 0
     for record in usable:
-        group = _support_key(record.case)
+        group = support_key(record.case)
         if group:
             groups_by_label[record.case.label].add(group)
         else:
@@ -745,14 +557,14 @@ def _validate_group_split(
 ) -> None:
     if heldout_split is None:
         return
-    missing_heldout = [case.case_id for case in heldout if not _support_key(case)]
+    missing_heldout = [case.case_id for case in heldout if not support_key(case)]
     if missing_heldout:
         raise ValueError(
             "heldout cases require explicit support groups for strict split validation: "
             + ", ".join(sorted(missing_heldout))
         )
-    development_groups = {_support_key(case) for case in development if _support_key(case)}
-    heldout_groups = {_support_key(case) for case in heldout if _support_key(case)}
+    development_groups = {support_key(case) for case in development if support_key(case)}
+    heldout_groups = {support_key(case) for case in heldout if support_key(case)}
     overlap = sorted(development_groups & heldout_groups)
     if overlap:
         raise ValueError(f"development and heldout support groups overlap for {rule_id!r}: {', '.join(overlap)}")
@@ -814,7 +626,7 @@ def _preparation_material(
         )
 
     eligible, development, heldout = _split_rule_cases(reference, rule_cases, development_split, heldout_split)
-    compatibility = _compatibility_check(development)
+    compatibility = compatibility_check(development)
     rejected = compatibility.incompatible and (
         compatibility.has_missing_metadata or not allow_incompatible_model_prompt
     )
@@ -822,7 +634,7 @@ def _preparation_material(
         return _not_searched_selection(
             rule_id,
             baseline,
-            _compatibility_reason(compatibility, "development"),
+            compatibility_reason(compatibility, "development"),
             mismatches,
             limit,
             retain_baseline=False,
@@ -867,7 +679,7 @@ def _prepare_rule(
         return _not_searched_selection(
             rule_id, baseline, "no_compatible_cases", mismatches, limit, retain_baseline=True
         )
-    if development and any(not _support_key(case) for case in development):
+    if development and any(not support_key(case) for case in development):
         return _not_searched_selection(
             rule_id, baseline, "missing_support_groups", mismatches, limit, retain_baseline=True
         )
@@ -936,7 +748,7 @@ def _evaluate_prepared_rule(prepared: _PreparedRule, objective: SelectionObjecti
     baseline_metrics = next(metric for metric in metrics if metric.policy_hash == baseline_hash)
     chosen, reason = _choose_candidate(prepared, metrics, baseline_metrics, objective)
     chosen_policy = ReportPolicy.model_validate(chosen.policy)
-    heldout_compatibility = _compatibility_check_against(prepared.compatibility.authority, prepared.heldout)
+    heldout_compatibility = compatibility_check_against(prepared.compatibility.authority, prepared.heldout)
     heldout_metrics = _heldout_metrics(prepared.rule_id, chosen_policy, prepared.heldout, heldout_compatibility)
 
     return RuleSelection(
@@ -1022,7 +834,7 @@ def _select_prepared_rule(
     return _not_searched_selection(
         rule_id,
         prepared.baseline,
-        _compatibility_reason(fit_compatibility, "requested_fit"),
+        compatibility_reason(fit_compatibility, "requested_fit"),
         prepared.mismatches,
         objective.max_candidates,
         retain_baseline=False,
@@ -1055,7 +867,7 @@ def select_policies(
     )
     identifiers = _requested_rule_ids(material, rules, rule_ids)
     cases_by_rule = _group_cases_by_rule(material, identifiers)
-    fit_compatibility = _compatibility_check(
+    fit_compatibility = compatibility_check(
         _fit_development_cases(cases_by_rule, identifiers, rules, development_split)
     )
     selections: dict[str, RuleSelection] = {}
