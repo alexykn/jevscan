@@ -96,7 +96,7 @@ def heldout_metrics(
     }
 
 
-def _not_searched_selection(
+def not_searched_selection(
     rule_id: str,
     baseline: ReportPolicy | None,
     reason: str,
@@ -151,7 +151,7 @@ def _baseline_conflict(
         for case in development
         if case.rule.report != baseline_case.rule.report
     )
-    return _not_searched_selection(
+    return not_searched_selection(
         rule_id,
         baseline_case.rule.report,
         "development_baseline_policy_mismatch",
@@ -226,7 +226,7 @@ def _preparation_reference(
     development = [case for case in rule_cases if case.split == development_split]
     reference = _reference_rule(development, authoritative)
     if reference is None:
-        return _not_searched_selection(rule_id, None, "no_cases", (), limit, retain_baseline=False)
+        return not_searched_selection(rule_id, None, "no_cases", (), limit, retain_baseline=False)
     if authoritative is None:
         conflict = _baseline_conflict(rule_id, development, limit)
         if conflict is not None:
@@ -249,7 +249,7 @@ def _preparation_material(
     mismatches = _rule_mismatches(reference, rule_cases)
     development_mismatches = _rule_mismatches(reference, development_all)
     if authoritative is None and development_mismatches:
-        return _not_searched_selection(
+        return not_searched_selection(
             rule_id, baseline, "development_rule_semantics_mismatch", mismatches, limit, retain_baseline=False
         )
 
@@ -259,7 +259,7 @@ def _preparation_material(
         compatibility.has_missing_metadata or not allow_incompatible_model_prompt
     )
     if rejected:
-        return _not_searched_selection(
+        return not_searched_selection(
             rule_id,
             baseline,
             compatibility_reason(compatibility, "development"),
@@ -309,24 +309,23 @@ def prepare_rule(
     baseline = reference.report
     baseline_rule = _baseline_rule(authoritative, material.eligible, development_split, baseline)
     if baseline_rule is None:
-        return _not_searched_selection(
+        return not_searched_selection(
             rule_id, baseline, "no_compatible_cases", material.mismatches, limit, retain_baseline=True
         )
     if material.development and any(not support_key(case) for case in material.development):
-        return _not_searched_selection(
+        return not_searched_selection(
             rule_id, baseline, "missing_support_groups", material.mismatches, limit, retain_baseline=True
         )
     return PreparedRule(
         rule_id,
         baseline,
         baseline_rule,
-        development,
-        heldout,
-        mismatches,
-        development_mismatches,
-        compatibility,
+        material.development,
+        material.heldout,
+        material.mismatches,
+        material.development_mismatches,
+        material.compatibility,
     )
-
 
 
 def fit_development_cases(
