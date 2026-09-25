@@ -1068,7 +1068,12 @@ async def test_file_wide_rubrics_fit_calibrated_context_on_public_source() -> No
     assert json.loads(file_request.body)["state"] == state
     for check in file_request.checks:
         validate_prompt_registry(state, check.rule.question)
-    assert len(file_request.evidence.encoded) > 49_000
+    documents = file_request.evidence.state["documents"]
+    assert len(documents) == 1
+    assert documents[0]["start_byte"] == 0
+    assert documents[0]["end_byte"] == len(parsed.source)
+    assert documents[0]["content"] == parsed.source.decode("utf-8")
+    assert file_request.evidence.state["coverage"]["file_complete"] is True
     assert planner.budget.fits(file_request.state, file_request.question_wires)
     assert planner.estimate(file_request.evidence, file_request.checks)[0] < 28_000
 
