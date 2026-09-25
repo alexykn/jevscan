@@ -13,7 +13,7 @@ from jevscan.core.calibration_cases import (
     FinalCaptureMaterial,
     IdentityHashes,
     TargetRecord,
-    _sha256_bytes,
+    sha256_bytes,
     load_cases,
 )
 from jevscan.core.models import Target
@@ -142,8 +142,8 @@ def _report_override(rule: Rule, override: ReportPolicy | Mapping[str, Any] | No
 
 def _effective_hashes(case: CalibrationCase, rule: Rule) -> IdentityHashes:
     values = case.hashes.model_dump(mode="python")
-    values["rule"] = _sha256_bytes(encode(rule.model_dump(mode="json")))
-    values["report"] = _sha256_bytes(encode(rule.report.model_dump(mode="json")))
+    values["rule"] = sha256_bytes(encode(rule.model_dump(mode="json")))
+    values["report"] = sha256_bytes(encode(rule.report.model_dump(mode="json")))
     return IdentityHashes.model_validate(values)
 
 
