@@ -50,24 +50,38 @@ class AttemptLedger:
     estimated_input_tokens: int = 0
     estimated_cost: float = 0.0
 
-    def admit(self, body: bytes) -> int:
+    def _project(self, body: bytes) -> tuple[int, int, int, float]:
         estimated = math.ceil(len(body) / self.bytes_per_token) + self.token_reserve
-        next_requests = self.requests + 1
-        next_tokens = self.estimated_input_tokens + estimated
-        next_cost = next_tokens * self.budget.input_cost_per_million / 1_000_000
-        if self.budget.max_requests is not None and next_requests > self.budget.max_requests:
-            raise BudgetExhaustedError(f"request budget exhausted at {self.requests} requests")
-        if self.budget.max_input_tokens is not None and next_tokens > self.budget.max_input_tokens:
-            raise BudgetExhaustedError(
-                f"input-token budget would be exceeded ({next_tokens} > {self.budget.max_input_tokens})"
-            )
-        if self.budget.max_cost is not None and next_cost > self.budget.max_cost:
-            raise BudgetExhaustedError(
-                f"estimated cost budget would be exceeded ({next_cost:.4f} > {self.budget.max_cost:.4f})"
-            )
-        self.requests = next_requests
-        self.estimated_input_tokens = next_tokens
-        self.estimated_cost = next_cost
+        requests = self.requests + 1
+        tokens = self.estimated_input_tokens + estimated
+        cost = tokens * self.budget.input_cost_per_million / 1_000_000
+        return estimated, requests, tokens, cost
+
+    def _validate_projection(self, requests: int, tokens: int, cost: float) -> None:
+        limits = (
+            (
+                self.budget.max_requests is None or requests <= self.budget.max_requests,
+                f"request budget exhausted at {self.requests} requests",
+            ),
+            (
+                self.budget.max_input_tokens is None or tokens <= self.budget.max_input_tokens,
+                f"input-token budget would be exceeded ({tokens} > {self.budget.max_input_tokens})",
+            ),
+            (
+                self.budget.max_cost is None or cost <= self.budget.max_cost,
+                f"estimated cost budget would be exceeded ({cost:.4f} > {self.budget.max_cost:.4f})",
+            ),
+        )
+        for valid, message in limits:
+            if not valid:
+                raise BudgetExhaustedError(message)
+
+    def admit(self, body: bytes) -> int:
+        estimated, requests, tokens, cost = self._project(body)
+        self._validate_projection(requests, tokens, cost)
+        self.requests = requests
+        self.estimated_input_tokens = tokens
+        self.estimated_cost = cost
         return estimated
 
     def complete(self) -> None:
@@ -190,6 +204,16 @@ class RequestLimiter:
         self.next_allowed = max(self.next_allowed, time.monotonic() + seconds)
 
 
+def _retry_seconds(value: str) -> float:
+    try:
+        return float(value)
+    except ValueError:
+        moment = parsedate_to_datetime(value)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        return (moment - datetime.now(UTC)).total_seconds()
+
+
 def _retry_after(headers: httpx.Headers) -> float | None:
     milliseconds = headers.get("retry-after-ms")
     seconds = headers.get("retry-after")
@@ -197,25 +221,27 @@ def _retry_after(headers: httpx.Headers) -> float | None:
         if milliseconds is not None:
             value = float(milliseconds) / 1000
         elif seconds is not None:
-            try:
-                value = float(seconds)
-            except ValueError:
-                moment = parsedate_to_datetime(seconds)
-                if moment.tzinfo is None:
-                    moment = moment.replace(tzinfo=UTC)
-                value = (moment - datetime.now(UTC)).total_seconds()
+            value = _retry_seconds(seconds)
         else:
             return None
     except (ValueError, TypeError, OverflowError):
         return None
     return max(0.0, value) if math.isfinite(value) else None
 
+def _origin_only(parts: Any) -> bool:
+    return not any((parts.username, parts.password, parts.query, parts.fragment)) and parts.path in {"", "/"}
+
+
+def _allowed_scheme(parts: Any) -> bool:
+    localhost = parts.hostname in {"localhost", "127.0.0.1", "::1"}
+    return parts.scheme == "https" or (parts.scheme == "http" and localhost)
+
 
 def endpoint_from(value: str) -> str:
     parts = urlsplit(value)
-    if parts.username or parts.password or parts.query or parts.fragment or parts.path not in {"", "/"}:
+    if not _origin_only(parts):
         raise JevError("TYPESAFE_BASE_URL must be an origin, without credentials, path, query, or fragment")
-    if parts.scheme != "https" and not (parts.scheme == "http" and parts.hostname in {"localhost", "127.0.0.1", "::1"}):
+    if not _allowed_scheme(parts):
         raise JevError("TYPESAFE_BASE_URL must use HTTPS, except localhost test endpoints")
     if not parts.hostname:
         raise JevError("TYPESAFE_BASE_URL is missing its hostname")
@@ -293,19 +319,26 @@ class JevClient:
             raise JevError(f"Jev connection failed after {attempt + 1} attempts ({type(error).__name__})") from error
         await asyncio.sleep(self._backoff(attempt))
 
-    async def _retry_response(self, response: httpx.Response, attempt: int) -> None:
-        retryable = response.status_code in {408, 429} or response.status_code >= 500
-        if not retryable or attempt == self.config.retries:
-            request_id = _safe_request_id(response) or "unavailable"
-            raise JevError(f"Jev HTTP {response.status_code}; request ID: {request_id}")
+    def _retry_delay(self, response: httpx.Response, attempt: int) -> float:
         server_delay = _retry_after(response.headers)
         delay = server_delay if server_delay is not None else self._backoff(attempt)
         if delay > self.config.max_retry_delay:
             raise JevError("Jev requested a retry delay above jev.max_retry_delay; stopping rather than retrying early")
+        return delay
+
+    @staticmethod
+    def _retryable(response: httpx.Response) -> bool:
+        return response.status_code in {408, 429} or response.status_code >= 500
+
+    async def _retry_response(self, response: httpx.Response, attempt: int) -> None:
+        if not self._retryable(response) or attempt == self.config.retries:
+            request_id = _safe_request_id(response) or "unavailable"
+            raise JevError(f"Jev HTTP {response.status_code}; request ID: {request_id}")
+        delay = self._retry_delay(response, attempt)
         if response.status_code == 429:
             self.limiter.defer(delay)
-        else:
-            await asyncio.sleep(delay)
+            return
+        await asyncio.sleep(delay)
 
     async def evaluate(
         self,
