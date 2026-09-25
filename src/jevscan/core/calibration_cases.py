@@ -22,7 +22,15 @@ from jevscan.core.assessment import assess
 from jevscan.core.calibration_capture_validation import has_canonical_not_applicable_route
 from jevscan.core.context import Evidence
 from jevscan.core.models import Kind, Target
-from jevscan.core.protocol import Answer, Check, JevError, encode, prompt_binder, validate_answer, validate_prompt_registry
+from jevscan.core.protocol import (
+    Answer,
+    Check,
+    JevError,
+    encode,
+    prompt_binder,
+    validate_answer,
+    validate_prompt_registry,
+)
 from jevscan.core.rules import Rule, StrictModel
 
 CALIBRATION_VERSION = 1
@@ -481,5 +489,3 @@ def load_cases(source: Path | str | TextIO) -> list[CalibrationCase]:
     if not cases:
         raise ValueError("calibration dataset is empty")
     return cases
-
-
