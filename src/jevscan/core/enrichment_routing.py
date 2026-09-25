@@ -118,10 +118,7 @@ def _route_is_confident(
     min_confidence: float,
     min_probability: float,
 ) -> bool:
-    return (
-        disposition.confidence >= min_confidence
-        and disposition.probabilities[disposition.choice] >= min_probability
-    )
+    return disposition.confidence >= min_confidence and disposition.probabilities[disposition.choice] >= min_probability
 
 
 def _selected_families(scores: dict[str, float], minimum: float) -> tuple[str, ...]:
