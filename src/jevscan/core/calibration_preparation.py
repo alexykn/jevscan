@@ -206,9 +206,7 @@ def _validate_group_split(
         )
     overlap = sorted(development_groups & heldout_groups)
     if overlap:
-        raise ValueError(
-            f"development and heldout support groups overlap for {rule_id!r}: {', '.join(overlap)}"
-        )
+        raise ValueError(f"development and heldout support groups overlap for {rule_id!r}: {', '.join(overlap)}")
 
 def _baseline_rule(
     authoritative: Rule | None,
