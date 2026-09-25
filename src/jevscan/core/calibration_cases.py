@@ -32,6 +32,7 @@ from jevscan.core.protocol import (
     validate_prompt_registry,
 )
 from jevscan.core.rules import Rule, StrictModel
+from jevscan.core.validation import require
 
 CALIBRATION_VERSION = 1
 CalibrationLabel = Literal["Agree", "Partial", "Disagree"]
@@ -206,18 +207,12 @@ def _validate_byte_span(
     message: str,
     boundary_message: str | None = None,
 ) -> None:
-    if not _is_integer(start) or not _is_integer(end):
-        raise ValueError(message)
-    if start < 0:
-        raise ValueError(message)
-    if end < start:
-        raise ValueError(message)
-    if end > len(source):
-        raise ValueError(message)
-    if not _is_codepoint_boundary(source, start):
-        raise ValueError(boundary_message or message)
-    if not _is_codepoint_boundary(source, end):
-        raise ValueError(boundary_message or message)
+    require(_is_integer(start) and _is_integer(end), message)
+    assert isinstance(start, int) and isinstance(end, int)
+    require(0 <= start <= end <= len(source), message)
+    boundary_error = boundary_message or message
+    require(_is_codepoint_boundary(source, start), boundary_error)
+    require(_is_codepoint_boundary(source, end), boundary_error)
 
 
 def _is_integer(value: Any) -> bool:
@@ -281,31 +276,82 @@ class ComparabilityMetadata(StrictModel):
     model: StrictStr = Field(min_length=1)
 
 
-def _validate_capture_contract(case: "CalibrationCase") -> None:
+def _capture_matches_case(case: "CalibrationCase") -> None:
     capture = case.capture
-    if capture is None:
-        return
+    assert capture is not None
+    checks = (
+        (
+            capture.answer.model_dump(mode="json") == case.answer.model_dump(mode="json"),
+            "capture.answer must match answer",
+        ),
+        (
+            capture.evidence.model_dump(mode="json") == case.evidence.model_dump(mode="json"),
+            "capture.evidence must match evidence",
+        ),
+        (case.question_wire == capture.question_wire, "capture.question_wire must match question_wire"),
+        (capture.returned_model == case.returned_model, "capture.returned_model must match returned_model"),
+        (
+            (capture.context_complete, capture.target_complete) == (case.context_complete, case.target_complete),
+            "capture completeness must match the case",
+        ),
+    )
+    for valid, message in checks:
+        require(valid, message)
 
-    if capture.answer.model_dump(mode="json") != case.answer.model_dump(mode="json"):
-        raise ValueError("capture.answer must match answer")
-    if capture.evidence.model_dump(mode="json") != case.evidence.model_dump(mode="json"):
-        raise ValueError("capture.evidence must match evidence")
-    if case.question_wire != capture.question_wire:
-        raise ValueError("capture.question_wire must match question_wire")
-    if capture.returned_model != case.returned_model:
-        raise ValueError("capture.returned_model must match returned_model")
-    if (capture.context_complete, capture.target_complete) != (case.context_complete, case.target_complete):
-        raise ValueError("capture completeness must match the case")
 
-    check = Check(case.case_id, case.target, case.rule_id, case.rule)
-    expected = assess(check, case.answer, case.context_complete)
+def _validate_capture_disposition(case: "CalibrationCase", check: Check) -> None:
+    capture = case.capture
+    assert capture is not None
     disposition = capture.disposition
-    if disposition.status == "not_applicable" and disposition.reason == "model_routed_not_applicable":
-        if not has_canonical_not_applicable_route(capture, check):
-            raise ValueError("unsupported final not-applicable disposition")
+    routed_not_applicable = (
+        disposition.status == "not_applicable"
+        and disposition.reason == "model_routed_not_applicable"
+    )
+    if routed_not_applicable:
+        require(
+            has_canonical_not_applicable_route(capture, check),
+            "unsupported final not-applicable disposition",
+        )
         return
-    if (disposition.status, disposition.reason) != (expected.status, expected.reason):
-        raise ValueError("final disposition does not match production assessment")
+    expected = assess(check, case.answer, case.context_complete)
+    require(
+        (disposition.status, disposition.reason) == (expected.status, expected.reason),
+        "final disposition does not match production assessment",
+    )
+
+
+def _validate_capture_contract(case: "CalibrationCase") -> None:
+    if case.capture is None:
+        return
+    _capture_matches_case(case)
+    _validate_capture_disposition(case, Check(case.case_id, case.target, case.rule_id, case.rule))
+
+
+_ANSWER_FIELDS = {
+    "noul": {"type", "noul"},
+    "choice": {"type", "choice", "confidence", "probabilities"},
+    "score": {"type", "score", "confidence", "probabilities"},
+}
+
+
+def _field_difference(answer: Mapping[str, Any], expected: set[str]) -> tuple[list[str], list[str]]:
+    actual = set(answer)
+    return sorted(actual - expected), sorted(expected - actual)
+
+
+def _validate_answer_fields(answer: Mapping[str, Any], expected: set[str]) -> None:
+    unknown, missing = _field_difference(answer, expected)
+    if not (unknown or missing):
+        return
+    details = [
+        detail
+        for detail in (
+            f"unknown={unknown}" if unknown else "",
+            f"missing={missing}" if missing else "",
+        )
+        if detail
+    ]
+    raise ValueError(f"answer fields do not match type {answer.get('type')!r}: {', '.join(details)}")
 
 
 class CalibrationCase(StrictModel):
@@ -341,28 +387,13 @@ class CalibrationCase(StrictModel):
     @classmethod
     def reject_unknown_answer_fields(cls, value: Any) -> Any:
         """Reject extras before the provider-compatible answer model sees them."""
-        if not isinstance(value, Mapping):
+        if not isinstance(value, Mapping) or not isinstance(value.get("answer"), Mapping):
             return value
-        answer = value.get("answer")
-        if not isinstance(answer, Mapping):
-            return value
-        answer_type = answer.get("type")
-        expected_fields = {
-            "noul": {"type", "noul"},
-            "choice": {"type", "choice", "confidence", "probabilities"},
-            "score": {"type", "score", "confidence", "probabilities"},
-        }.get(answer_type)
+        answer = value["answer"]
+        expected_fields = _ANSWER_FIELDS.get(answer.get("type"))
         if expected_fields is None:
             return value
-        unknown = sorted(set(answer) - expected_fields)
-        missing = sorted(expected_fields - set(answer))
-        if unknown or missing:
-            details = []
-            if unknown:
-                details.append(f"unknown={unknown}")
-            if missing:
-                details.append(f"missing={missing}")
-            raise ValueError(f"answer fields do not match type {answer_type!r}: {', '.join(details)}")
+        _validate_answer_fields(answer, expected_fields)
         return value
 
     @model_validator(mode="before")
@@ -383,44 +414,56 @@ class CalibrationCase(StrictModel):
         self._validate_answer_and_identity()
         return self
 
-    def _validate_answer_and_identity(self) -> None:
-        try:
-            validate_answer(self.answer, self.rule.question, self.rule_id)
-        except JevError as exc:
-            raise ValueError(str(exc)) from exc
-
+    def _canonical_wire(self) -> tuple[Check, dict[str, Any]]:
         check = Check(self.case_id, self.target, self.rule_id, self.rule)
         binder = prompt_binder(self.prompt.version, self.prompt.policy)
         canonical_wire = binder.bind(self.rule.question, self.target, self.prompt.policy)
         if self.prompt.version == 6:
             validate_prompt_registry(self.evidence.state, self.rule.question)
-        if self.question_wire is not None and self.question_wire != canonical_wire:
-            raise ValueError("question_wire must match the canonical primary binding")
-        computed_hashes = _computed_hashes(
-            self,
-            check,
-            canonical_wire,
+        require(
+            self.question_wire is None or self.question_wire == canonical_wire,
+            "question_wire must match the canonical primary binding",
         )
-        mismatches: list[str] = []
-        declared_hashes = self.hashes.model_dump(mode="python")
-        for name, computed in computed_hashes.items():
-            if declared_hashes[name] != computed:
-                mismatches.append(f"hashes.{name}")
+        return check, canonical_wire
 
-        expected_comparability = {
+    def _identity_mismatches(
+        self,
+        computed_hashes: Mapping[str, Any],
+    ) -> list[str]:
+        declared = self.hashes.model_dump(mode="python")
+        return [
+            f"hashes.{name}"
+            for name, computed in computed_hashes.items()
+            if declared[name] != computed
+        ]
+
+    def _comparability_mismatches(
+        self,
+        computed_hashes: Mapping[str, Any],
+    ) -> list[str]:
+        expected = {
             "question": computed_hashes["question"],
             "evidence": computed_hashes["evidence"],
             "prompt": {"version": self.prompt.version, "identity": computed_hashes["prompt"]},
             "endpoint": self.endpoint,
             "model": self.returned_model,
         }
-        actual_comparability = self.comparability.model_dump(mode="python")
-        for name, expected in expected_comparability.items():
-            if actual_comparability[name] != expected:
-                mismatches.append(f"comparability.{name}")
+        actual = self.comparability.model_dump(mode="python")
+        return [f"comparability.{name}" for name, value in expected.items() if actual[name] != value]
 
-        if mismatches:
-            raise ValueError("calibration identity mismatch: " + ", ".join(mismatches))
+    def _validate_answer_and_identity(self) -> None:
+        try:
+            validate_answer(self.answer, self.rule.question, self.rule_id)
+        except JevError as exc:
+            raise ValueError(str(exc)) from exc
+
+        check, canonical_wire = self._canonical_wire()
+        computed_hashes = _computed_hashes(self, check, canonical_wire)
+        mismatches = [
+            *self._identity_mismatches(computed_hashes),
+            *self._comparability_mismatches(computed_hashes),
+        ]
+        require(not mismatches, "calibration identity mismatch: " + ", ".join(mismatches))
 
     @property
     def target_record(self) -> Target:
