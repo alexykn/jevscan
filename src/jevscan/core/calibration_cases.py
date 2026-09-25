@@ -39,12 +39,12 @@ AdjudicatedSeverity = Literal["warning", "error"]
 Sha256Hash = Annotated[StrictStr, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
 
 
-def _sha256_bytes(value: bytes) -> str:
+def sha256_bytes(value: bytes) -> str:
     return f"sha256:{hashlib.sha256(value).hexdigest()}"
 
 
 def _sha256_text(value: str) -> str:
-    return _sha256_bytes(value.encode("utf-8"))
+    return sha256_bytes(value.encode("utf-8"))
 
 
 class TargetRecord(StrictModel):
@@ -451,14 +451,14 @@ def _computed_hashes(
     question_wire: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
-        "question": _sha256_bytes(encode(check.question() if question_wire is None else question_wire)),
-        "evidence": _sha256_bytes(encode(case.evidence.state)),
+        "question": sha256_bytes(encode(check.question() if question_wire is None else question_wire)),
+        "evidence": sha256_bytes(encode(case.evidence.state)),
         "source_documents": {
             path: _sha256_text(content) for path, content in sorted(case.evidence.source_documents.items())
         },
-        "rule": _sha256_bytes(encode(case.rule.model_dump(mode="json"))),
-        "report": _sha256_bytes(encode(case.rule.report.model_dump(mode="json"))),
-        "prompt": _sha256_bytes(encode(case.prompt.model_dump(mode="json"))),
+        "rule": sha256_bytes(encode(case.rule.model_dump(mode="json"))),
+        "report": sha256_bytes(encode(case.rule.report.model_dump(mode="json"))),
+        "prompt": sha256_bytes(encode(case.prompt.model_dump(mode="json"))),
         "endpoint": _sha256_text(case.endpoint),
         "requested_model": _sha256_text(case.requested_model),
         "returned_model": _sha256_text(case.returned_model),
