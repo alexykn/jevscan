@@ -191,7 +191,9 @@ class Config(StrictModel):
     def selected_rules(self) -> dict[str, Rule]:
         selected = _selected_rule_names(self, set(self.lint.select))
         ignored = _selected_rule_names(self, set(self.lint.ignore))
-        return {name: rule for name, rule in self.rules.items() if name in selected - ignored and _rule_enabled(self, rule)}
+        return {
+            name: rule for name, rule in self.rules.items() if name in selected - ignored and _rule_enabled(self, rule)
+        }
 
 
 def _validate_catalogue(config: Config) -> None:
