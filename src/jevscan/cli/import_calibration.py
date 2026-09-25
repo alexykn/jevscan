@@ -129,6 +129,7 @@ def _labels(path: Path) -> dict[str, dict[str, Any]]:
         result[case_id] = normalized
     return result
 
+
 def _validate_label_ids(row_ids: set[str | None], label_ids: set[str]) -> None:
     if row_ids != label_ids:
         missing = sorted(item for item in row_ids - label_ids if item is not None)
@@ -288,6 +289,7 @@ def _case_document(row: dict[str, Any], label: dict[str, Any]) -> dict[str, Any]
 
 def _case(row: dict[str, Any], label: dict[str, Any]) -> CalibrationCase:
     return CalibrationCase.model_validate(_case_document(row, label))
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
