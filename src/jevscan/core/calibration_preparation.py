@@ -16,6 +16,7 @@ from jevscan.core.protocol import encode
 from jevscan.core.rules import ReportPolicy, Rule
 from jevscan.core.semantic_calibration import CalibrationReport, replay_cases
 
+
 @dataclass(frozen=True, slots=True)
 class PreparationMaterial:
     eligible: list[CalibrationCase]
@@ -36,7 +37,6 @@ class PreparedRule:
     mismatches: tuple[dict[str, Any], ...]
     development_mismatches: tuple[dict[str, Any], ...]
     compatibility: CompatibilityCheck
-
 
 
 def _semantic_contract(rule: Rule) -> dict[str, Any]:
@@ -342,6 +342,3 @@ def fit_development_cases(
         if reference is not None:
             result.extend(case for case in development if _mismatch(reference, case) is None)
     return result
-
-
-
