@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from jevscan.core.calibration_candidates import policy_hash
-from jevscan.core.calibration_compatibility import support_key
 from jevscan.core.calibration_cases import CalibrationCase
+from jevscan.core.calibration_compatibility import support_key
 from jevscan.core.rules import ReportPolicy
 from jevscan.core.semantic_calibration import ReplayRecord, replay_cases
 
