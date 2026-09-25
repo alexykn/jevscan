@@ -23,136 +23,57 @@ if TYPE_CHECKING:
 
 
 class FinalJudgmentSink(Protocol):
-    def record(
-        self,
-        judgment: Judgment,
-        assessment: Assessment,
-        source_documents: Mapping[str, str],
-        review: Mapping[str, Any] | None = None,
-    ) -> None: ...
+    def _evidence_state(self, judgment: Judgment) -> dict[str, Any]:
+        if judgment.wire_state:
+            return json.loads(judgment.wire_state)
+        registry = PromptRegistry.for_question(judgment.check.rule.question)
+        return registry.bind_state(judgment.context.state)
 
-    def record_skip(self, target: Any, rule_id: str, reason: str, kind: str = "skip") -> None: ...
-
-
-def _finding(value: Any) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    return {
-        "rule": value.rule,
-        "severity": str(value.severity),
-        "message": value.message,
-        "target": value.target.metadata(),
-        "value": value.value,
-        "probability": value.probability,
-        "confidence": value.confidence,
-    }
-
-
-def assessment_record(value: Assessment) -> dict[str, Any]:
-    return {
-        "status": value.status,
-        "reason": value.reason,
-        "finding": _finding(value.finding),
-        "tentative_finding": _finding(value.tentative_finding),
-    }
-
-
-def _stable_case_id(judgment: Judgment, source_documents: Mapping[str, str]) -> str:
-    state = (
-        json.loads(judgment.wire_state)
-        if judgment.wire_state
-        else PromptRegistry.for_question(judgment.check.rule.question).bind_state(judgment.context.state)
-    )
-    identity = encode({
-        "target": judgment.check.target.metadata(),
-        "rule_id": judgment.check.rule_id,
-        "question": judgment.question_wire or judgment.check.question(),
-        "model": judgment.model,
-        "evidence_sha256": hashlib.sha256(encode(state)).hexdigest(),
-        "source_documents": {
-            path: hashlib.sha256(content.encode("utf-8")).hexdigest()
-            for path, content in sorted(source_documents.items())
-        },
-    })
-    return "final-" + hashlib.sha256(identity).hexdigest()[:24]
-
-
-def _validate_sources(state: Mapping[str, Any], source_documents: Mapping[str, str]) -> None:
-    documents = state.get("documents")
-    if not isinstance(documents, list) or not documents:
-        raise ValueError("final judgment evidence has no documents")
-    for document in documents:
-        if not isinstance(document, dict):
-            raise TypeError("final judgment evidence document is not an object")
-        path = document.get("path")
-        if not isinstance(path, str) or path not in source_documents:
-            raise ValueError(f"final judgment source snapshot is missing {path!r}")
-        content = document.get("content")
-        if not isinstance(content, str):
-            raise TypeError(f"final judgment evidence content is invalid for {path!r}")
-        source = source_documents[path].encode("utf-8")
-        start, end = document.get("start_byte"), document.get("end_byte")
-        if not isinstance(start, int) or not isinstance(end, int) or source[start:end].decode("utf-8") != content:
-            raise ValueError(f"final judgment evidence is not a slice of its authoritative source snapshot: {path}")
-
-
-@dataclass(slots=True)
-class FinalJudgmentRecorder:
-    """Write immutable final judgments and exact source snapshots to JSONL."""
-
-    path: Path
-    requested_model: str
-    endpoint: str
-    metadata: dict[str, Any]
-    _lock: Lock = field(init=False, repr=False)
-    _stream: Any = field(init=False, repr=False)
-    _records: int = field(init=False, repr=False)
-    _completed: bool = field(init=False, repr=False)
-    _digest: Any = field(init=False, repr=False)
-    _meta_path: Path = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        meta_path = self.path.with_suffix(".meta.json")
-        self._lock = Lock()
-        self._records = 0
-        self._completed = False
-        self._digest = hashlib.sha256()
-        self._meta_path = meta_path
-        self._stream = self.path.open("x", encoding="utf-8")
-        try:
-            meta_path.open("x", encoding="utf-8").close()
-        except BaseException:
-            self._stream.close()
-            self.path.unlink(missing_ok=True)
-            raise
-
-    def record(
-        self,
-        judgment: Judgment,
-        assessment: Assessment,
-        source_documents: Mapping[str, str],
-        review: Mapping[str, Any] | None = None,
-    ) -> None:
-        evidence = (
-            json.loads(judgment.wire_state)
-            if judgment.wire_state
-            else PromptRegistry.for_question(judgment.check.rule.question).bind_state(judgment.context.state)
-        )
+    @staticmethod
+    def _question_wire(judgment: Judgment) -> dict[str, Any]:
         question_wire = judgment.question_wire or judgment.check.question()
         if question_wire != judgment.check.question():
             raise ValueError("final judgment question does not match its canonical wire")
-        validate_prompt_registry(evidence, judgment.check.rule.question)
-        document_paths = {
-            document.get("path") for document in evidence.get("documents", []) if isinstance(document, dict)
+        return question_wire
+
+    @staticmethod
+    def _final_sources(
+        evidence: Mapping[str, Any],
+        source_documents: Mapping[str, str],
+    ) -> dict[str, str]:
+        paths = {
+            document.get("path")
+            for document in evidence.get("documents", [])
+            if isinstance(document, dict)
         }
-        final_sources = {path: source_documents[path] for path in document_paths if path in source_documents}
-        _validate_sources(evidence, final_sources)
+        return {path: source_documents[path] for path in paths if path in source_documents}
+
+    @staticmethod
+    def _capture_review(
+        judgment: Judgment,
+        review: Mapping[str, Any] | None,
+        source_documents: Mapping[str, str],
+    ) -> dict[str, Any]:
         capture_review = dict(review or judgment.review)
         initial_state = capture_review.get("initial_evidence_state")
         if initial_state is not None:
             _validate_sources(initial_state, source_documents)
-        row = {
+        return capture_review
+
+    def _row(
+        self,
+        judgment: Judgment,
+        assessment: Assessment,
+        source_documents: Mapping[str, str],
+        review: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        evidence = self._evidence_state(judgment)
+        question_wire = self._question_wire(judgment)
+        validate_prompt_registry(evidence, judgment.check.rule.question)
+        final_sources = self._final_sources(evidence, source_documents)
+        _validate_sources(evidence, final_sources)
+        capture_review = self._capture_review(judgment, review, source_documents)
+        return {
             "version": 1,
             "phase": "final",
             "kind": "judgment",
@@ -176,7 +97,15 @@ class FinalJudgmentRecorder:
             "review": capture_review,
             "inference": judgment.inference,
         }
-        self._write_row(row)
+
+    def record(
+        self,
+        judgment: Judgment,
+        assessment: Assessment,
+        source_documents: Mapping[str, str],
+        review: Mapping[str, Any] | None = None,
+    ) -> None:
+        self._write_row(self._row(judgment, assessment, source_documents, review))
 
     def _write_row(self, row: dict[str, Any]) -> None:
         line = json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
