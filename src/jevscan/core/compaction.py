@@ -178,6 +178,17 @@ class SelectionStoppedError(Exception):
     """An optional selection budget was reached; deterministic source selection remains available."""
 
 
+@dataclass(slots=True)
+class CompactionRound:
+    recipe: ContextRecipe
+    budget: RequestBudget
+    wire: dict[str, bytes]
+    scaffold: bool
+    base: Evidence
+    candidates: list[Candidate]
+    trace: dict[str, Any]
+
+
 class Compactor:
     def __init__(self, planner: Planner, inference: Inference) -> None:
         self.planner, self.inference = planner, inference
@@ -258,20 +269,28 @@ class Compactor:
         trace["method"] = "rule_relevance"
         return [item for _, item in ranked] + [item for item in candidates if item.id not in scored]
 
-    async def compact(
-        self, check: Check, previous_bytes: int, round_number: int, trace: dict[str, Any], rubric: PromptRegistry
-    ) -> Evidence | None:
+    def _prepare_round(
+        self,
+        check: Check,
+        previous_bytes: int,
+        round_number: int,
+        trace: dict[str, Any],
+        rubric: PromptRegistry,
+    ) -> CompactionRound | None:
         if check.target.scope == "file" or self.planner.limits.oversized_context == "skip":
             return None
+
         recipe = self.local.recipe(check, self.limits.max_candidates)
         budget = self._budget(previous_bytes, round_number)
         wire = {check.id: self.planner.question_wires[check.id]}
-        base = self._compose(recipe, [], False)
-        base_state = self.planner.state(base, (check,), rubric)
-        # The target alone must fit; no amount of relevance guessing permits editing it.
-        if not budget.fits(base_state, wire):
+        target_only = self._compose(recipe, [], False)
+        if not budget.fits(self.planner.state(target_only, (check,), rubric), wire):
             return None
-        scaffold = budget.fits(self.planner.state(self._compose(recipe, [], True), (check,), rubric), wire)
+
+        scaffold = budget.fits(
+            self.planner.state(self._compose(recipe, [], True), (check,), rubric),
+            wire,
+        )
         base = self._compose(recipe, [], scaffold)
         candidates = list(recipe.candidates)
         entry: dict[str, Any] = {
@@ -286,20 +305,58 @@ class Compactor:
             "method": "syntax",
         }
         trace["compactions"].append(entry)
-        if (
-            candidates
-            and self.limits.semantic
-            and not budget.fits(self.planner.state(self._compose(recipe, candidates, scaffold), (check,), rubric), wire)
-        ):
-            candidates = await self._prioritize(check, base, candidates, budget, entry)
+        return CompactionRound(recipe, budget, wire, scaffold, base, candidates, entry)
+
+    async def _ordered_candidates(
+        self,
+        check: Check,
+        round_state: CompactionRound,
+        rubric: PromptRegistry,
+    ) -> list[Candidate]:
+        candidates = round_state.candidates
+        if not candidates or not self.limits.semantic:
+            return candidates
+        all_evidence = self._compose(round_state.recipe, candidates, round_state.scaffold)
+        if round_state.budget.fits(self.planner.state(all_evidence, (check,), rubric), round_state.wire):
+            return candidates
+        return await self._prioritize(
+            check,
+            round_state.base,
+            candidates,
+            round_state.budget,
+            round_state.trace,
+        )
+
+    def _fit_candidates(
+        self,
+        check: Check,
+        candidates: list[Candidate],
+        round_state: CompactionRound,
+        rubric: PromptRegistry,
+    ) -> list[Candidate]:
         selected: list[Candidate] = []
         for candidate in candidates:
-            proposed = self._compose(recipe, [*selected, candidate], scaffold)
-            if budget.fits(self.planner.state(proposed, (check,), rubric), wire):
+            proposed = self._compose(round_state.recipe, [*selected, candidate], round_state.scaffold)
+            request_state = self.planner.state(proposed, (check,), rubric)
+            if round_state.budget.fits(request_state, round_state.wire):
                 selected.append(candidate)
             else:
-                entry["omitted_candidates"].append({"id": candidate.id, "reason": "context_budget"})
-        evidence = self._compose(recipe, selected, scaffold)
-        entry.update({"selected": [item.metadata() for item in selected], "state_sha256": evidence.key})
-        assert evidence.contains(check.target.path, *recipe.target)
+                round_state.trace["omitted_candidates"].append({"id": candidate.id, "reason": "context_budget"})
+        return selected
+
+    async def compact(
+        self, check: Check, previous_bytes: int, round_number: int, trace: dict[str, Any], rubric: PromptRegistry
+    ) -> Evidence | None:
+        round_state = self._prepare_round(check, previous_bytes, round_number, trace, rubric)
+        if round_state is None:
+            return None
+
+        candidates = await self._ordered_candidates(check, round_state, rubric)
+        selected = self._fit_candidates(check, candidates, round_state, rubric)
+        evidence = self._compose(round_state.recipe, selected, round_state.scaffold)
+        round_state.trace.update({
+            "selected": [item.metadata() for item in selected],
+            "state_sha256": evidence.key,
+        })
+        assert evidence.contains(check.target.path, *round_state.recipe.target)
         return evidence
