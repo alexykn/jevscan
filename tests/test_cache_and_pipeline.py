@@ -10,7 +10,7 @@ from jevscan.core.cache import AnswerCache, cache_key, judgment_cache_key
 from jevscan.core.client import JevClient
 from jevscan.core.config import Config, LoadedConfig
 from jevscan.core.models import FileJob, Kind, ParsedFile, Summary, Unit
-from jevscan.core.scanner import pipeline
+from jevscan.core.scan_pipeline import pipeline
 
 
 class Sink:
@@ -155,7 +155,7 @@ async def test_api_failure_cancels_pipeline_instead_of_marking_units_clean(tmp_p
 async def test_cancellation_waits_for_active_discovery_thread(tmp_path, config, monkeypatch) -> None:
     import threading
 
-    from jevscan.core import scanner
+    from jevscan.core import scan_pipeline, scanner
     from jevscan.core.config import LoadedConfig
     from jevscan.core.models import FileJob, Summary
 
@@ -171,7 +171,7 @@ async def test_cancellation_waits_for_active_discovery_thread(tmp_path, config, 
 
     monkeypatch.setattr(scanner, "discover", slow_discover)
     task = asyncio.create_task(
-        scanner._produce(
+        scan_pipeline._produce(
             [tmp_path],
             LoadedConfig(config, tmp_path, "test"),
             asyncio.Queue(2),
