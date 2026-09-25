@@ -156,10 +156,7 @@ class Enricher:
         evidence: Evidence,
         families: tuple[str, ...],
     ) -> dict[str, Any]:
-        return {
-            family: await self.index.candidates(self.context, check, evidence, family)
-            for family in families
-        }
+        return {family: await self.index.candidates(self.context, check, evidence, family) for family in families}
 
     @staticmethod
     def _candidate_membership(pools: dict[str, Any]) -> dict[str, list[str]]:
