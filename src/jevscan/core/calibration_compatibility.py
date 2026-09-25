@@ -23,7 +23,6 @@ class CompatibilityAuthority:
             },
         }
 
-
 @dataclass(frozen=True, slots=True)
 class CompatibilityCheck:
     """Selection-only compatibility evidence for one set of cases."""
@@ -54,7 +53,6 @@ class CompatibilityCheck:
             "mismatches": list(self.mismatches),
         }
 
-
 @dataclass(frozen=True, slots=True)
 class SelectionCompatibility:
     """Compatibility policy recorded for a complete requested fit."""
@@ -74,7 +72,6 @@ class SelectionCompatibility:
             "development": self.development.as_dict(),
         }
 
-
 def compatibility_reason(check: CompatibilityCheck, scope: str) -> str:
     if check.has_missing_metadata:
         return f"{scope}_compatibility_metadata_missing"
@@ -87,8 +84,6 @@ def compatibility_reason(check: CompatibilityCheck, scope: str) -> str:
         return f"{scope}_prompt_mismatch"
     return f"{scope}_model_prompt_mismatch"
 
-
-
 def support_key(case: CalibrationCase) -> str:
     """Return only an explicit, stable provenance grouping contract."""
 
@@ -98,7 +93,6 @@ def support_key(case: CalibrationCase) -> str:
             return f"{name}:{value}"
     return ""
 
-
 def _compatibility_values(case: CalibrationCase) -> tuple[str | None, int | None, str | None]:
     returned_model = (
         case.returned_model if isinstance(case.returned_model, str) and case.returned_model.strip() else None
@@ -106,7 +100,6 @@ def _compatibility_values(case: CalibrationCase) -> tuple[str | None, int | None
     prompt_version = case.prompt.version if isinstance(case.prompt.version, int) and case.prompt.version >= 1 else None
     prompt_policy = case.prompt.policy if isinstance(case.prompt.policy, str) and case.prompt.policy.strip() else None
     return returned_model, prompt_version, prompt_policy
-
 
 def _missing_compatibility_mismatches(case: CalibrationCase) -> list[dict[str, Any]]:
     returned_model, prompt_version, prompt_policy = _compatibility_values(case)
@@ -125,7 +118,6 @@ def _missing_compatibility_mismatches(case: CalibrationCase) -> list[dict[str, A
             })
     return missing
 
-
 def _partition_compatibility_cases(
     cases: Iterable[CalibrationCase],
 ) -> tuple[list[CalibrationCase], tuple[dict[str, Any], ...]]:
@@ -138,7 +130,6 @@ def _partition_compatibility_cases(
         else:
             complete.append(case)
     return complete, tuple(missing)
-
 
 def _compatibility_mismatches(
     authority: CompatibilityAuthority,
@@ -166,7 +157,6 @@ def _compatibility_mismatches(
         if actual_values[field] is None or actual_values[field] != expected
     ]
 
-
 def compatibility_check(cases: Iterable[CalibrationCase]) -> CompatibilityCheck:
     material = sorted(cases, key=lambda case: (case.case_id, case.split))
     checked_case_ids = tuple(case.case_id for case in material)
@@ -185,7 +175,6 @@ def compatibility_check(cases: Iterable[CalibrationCase]) -> CompatibilityCheck:
     status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
     return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
 
-
 def compatibility_check_against(
     authority: CompatibilityAuthority | None,
     cases: Iterable[CalibrationCase],
@@ -200,5 +189,3 @@ def compatibility_check_against(
     )
     status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
     return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
-
-
