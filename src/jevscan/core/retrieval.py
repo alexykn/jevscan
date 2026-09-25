@@ -172,27 +172,41 @@ class Catalogue:
         self.coverage[reason] += 1
         self.coverage["discovery_complete"] = False
 
-    def related(self, context: ContextBuilder, target: Target, route: str) -> list[Candidate]:
+    @staticmethod
+    def _primary_names(context: ContextBuilder, target: Target) -> set[str]:
+        if target.scope == "unit":
+            return {context.units[target.id].name.rsplit("::", 1)[-1]}
+        return {unit.name.rsplit("::", 1)[-1] for unit in context.parsed.units}
+
+    @staticmethod
+    def _named_candidates(pool: dict[str, list[Candidate]], names: set[str]) -> list[Candidate]:
+        return [candidate for name in sorted(names) for candidate in pool.get(name, ())]
+
+    def _referenced_definition_names(
+        self,
+        context: ContextBuilder,
+        target: Target,
+        primary_names: set[str],
+    ) -> set[str]:
         parsed = context.parsed
-        primary_names = (
-            {context.units[target.id].name.rsplit("::", 1)[-1]}
-            if target.scope == "unit"
-            else {unit.name.rsplit("::", 1)[-1] for unit in parsed.units}
-        )
-        if route != "definitions":
-            pool = self.callers if route == "callers" else self.tests
-            return [candidate for name in sorted(primary_names) for candidate in pool.get(name, ())]
-        used_names = {
+        used = {
             reference.name
             for reference in parsed.references
             if target.start_byte <= reference.start_byte < target.end_byte
         }
         owner = context.owner(target)
         if target.language == "rust" and owner.kind == Kind.IMPL:
-            used_names.add(_impl_type_name(context.units[owner.id].name))
-        return [
-            candidate for name in sorted(used_names - primary_names) for candidate in self.definitions.get(name, ())
-        ]
+            used.add(_impl_type_name(context.units[owner.id].name))
+        return used - primary_names
+
+    def related(self, context: ContextBuilder, target: Target, route: str) -> list[Candidate]:
+        primary_names = self._primary_names(context, target)
+        if route == "callers":
+            return self._named_candidates(self.callers, primary_names)
+        if route == "tests":
+            return self._named_candidates(self.tests, primary_names)
+        names = self._referenced_definition_names(context, target, primary_names)
+        return self._named_candidates(self.definitions, names)
 
 
 def _index_source(root: Path, entry: FileJob, scan: ScanConfig, byte_limit: int, result: Catalogue) -> None:
@@ -257,33 +271,60 @@ class SourceIndex:
                     raise
         return self._catalogue
 
-    async def candidates(self, context: ContextBuilder, check: Check, evidence: Evidence, route: str) -> Candidates:
-        parsed, target = context.parsed, check.target
-        current = Snapshot.from_parsed(parsed)
-        if route == "enclosing_context":
-            available = [
+    def _enclosing_candidates(
+        self,
+        context: ContextBuilder,
+        target: Target,
+        current: Snapshot,
+    ) -> tuple[list[Candidate], dict[str, Any]]:
+        return (
+            [
                 Candidate(current, context.owner(target), "enclosing_owner"),
                 Candidate(current, context.file, "containing_file"),
-            ]
-            coverage: dict[str, Any] = {"scope": "current_file", "discovery_complete": True}
-        else:
-            catalogue = await self._load()
-            available = catalogue.related(context, target, route)
-            indexed = catalogue.sources.get(parsed.path)
-            coverage = {
-                **catalogue.coverage,
-                "scope": "project_root",
-                "primary_snapshot_changed": indexed is not None and indexed.digest != current.digest,
-            }
-        # Never mix an indexed revision of this file with its authoritative scan snapshot.
-        available = [
+            ],
+            {"scope": "current_file", "discovery_complete": True},
+        )
+
+    async def _project_candidates(
+        self,
+        context: ContextBuilder,
+        target: Target,
+        current: Snapshot,
+        route: str,
+    ) -> tuple[list[Candidate], dict[str, Any]]:
+        if route == "enclosing_context":
+            return self._enclosing_candidates(context, target, current)
+        catalogue = await self._load()
+        indexed = catalogue.sources.get(context.parsed.path)
+        coverage = {
+            **catalogue.coverage,
+            "scope": "project_root",
+            "primary_snapshot_changed": indexed is not None and indexed.digest != current.digest,
+        }
+        return catalogue.related(context, target, route), coverage
+
+    @staticmethod
+    def _authoritative_candidates(
+        available: list[Candidate],
+        parsed: ParsedFile,
+        target: Target,
+        current: Snapshot,
+    ) -> list[Candidate]:
+        return [
             candidate
             for candidate in available
             if candidate.target.language == target.language
             and (candidate.target.path != parsed.path or candidate.snapshot.digest == current.digest)
         ]
+
+    @staticmethod
+    def _ordered_unique(
+        available: list[Candidate],
+        parsed: ParsedFile,
+        evidence: Evidence,
+    ) -> list[Candidate]:
         unique = {candidate.id: candidate for candidate in available if not _already_present(candidate, evidence)}
-        ordered = sorted(
+        return sorted(
             unique.values(),
             key=lambda candidate: (
                 candidate.target.path != parsed.path,
@@ -293,12 +334,20 @@ class SourceIndex:
                 candidate.target.start_byte,
             ),
         )
+
+    async def candidates(self, context: ContextBuilder, check: Check, evidence: Evidence, route: str) -> Candidates:
+        parsed, target = context.parsed, check.target
+        current = Snapshot.from_parsed(parsed)
+        available, coverage = await self._project_candidates(context, target, current, route)
+        authoritative = self._authoritative_candidates(available, parsed, target, current)
+        ordered = self._ordered_unique(authoritative, parsed, evidence)
+        limit = self.limits.max_candidates
         return Candidates(
-            tuple(ordered[: self.limits.max_candidates]),
+            tuple(ordered[:limit]),
             {
                 **coverage,
                 "matched_candidates": len(ordered),
-                "candidate_limit_omissions": max(0, len(ordered) - self.limits.max_candidates),
+                "candidate_limit_omissions": max(0, len(ordered) - limit),
             },
         )
 
