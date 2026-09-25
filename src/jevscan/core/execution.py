@@ -251,26 +251,52 @@ class FileExecutor:
         ]
         return compacted + final_attempts
 
-    async def _preflight(self, attempt: Attempt) -> list[Attempt] | None:
+    def _known_rejection(self, attempt: Attempt) -> tuple[str, tuple[int, dict[str, Any]] | None]:
         request = attempt.request
         state_key = hashlib.sha256(request.state).hexdigest()
-        known = self.rejected.get(state_key)
-        blocked = (
-            not attempt.final
-            and known is not None
-            and all(len(request.question_wires[check.id]) >= known[0] for check in request.checks)
+        return state_key, self.rejected.get(state_key)
+
+    @staticmethod
+    def _related_rejection_blocked(
+        attempt: Attempt,
+        known: tuple[int, dict[str, Any]] | None,
+    ) -> bool:
+        if attempt.final or known is None:
+            return False
+        minimum_question_bytes = known[0]
+        return all(
+            len(attempt.request.question_wires[check.id]) >= minimum_question_bytes for check in attempt.request.checks
         )
-        if blocked:
-            assert known is not None
-            for check in request.checks:
-                self.results.recovery(check)["known_rejection"] = known[1]
-            return await self._recover(attempt, "related_request_rejection")
+
+    def _record_known_rejection(
+        self,
+        attempt: Attempt,
+        known: tuple[int, dict[str, Any]],
+    ) -> None:
+        metadata = known[1]
+        for check in attempt.request.checks:
+            self.results.recovery(check)["known_rejection"] = metadata
+
+    def _preflight_reason(self, attempt: Attempt) -> tuple[frozenset[str], str | None]:
+        request = attempt.request
         violations = self.planner.violations(request.evidence, request.checks, request.registry)
         if not violations:
-            return None
-        if "context" not in violations and len(request.checks) > 1:
-            return self._split_preflight(attempt)
+            return violations, None
         reason = "model_context_preflight" if "context" in violations else "request_limit_preflight"
+        return violations, reason
+
+    async def _preflight(self, attempt: Attempt) -> list[Attempt] | None:
+        _, known = self._known_rejection(attempt)
+        if self._related_rejection_blocked(attempt, known):
+            assert known is not None
+            self._record_known_rejection(attempt, known)
+            return await self._recover(attempt, "related_request_rejection")
+
+        violations, reason = self._preflight_reason(attempt)
+        if reason is None:
+            return None
+        if "context" not in violations and len(attempt.request.checks) > 1:
+            return self._split_preflight(attempt)
         return await self._recover(attempt, reason)
 
     async def _process(self, attempt: Attempt) -> list[Attempt]:

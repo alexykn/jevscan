@@ -85,17 +85,22 @@ class AnswerCache:
             "INSERT OR REPLACE INTO judgments (key, created, body) VALUES (?, ?, ?)", (key, time.time(), body)
         )
 
-    def _get_judgments(self, keys: tuple[str, ...]) -> dict[str, bytes]:
+    def _judgment_rows(self, keys: tuple[str, ...]) -> list[tuple[str, float, bytes]]:
         assert self.connection is not None
-        if not keys:
-            return {}
         placeholders = ",".join("?" for _ in keys)
-        rows = self.connection.execute(
+        return self.connection.execute(
             f"SELECT key, created, body FROM judgments WHERE key IN ({placeholders})",  # noqa: S608 -- placeholders only
             keys,
         ).fetchall()
+
+    def _fresh_judgments(self, rows: list[tuple[str, float, bytes]]) -> dict[str, bytes]:
         cutoff = time.time() - self.ttl if self.ttl else None
         return {key: body for key, created, body in rows if cutoff is None or created >= cutoff}
+
+    def _get_judgments(self, keys: tuple[str, ...]) -> dict[str, bytes]:
+        if not keys:
+            return {}
+        return self._fresh_judgments(self._judgment_rows(keys))
 
     def _put_judgments(self, entries: tuple[tuple[str, bytes], ...]) -> None:
         assert self.connection is not None

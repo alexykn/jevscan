@@ -93,6 +93,25 @@ class Enricher:
     def _routing_questions(self, check: Check) -> dict[str, Question]:
         return routing_questions(check, self._allowed_families(check))
 
+    def _routing_batches(
+        self,
+        state: bytes,
+        questions: dict[str, Question],
+        wire: dict[str, bytes],
+    ) -> list[dict[str, Question]]:
+        batches: list[dict[str, Question]] = []
+        pending: dict[str, Question] = {}
+        for name, question in questions.items():
+            proposed_names = (*pending, name)
+            proposed = {key: wire[key] for key in proposed_names}
+            if pending and not self.budget.fits(state, proposed):
+                batches.append(pending)
+                pending = {}
+            pending[name] = question
+        if pending:
+            batches.append(pending)
+        return batches
+
     async def _routing_answers(self, check: Check, evidence: Evidence, trace: dict[str, Any]) -> dict[str, Answer]:
         """Batch independent routing questions; small configured request budgets still apply."""
         questions = self._routing_questions(check)
@@ -100,17 +119,10 @@ class Enricher:
         rubric = PromptRegistry.for_question(check.rule.question)
         rubric.validate_questions((check.rule.question,))
         state = rubric.state_bytes(evidence.state)
-        pending: dict[str, Question] = {}
         answers: dict[str, Answer] = {}
-        for name, question in questions.items():
-            proposed = {key: wire[key] for key in (*pending, name)}
-            if pending and not self.budget.fits(state, proposed):
-                prediction = await self._predict("route", state, pending, {key: wire[key] for key in pending}, trace)
-                answers.update(prediction.response.answers)
-                pending = {}
-            pending[name] = question
-        if pending:
-            prediction = await self._predict("route", state, pending, {key: wire[key] for key in pending}, trace)
+        for batch in self._routing_batches(state, questions, wire):
+            batch_wire = {key: wire[key] for key in batch}
+            prediction = await self._predict("route", state, batch, batch_wire, trace)
             answers.update(prediction.response.answers)
         return answers
 
@@ -138,33 +150,89 @@ class Enricher:
         trace["evidence_probabilities"] = probabilities
         return decision
 
-    async def _candidates(
-        self, check: Check, evidence: Evidence, families: tuple[str, ...], trace: dict[str, Any]
-    ) -> list[Candidate]:
-        """Pool families fairly under one candidate limit, retaining all family provenance."""
-        pools = {}
-        for family in families:
-            pools[family] = await self.index.candidates(self.context, check, evidence, family)
+    async def _candidate_pools(
+        self,
+        check: Check,
+        evidence: Evidence,
+        families: tuple[str, ...],
+    ) -> dict[str, Any]:
+        return {family: await self.index.candidates(self.context, check, evidence, family) for family in families}
+
+    @staticmethod
+    def _candidate_membership(pools: dict[str, Any]) -> dict[str, list[str]]:
         membership: dict[str, list[str]] = {}
         for family, pool in pools.items():
             for candidate in pool.items:
                 membership.setdefault(candidate.id, []).append(family)
+        return membership
+
+    @staticmethod
+    def _fair_candidates(pools: dict[str, Any]) -> list[Candidate]:
         unique: dict[str, Candidate] = {}
         for row in zip_longest(*(pool.items for pool in pools.values())):
             for candidate in row:
                 if candidate is not None:
                     unique.setdefault(candidate.id, candidate)
-        admitted = list(unique.values())[: self.limits.max_candidates]
+        return list(unique.values())
+
+    async def _candidates(
+        self,
+        check: Check,
+        evidence: Evidence,
+        families: tuple[str, ...],
+        trace: dict[str, Any],
+    ) -> list[Candidate]:
+        """Pool families fairly under one candidate limit, retaining all family provenance."""
+        pools = await self._candidate_pools(check, evidence, families)
+        pooled = self._fair_candidates(pools)
+        admitted = pooled[: self.limits.max_candidates]
         trace["retrieval"] = {
             "families": {family: pool.coverage for family, pool in pools.items()},
-            "candidate_families": membership,
-            "pooled_candidates": len(unique),
-            "combined_candidate_limit_omissions": max(0, len(unique) - len(admitted)),
+            "candidate_families": self._candidate_membership(pools),
+            "pooled_candidates": len(pooled),
+            "combined_candidate_limit_omissions": max(0, len(pooled) - len(admitted)),
         }
         return admitted
 
+    def _candidate_fits(
+        self,
+        check: Check,
+        evidence: Evidence,
+        selected: list[Candidate],
+        candidate: Candidate,
+        registry: PromptRegistry,
+        trace: dict[str, Any],
+    ) -> bool:
+        proposed = [*selected, candidate]
+        if len(proposed) > self.limits.max_evidence:
+            return False
+        enriched = augment_evidence(self.context, evidence, proposed, trace["retrieval"])
+        state = registry.state_bytes(enriched.state)
+        wire = {check.id: encode(check.question())}
+        return self.budget.fits(state, wire)
+
+    def _admit_ranked(
+        self,
+        check: Check,
+        evidence: Evidence,
+        ranked: list[tuple[float, Candidate]],
+        registry: PromptRegistry,
+        trace: dict[str, Any],
+    ) -> list[Candidate]:
+        selected: list[Candidate] = []
+        for _, candidate in ranked:
+            if self._candidate_fits(check, evidence, selected, candidate, registry, trace):
+                selected.append(candidate)
+            else:
+                trace["omitted_candidates"].append({"id": candidate.id, "reason": "evidence_budget"})
+        return selected
+
     async def _select(
-        self, check: Check, evidence: Evidence, families: tuple[str, ...], trace: dict[str, Any]
+        self,
+        check: Check,
+        evidence: Evidence,
+        families: tuple[str, ...],
+        trace: dict[str, Any],
     ) -> list[Candidate]:
         if self.calls >= self.limits.max_calls_per_file:
             raise EnrichmentStoppedError("call_budget")
@@ -180,17 +248,8 @@ class Enricher:
             trace,
             registry,
         )
-        ranked = [pair for pair in ranked if pair[0] >= self.limits.min_relevance]
-        selected: list[Candidate] = []
-        wire = {check.id: encode(check.question())}
-        for _, candidate in ranked:
-            proposed = [*selected, candidate]
-            if len(proposed) <= self.limits.max_evidence and self.budget.fits(
-                registry.state_bytes(augment_evidence(self.context, evidence, proposed, trace["retrieval"]).state), wire
-            ):
-                selected.append(candidate)
-            else:
-                trace["omitted_candidates"].append({"id": candidate.id, "reason": "evidence_budget"})
+        relevant = [pair for pair in ranked if pair[0] >= self.limits.min_relevance]
+        selected = self._admit_ranked(check, evidence, relevant, registry, trace)
         if not selected and trace["omitted_candidates"]:
             raise EnrichmentStoppedError("evidence_budget")
         return selected
@@ -212,6 +271,33 @@ class Enricher:
         trace["outcome"] = "failed"
         return True
 
+    def _declared_routing(
+        self,
+        check: Check,
+        answer: Answer,
+        allowed: tuple[str, ...],
+        trace: dict[str, Any],
+    ) -> Routing | None:
+        policy = check.rule.targeted_enrichment
+        if policy is None:
+            return None
+        choice_trigger = isinstance(answer, ChoiceAnswer) and answer.choice in policy.when_choices
+        reason_trigger = trace.get("trigger") in policy.when_reasons
+        if not (choice_trigger or reason_trigger):
+            return None
+        trace["routing_mode"] = "declared_rule_families"
+        return Routing("local_evidence", allowed)
+
+    @staticmethod
+    def _routing_outcome(routing: Routing) -> str | None:
+        if routing.disposition is None:
+            return "route_uncertain"
+        if routing.disposition != "local_evidence":
+            return routing.disposition
+        if not routing.families:
+            return "no_evidence_family"
+        return None
+
     async def _review_route(
         self,
         check: Check,
@@ -219,32 +305,20 @@ class Enricher:
         evidence: Evidence,
         trace: dict[str, Any],
     ) -> Routing | None:
-        allowed_families = self._allowed_families(check)
-        if not allowed_families:
+        allowed = self._allowed_families(check)
+        if not allowed:
             trace["outcome"] = "enrichment_disabled"
             return None
 
-        policy = check.rule.targeted_enrichment
-        declared = policy is not None and (
-            (isinstance(answer, ChoiceAnswer) and answer.choice in policy.when_choices)
-            or trace.get("trigger") in policy.when_reasons
-        )
-        if declared:
-            trace["routing_mode"] = "declared_rule_families"
-            routing = Routing("local_evidence", allowed_families)
-        else:
+        routing = self._declared_routing(check, answer, allowed, trace)
+        if routing is None:
             routing = await self._route(check, evidence, trace)
 
         trace["disposition"] = routing.disposition
         trace["evidence_families"] = list(routing.families)
-        if routing.disposition is None:
-            trace["outcome"] = "route_uncertain"
-            return None
-        if routing.disposition != "local_evidence":
-            trace["outcome"] = routing.disposition
-            return None
-        if not routing.families:
-            trace["outcome"] = "no_evidence_family"
+        outcome = self._routing_outcome(routing)
+        if outcome is not None:
+            trace["outcome"] = outcome
             return None
         return routing
 

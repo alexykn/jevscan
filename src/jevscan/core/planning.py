@@ -79,16 +79,16 @@ class RequestBudget:
 
     def violations(self, state: bytes, questions: dict[str, bytes]) -> frozenset[str]:
         estimate = self.budget(state, questions)
-        problems = set()
-        if estimate.questions > self.limits.max_questions:
-            problems.add("questions")
-        if self.max_context_tokens is not None and estimate.context_tokens > self.max_context_tokens:
-            problems.add("context")
-        if self.max_total_tokens is not None and estimate.total_tokens > self.max_total_tokens:
-            problems.add("total")
-        if estimate.body_bytes > self.limits.max_request_bytes:
-            problems.add("bytes")
-        return frozenset(problems)
+        limits = (
+            ("questions", estimate.questions > self.limits.max_questions),
+            (
+                "context",
+                self.max_context_tokens is not None and estimate.context_tokens > self.max_context_tokens,
+            ),
+            ("total", self.max_total_tokens is not None and estimate.total_tokens > self.max_total_tokens),
+            ("bytes", estimate.body_bytes > self.limits.max_request_bytes),
+        )
+        return frozenset(name for name, exceeded in limits if exceeded)
 
     def fits(self, state: bytes, questions: dict[str, bytes]) -> bool:
         return not self.violations(state, questions)
@@ -111,37 +111,47 @@ class Planner:
         self.limits = config.evaluation
         self.compaction = config.compaction
         self.budget = RequestBudget(config.evaluation, config.jev.model, calibration)
-        self.targets = (self.context.file, *(Target.from_unit(unit) for unit in self.context.parsed.units))
+        self.targets = self._targets()
         self.applicability_skips: dict[str, dict[str, str]] = {}
         checks = self._checks(config)
-        self.omissions: tuple[Omission, ...] = ()
-        line_limit = config.scan.max_full_file_lines
-        self.full_file_limited = line_limit is not None and self.context.file.end_line > line_limit
-        if self.full_file_limited:
-            kept: list[Check] = []
-            omitted: list[Omission] = []
-            for check in checks:
-                # Explicit file judgments and rules that explicitly require file context
-                # are not approximated. Top-level owner-context unit checks may fall
-                # back to their complete target and are marked context-reduced.
-                if check.target.scope == "file" or check.rule.context == "file":
-                    omitted.append(
-                        Omission(
-                            check,
-                            f"full-file context is {self.context.file.end_line} lines; configured limit is {line_limit}",
-                        )
-                    )
-                else:
-                    kept.append(check)
-            checks = tuple(kept)
-            self.omissions = tuple(omitted)
-        self.checks = checks
+        self.checks, self.omissions, self.full_file_limited = self._apply_full_file_limit(
+            checks,
+            config.scan.max_full_file_lines,
+        )
         self.question_wires = {check.id: encode(check.question()) for check in self.checks}
         self._groups = self._evidence_groups()
-        self._registry_by_check: dict[str, PromptRegistry] = {}
-        for _, group_checks in self._groups:
-            registry = PromptRegistry.from_questions(check.rule.question for check in group_checks)
-            self._registry_by_check.update({check.id: registry for check in group_checks})
+        self._registry_by_check = self._registries()
+
+    def _targets(self) -> tuple[Target, ...]:
+        units = (Target.from_unit(unit) for unit in self.context.parsed.units)
+        return (self.context.file, *units)
+
+    def _apply_full_file_limit(
+        self,
+        checks: tuple[Check, ...],
+        line_limit: int | None,
+    ) -> tuple[tuple[Check, ...], tuple[Omission, ...], bool]:
+        limited = line_limit is not None and self.context.file.end_line > line_limit
+        if not limited:
+            return checks, (), False
+        kept: list[Check] = []
+        omitted: list[Omission] = []
+        for check in checks:
+            if check.target.scope == "file" or check.rule.context == "file":
+                omitted.append(Omission(check, self._full_file_omission(line_limit)))
+            else:
+                kept.append(check)
+        return tuple(kept), tuple(omitted), True
+
+    def _full_file_omission(self, line_limit: int | None) -> str:
+        return f"full-file context is {self.context.file.end_line} lines; configured limit is {line_limit}"
+
+    def _registries(self) -> dict[str, PromptRegistry]:
+        registries: dict[str, PromptRegistry] = {}
+        for _, checks in self._groups:
+            registry = PromptRegistry.from_questions(check.rule.question for check in checks)
+            registries.update({check.id: registry for check in checks})
+        return registries
 
     def _facts(self, target: Target) -> frozenset[str]:
         if target.scope == "file":
@@ -161,28 +171,37 @@ class Planner:
         declared = ", ".join(missing)
         return f"applicability: declared syntax prerequisite absent ({declared})"
 
-    def _checks(self, config: Config) -> tuple[Check, ...]:
-        checks = []
-        rules = sorted(config.selected_rules().items())
-        owners_with_members = {
+    def _owners_with_members(self) -> set[str | None]:
+        return {
             unit.parent_id
             for unit in self.context.parsed.units
             if unit.kind in CALLABLE_KINDS and unit.has_implementation
         }
+
+    def _structural_match(self, target: Target, rule: Rule, owners_with_members: set[str | None]) -> bool:
+        if rule.target != target.scope or target.language not in rule.languages:
+            return False
+        if target.scope == "file":
+            return True
+        unit = self.context.units[target.id]
+        body_ok = not rule.require_body or (unit.has_body and unit.has_implementation)
+        members_ok = not rule.require_members or target.id in owners_with_members
+        return unit.kind in rule.applies_to and body_ok and members_ok
+
+    def _record_applicability_skip(self, target: Target, rule_id: str, reason: str) -> None:
+        self.applicability_skips.setdefault(target.id, {})[rule_id] = reason
+
+    def _checks(self, config: Config) -> tuple[Check, ...]:
+        checks: list[Check] = []
+        rules = sorted(config.selected_rules().items())
+        owners_with_members = self._owners_with_members()
         for target in self.targets:
             for name, rule in rules:
-                if rule.target != target.scope or target.language not in rule.languages:
+                if not self._structural_match(target, rule, owners_with_members):
                     continue
-                if target.scope == "unit":
-                    unit = self.context.units[target.id]
-                    if unit.kind not in rule.applies_to or (
-                        rule.require_body and (not unit.has_body or not unit.has_implementation)
-                    ):
-                        continue
-                    if rule.require_members and target.id not in owners_with_members:
-                        continue
-                if (reason := self._applicability_reason(target, rule)) is not None:
-                    self.applicability_skips.setdefault(target.id, {})[name] = reason
+                reason = self._applicability_reason(target, rule)
+                if reason is not None:
+                    self._record_applicability_skip(target, name, reason)
                     continue
                 checks.append(Check(f"q{len(checks):05d}", target, name, rule))
         return tuple(checks)

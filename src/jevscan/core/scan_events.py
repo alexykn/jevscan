@@ -54,24 +54,33 @@ def report_plan(parsed: ParsedFile, config: Config, sink: EventSink, summary: Su
     })
 
 
-def record_evaluation_plan(planner: Planner, config: Config, sink: EventSink, summary: Summary) -> None:
-    if planner.full_file_limited and planner.omissions:
-        limit = config.scan.max_full_file_lines
-        emit_diagnostic(
-            sink,
-            summary,
-            Diagnostic(
-                planner.context.parsed.path,
-                "file-size-limit",
-                f"{planner.context.file.end_line} lines exceeds the configured full-file analysis limit "
-                f"of {limit}; {len(planner.omissions)} full-file-context checks were not evaluated",
-                Severity.ERROR,
-            ),
-        )
+def _emit_file_limit(planner: Planner, config: Config, sink: EventSink, summary: Summary) -> None:
+    if not (planner.full_file_limited and planner.omissions):
+        return
+    limit = config.scan.max_full_file_lines
+    emit_diagnostic(
+        sink,
+        summary,
+        Diagnostic(
+            planner.context.parsed.path,
+            "file-size-limit",
+            f"{planner.context.file.end_line} lines exceeds the configured full-file analysis limit "
+            f"of {limit}; {len(planner.omissions)} full-file-context checks were not evaluated",
+            Severity.ERROR,
+        ),
+    )
+
+
+def _selected_unit_ids(planner: Planner) -> set[str]:
     selected = {check.target.id for check in planner.checks if check.target.scope == "unit"}
     selected.update(item.check.target.id for item in planner.omissions if item.check.target.scope == "unit")
     selected.update(target_id for target_id in planner.applicability_skips if target_id != planner.context.file.id)
-    summary.units_skipped += len(planner.context.parsed.units) - len(selected)
+    return selected
+
+
+def record_evaluation_plan(planner: Planner, config: Config, sink: EventSink, summary: Summary) -> None:
+    _emit_file_limit(planner, config, sink, summary)
+    summary.units_skipped += len(planner.context.parsed.units) - len(_selected_unit_ids(planner))
 
 
 async def report_progress(client: JevClient, sink: EventSink, summary: Summary, started: float) -> None:

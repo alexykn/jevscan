@@ -5,6 +5,15 @@ from typing import Annotated, Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 from jevscan.core.models import Kind, SyntaxFact
+from jevscan.core.validation import (
+    require,
+    require_disjoint,
+    require_exactly_one,
+    require_nonempty,
+    require_none,
+    require_subset,
+    require_unique,
+)
 
 LANGUAGES = frozenset({"python", "rust", "perl", "typescript", "javascript"})
 EnrichmentTrigger = Literal[
@@ -36,14 +45,13 @@ class ApplicabilityPolicy(StrictModel):
 
     @model_validator(mode="after")
     def has_requirement(self) -> Self:
-        if not self.requires_any and not self.requires_all:
-            raise ValueError("applicability requires at least one syntax fact")
-        if len(self.requires_any) != len(set(self.requires_any)) or len(self.requires_all) != len(
-            set(self.requires_all)
-        ):
-            raise ValueError("applicability fact lists must not contain duplicates")
-        if set(self.requires_any) & set(self.requires_all):
-            raise ValueError("a syntax fact cannot be both requires_any and requires_all")
+        require(bool(self.requires_any or self.requires_all), "applicability requires at least one syntax fact")
+        require_unique(self.requires_any, "applicability fact lists must not contain duplicates")
+        require_unique(self.requires_all, "applicability fact lists must not contain duplicates")
+        require_disjoint(
+            (self.requires_any, self.requires_all),
+            "a syntax fact cannot be both requires_any and requires_all",
+        )
         return self
 
 
@@ -53,12 +61,12 @@ class TargetedEnrichmentPolicy(StrictModel):
 
     @model_validator(mode="after")
     def has_trigger(self) -> Self:
-        if not self.when_choices and not self.when_reasons:
-            raise ValueError("targeted enrichment requires a choice or assessment reason trigger")
-        if len(self.when_choices) != len(set(self.when_choices)) or len(self.when_reasons) != len(
-            set(self.when_reasons)
-        ):
-            raise ValueError("targeted enrichment trigger lists must not contain duplicates")
+        require(
+            bool(self.when_choices or self.when_reasons),
+            "targeted enrichment requires a choice or assessment reason trigger",
+        )
+        require_unique(self.when_choices, "targeted enrichment trigger lists must not contain duplicates")
+        require_unique(self.when_reasons, "targeted enrichment trigger lists must not contain duplicates")
         return self
 
 
@@ -156,141 +164,172 @@ class Rule(StrictModel):
 
     @model_validator(mode="after")
     def compatible_report(self) -> Self:
-        self._validate_target()
-        if isinstance(self.question, ScoreQuestion):
-            self._validate_score()
-        elif isinstance(self.question, ChoiceQuestion):
-            self._validate_choice()
-        else:
-            self._validate_noul()
-        self._validate_targeted_enrichment()
-        if not isinstance(self.question, NoulQuestion) and self.report.uncertain_range is not None:
-            raise ValueError("uncertain_range is only valid for noul questions")
+        _validate_target(self)
+        _QUESTION_VALIDATORS[type(self.question)](self.question, self.report)
+        _validate_targeted_enrichment(self)
+        require(
+            isinstance(self.question, NoulQuestion) or self.report.uncertain_range is None,
+            "uncertain_range is only valid for noul questions",
+        )
         _validate_level_order(self.report.levels)
         return self
 
-    def _validate_target(self) -> None:
-        if self.target == "unit":
-            if not self.applies_to:
-                raise ValueError("unit rules require nonempty applies_to")
-            return
-        if self.applies_to or self.require_body or self.require_members or self.context != "file":
-            raise ValueError("file rules require context=file, no applies_to, and require_body=false")
 
-    def _validate_score(self) -> None:
-        question, report = self.question, self.report
-        assert isinstance(question, ScoreQuestion)
-        if (
-            report.choices is not None
-            or report.uncertain_choices
-            or report.not_applicable_choices
-            or not report.expected
-        ):
-            raise ValueError("score reports cannot use choices, uncertain_choices, or expected=false")
-        warning, error = report.levels.warning, report.levels.error
-        warning_mass = warning.score_levels is not None
-        error_mass = error.score_levels is not None
-        if warning_mass != error_mass:
-            raise ValueError("score warning and error levels must use the same threshold mode")
-        if warning_mass:
-            assert warning.score_levels is not None and error.score_levels is not None
-            for level in (warning, error):
-                if not level.score_levels:
-                    raise ValueError("score mass levels must be nonempty")
-                if len(level.score_levels) != len(set(level.score_levels)):
-                    raise ValueError("score mass levels must not contain duplicates")
-                if level.score_levels != sorted(level.score_levels):
-                    raise ValueError("score mass levels must be ordered")
-                if any(not 0 <= score < len(question.criteria) for score in level.score_levels):
-                    raise ValueError("score mass level is outside the rubric")
-                if level.min_probability is None:
-                    raise ValueError("score mass levels require min_probability")
-                if level.min_score is not None or level.max_score is not None:
-                    raise ValueError("score mass levels cannot use score thresholds")
-            if not set(error.score_levels) <= set(warning.score_levels):
-                raise ValueError("score error levels must be a subset of warning levels")
-            return
-        for level in (warning, error):
-            if (level.min_score is None) == (level.max_score is None):
-                raise ValueError("score levels require exactly one of min_score or max_score")
-            threshold = level.min_score if level.min_score is not None else level.max_score
-            assert threshold is not None
-            if not 0 <= threshold <= len(question.criteria) - 1:
-                raise ValueError("score threshold is outside the rubric")
-            if level.min_probability is not None:
-                raise ValueError("score levels cannot use min_probability")
-            if level.score_levels is not None:
-                raise ValueError("score scalar levels cannot use score_levels")
+def _validate_target(rule: Rule) -> None:
+    if rule.target == "unit":
+        require_nonempty(rule.applies_to, "unit rules require nonempty applies_to")
+        return
+    require(
+        not (rule.applies_to or rule.require_body or rule.require_members) and rule.context == "file",
+        "file rules require context=file, no applies_to, and require_body=false",
+    )
 
-    def _validate_choice(self) -> None:
-        question, report = self.question, self.report
-        assert isinstance(question, ChoiceQuestion)
-        if not report.choices or set(report.choices) - question.criteria.keys():
-            raise ValueError("choice reports require choices present in question.criteria")
-        categories = (set(report.choices), set(report.uncertain_choices), set(report.not_applicable_choices))
-        if any(category - question.criteria.keys() for category in categories):
-            raise ValueError("report choice labels must be present in question.criteria")
-        if any(categories[i] & categories[j] for i in range(3) for j in range(i + 1, 3)):
-            raise ValueError("defect, uncertain, and not-applicable choices must be disjoint")
-        if not report.expected:
-            raise ValueError("choice reports cannot use expected=false")
-        for level in (report.levels.warning, report.levels.error):
-            if (
-                level.min_probability is None
-                or level.min_score is not None
-                or level.max_score is not None
-                or level.score_levels is not None
-            ):
-                raise ValueError("choice levels require min_probability and cannot use score thresholds")
 
-    def _validate_noul(self) -> None:
-        report = self.report
-        if report.choices is not None or report.uncertain_choices or report.not_applicable_choices:
-            raise ValueError("noul reports cannot use choices or uncertain_choices")
-        if report.uncertain_range is not None:
-            lower, upper = report.uncertain_range
-            if not 0 <= lower <= 0.5 < upper <= 1:
-                raise ValueError("uncertain_range must enclose 0.5 with ordered boundaries in [0, 1]")
-        for level in (report.levels.warning, report.levels.error):
-            if level.min_probability is None:
-                raise ValueError("noul levels require min_probability")
-            if any(
-                value is not None
-                for value in (level.min_confidence, level.min_score, level.max_score, level.score_levels)
-            ):
-                raise ValueError("noul levels cannot use confidence or score thresholds")
+def _validate_score_mass_level(level: ReportThreshold, criteria_count: int) -> None:
+    levels = level.score_levels
+    assert levels is not None
+    require_nonempty(levels, "score mass levels must be nonempty")
+    require_unique(levels, "score mass levels must not contain duplicates")
+    require(levels == sorted(levels), "score mass levels must be ordered")
+    require(all(0 <= score < criteria_count for score in levels), "score mass level is outside the rubric")
+    require(level.min_probability is not None, "score mass levels require min_probability")
+    require_none((level.min_score, level.max_score), "score mass levels cannot use score thresholds")
 
-    def _validate_targeted_enrichment(self) -> None:
-        if self.targeted_enrichment is None:
-            return
-        if not self.enrichment_families:
-            raise ValueError("targeted enrichment requires at least one evidence family")
-        if self.targeted_enrichment.when_choices and not isinstance(self.question, ChoiceQuestion):
-            raise ValueError("targeted enrichment choice triggers require a choice question")
-        if isinstance(self.question, ChoiceQuestion):
-            unknown = set(self.targeted_enrichment.when_choices) - set(self.question.criteria)
-            if unknown:
-                raise ValueError("targeted enrichment choices must be present in question.criteria")
-        unavailable = set(self.targeted_enrichment.when_reasons) - set(self.enrich_on)
-        if unavailable:
-            raise ValueError("targeted enrichment reasons must also be present in enrich_on")
+
+def _validate_score_scalar_level(level: ReportThreshold, criteria_count: int) -> None:
+    require_exactly_one(
+        (level.min_score, level.max_score),
+        "score levels require exactly one of min_score or max_score",
+    )
+    threshold = level.min_score if level.min_score is not None else level.max_score
+    assert threshold is not None
+    require(0 <= threshold < criteria_count, "score threshold is outside the rubric")
+    require(level.min_probability is None, "score levels cannot use min_probability")
+    require(level.score_levels is None, "score scalar levels cannot use score_levels")
+
+
+def _validate_score(question: Question, report: ReportPolicy) -> None:
+    assert isinstance(question, ScoreQuestion)
+    require(
+        report.choices is None
+        and not report.uncertain_choices
+        and not report.not_applicable_choices
+        and report.expected,
+        "score reports cannot use choices, uncertain_choices, or expected=false",
+    )
+    warning, error = report.levels.warning, report.levels.error
+    mass_mode = warning.score_levels is not None
+    require(
+        mass_mode == (error.score_levels is not None),
+        "score warning and error levels must use the same threshold mode",
+    )
+    validator = _validate_score_mass_level if mass_mode else _validate_score_scalar_level
+    validator(warning, len(question.criteria))
+    validator(error, len(question.criteria))
+    if mass_mode:
+        assert warning.score_levels is not None and error.score_levels is not None
+        require(
+            set(error.score_levels) <= set(warning.score_levels),
+            "score error levels must be a subset of warning levels",
+        )
+
+
+def _validate_choice(question: Question, report: ReportPolicy) -> None:
+    assert isinstance(question, ChoiceQuestion)
+    allowed = question.criteria.keys()
+    require_nonempty(report.choices or (), "choice reports require choices present in question.criteria")
+    require_subset(report.choices or (), allowed, "choice reports require choices present in question.criteria")
+    categories = (report.choices or (), report.uncertain_choices, report.not_applicable_choices)
+    for category in categories:
+        require_subset(category, allowed, "report choice labels must be present in question.criteria")
+    require_disjoint(categories, "defect, uncertain, and not-applicable choices must be disjoint")
+    require(report.expected, "choice reports cannot use expected=false")
+    for level in (report.levels.warning, report.levels.error):
+        require(
+            level.min_probability is not None,
+            "choice levels require min_probability and cannot use score thresholds",
+        )
+        require_none(
+            (level.min_score, level.max_score, level.score_levels),
+            "choice levels require min_probability and cannot use score thresholds",
+        )
+
+
+def _validate_noul(_question: Question, report: ReportPolicy) -> None:
+    require(
+        report.choices is None and not report.uncertain_choices and not report.not_applicable_choices,
+        "noul reports cannot use choices or uncertain_choices",
+    )
+    if report.uncertain_range is not None:
+        lower, upper = report.uncertain_range
+        require(
+            0 <= lower <= 0.5 < upper <= 1,
+            "uncertain_range must enclose 0.5 with ordered boundaries in [0, 1]",
+        )
+    for level in (report.levels.warning, report.levels.error):
+        require(level.min_probability is not None, "noul levels require min_probability")
+        require_none(
+            (level.min_confidence, level.min_score, level.max_score, level.score_levels),
+            "noul levels cannot use confidence or score thresholds",
+        )
+
+
+def _validate_targeted_enrichment(rule: Rule) -> None:
+    policy = rule.targeted_enrichment
+    if policy is None:
+        return
+    require_nonempty(rule.enrichment_families, "targeted enrichment requires at least one evidence family")
+    require(
+        not policy.when_choices or isinstance(rule.question, ChoiceQuestion),
+        "targeted enrichment choice triggers require a choice question",
+    )
+    allowed_choices = rule.question.criteria.keys() if isinstance(rule.question, ChoiceQuestion) else ()
+    require_subset(
+        policy.when_choices,
+        allowed_choices,
+        "targeted enrichment choices must be present in question.criteria",
+    )
+    require_subset(
+        policy.when_reasons,
+        rule.enrich_on,
+        "targeted enrichment reasons must also be present in enrich_on",
+    )
+
+
+def _ordered_at_least(warning: ReportThreshold, error: ReportThreshold, field: str) -> None:
+    lower, upper = getattr(warning, field), getattr(error, field)
+    require(
+        lower is None or (upper is not None and lower <= upper),
+        f"error {field} must be at least as strict as warning {field}",
+    )
 
 
 def _validate_level_order(levels: ReportLevels) -> None:
     warning, error = levels.warning, levels.error
-    if warning.score_levels is not None or error.score_levels is not None:
-        if warning.score_levels is None or error.score_levels is None:
-            raise ValueError("score warning and error levels must use the same threshold mode")
+    mass_mode = warning.score_levels is not None or error.score_levels is not None
+    if mass_mode:
+        require(
+            warning.score_levels is not None and error.score_levels is not None,
+            "score warning and error levels must use the same threshold mode",
+        )
         for field in ("min_probability", "min_confidence"):
-            lower, upper = getattr(warning, field), getattr(error, field)
-            if lower is not None and (upper is None or lower > upper):
-                raise ValueError(f"error {field} must be at least as strict as warning {field}")
+            _ordered_at_least(warning, error, field)
         return
-    if (warning.min_score is None) != (error.min_score is None):
-        raise ValueError("score levels must use the same threshold direction")
+
+    require(
+        (warning.min_score is None) == (error.min_score is None),
+        "score levels must use the same threshold direction",
+    )
     for field in ("min_probability", "min_confidence", "min_score"):
-        lower, upper = getattr(warning, field), getattr(error, field)
-        if lower is not None and (upper is None or lower > upper):
-            raise ValueError(f"error {field} must be at least as strict as warning {field}")
-    if warning.max_score is not None and (error.max_score is None or warning.max_score < error.max_score):
-        raise ValueError("error max_score must be at least as strict as warning max_score")
+        _ordered_at_least(warning, error, field)
+    require(
+        warning.max_score is None or (error.max_score is not None and warning.max_score >= error.max_score),
+        "error max_score must be at least as strict as warning max_score",
+    )
+
+
+_QUESTION_VALIDATORS = {
+    ScoreQuestion: _validate_score,
+    ChoiceQuestion: _validate_choice,
+    NoulQuestion: _validate_noul,
+}
