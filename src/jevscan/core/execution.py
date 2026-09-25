@@ -220,25 +220,40 @@ class FileExecutor:
             assert len(self.planner.request(evidence, (check,), request.registry).body) < previous_bytes
         return evidence
 
+    async def _recover_check(
+        self,
+        attempt: Attempt,
+        check: Check,
+        reason: str,
+    ) -> tuple[Evidence | None, Attempt | None]:
+        trace = self.results.recovery(check)
+        trace.setdefault("trigger", reason)
+        evidence = await self._compact_check(attempt, check, trace)
+        if evidence is not None:
+            return evidence, None
+        return None, self._final_attempt(attempt, check)
+
     async def _recover(self, attempt: Attempt, reason: str) -> list[Attempt]:
         if attempt.final:
             self._omit_final(attempt, reason)
             return []
+
         groups: dict[str, tuple[Evidence, list[Check]]] = {}
-        final_attempts = []
+        final_attempts: list[Attempt] = []
         for check in attempt.request.checks:
-            trace = self.results.recovery(check)
-            trace.setdefault("trigger", reason)
-            evidence = await self._compact_check(attempt, check, trace)
-            if evidence is None:
-                final_attempts.append(self._final_attempt(attempt, check))
-            else:
-                groups.setdefault(evidence.key, (evidence, []))[1].append(check)
-        return [
-            item
+            evidence, final_attempt = await self._recover_check(attempt, check, reason)
+            if final_attempt is not None:
+                final_attempts.append(final_attempt)
+                continue
+            assert evidence is not None
+            groups.setdefault(evidence.key, (evidence, []))[1].append(check)
+
+        compacted = [
+            packed
             for evidence, checks in groups.values()
-            for item in self._pack(evidence, checks, attempt.round + 1, attempt.request.registry)
-        ] + final_attempts
+            for packed in self._pack(evidence, checks, attempt.round + 1, attempt.request.registry)
+        ]
+        return compacted + final_attempts
 
     async def _preflight(self, attempt: Attempt) -> list[Attempt] | None:
         request = attempt.request
