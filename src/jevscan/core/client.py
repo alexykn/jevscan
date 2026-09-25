@@ -1,7 +1,7 @@
 """Async Jev transport; all attempts, including size-recovery requests, share pacing.
 
-A shared limiter owns pacing for every attempt, including retries. The client never logs
-API keys or request/response bodies. Source text leaves the machine only in live mode.
+The client owns transport admission, paid-attempt accounting, and retry policy.
+It never logs API keys or request/response bodies.
 """
 
 import asyncio
@@ -199,7 +199,8 @@ class JevClient:
             },
         )
 
-    def _reserve_budget(self, body: bytes) -> int:
+    def _reserve_attempt(self, body: bytes) -> int:
+        """Admit and count one paid attempt, committing all budget counters together."""
         estimated = math.ceil(len(body) / self.bytes_per_token) + self.token_reserve
         next_requests = self.requests + 1
         next_tokens = self.estimated_input_tokens + estimated
@@ -214,9 +215,59 @@ class JevClient:
             raise BudgetExhaustedError(
                 f"estimated cost budget would be exceeded ({next_cost:.4f} > {self.budget.max_cost:.4f})"
             )
+        # No await separates validation and commit; all callers share this event loop.
+        self.requests = next_requests
         self.estimated_input_tokens = next_tokens
         self.estimated_cost = next_cost
         return estimated
+
+    async def _post(self, body: bytes, reservation: ReservationUsage | None) -> httpx.Response:
+        async with self.semaphore:
+            # Pace actual transport starts, not tasks waiting for a connection slot.
+            await self.limiter.acquire()
+            reserved = self._reserve_attempt(body)
+            if reservation is not None:
+                reservation.input_tokens += reserved
+            try:
+                return await self.http.post("/v1/systemone", content=body)
+            finally:
+                self.completed_requests += 1
+
+    def _raise_rejection(self, response: httpx.Response) -> None:
+        rejection = _context_rejection(response)
+        if rejection is not None:
+            raise rejection
+        request_rejection = _request_rejection(response)
+        if request_rejection is None:
+            return
+        signature = request_rejection.signature
+        count = self.request_rejection_counts.get(signature, 0) + 1
+        self.request_rejection_counts[signature] = count
+        if count >= 3:
+            raise JevError(
+                f"Jev rejected {count} equivalent requests (HTTP {response.status_code}); "
+                "stopping because the failure appears systemic"
+            )
+        raise request_rejection
+
+    async def _retry_transport(self, error: httpx.RequestError, attempt: int) -> None:
+        if attempt == self.config.retries:
+            raise JevError(f"Jev connection failed after {attempt + 1} attempts ({type(error).__name__})") from error
+        await asyncio.sleep(self._backoff(attempt))
+
+    async def _retry_response(self, response: httpx.Response, attempt: int) -> None:
+        retryable = response.status_code in {408, 429} or response.status_code >= 500
+        if not retryable or attempt == self.config.retries:
+            request_id = _safe_request_id(response) or "unavailable"
+            raise JevError(f"Jev HTTP {response.status_code}; request ID: {request_id}")
+        server_delay = _retry_after(response.headers)
+        delay = server_delay if server_delay is not None else self._backoff(attempt)
+        if delay > self.config.max_retry_delay:
+            raise JevError("Jev requested a retry delay above jev.max_retry_delay; stopping rather than retrying early")
+        if response.status_code == 429:
+            self.limiter.defer(delay)
+        else:
+            await asyncio.sleep(delay)
 
     async def evaluate(
         self,
@@ -229,54 +280,14 @@ class JevClient:
             if attempt:
                 self.retry_attempts += 1
             try:
-                async with self.semaphore:
-                    # Pace actual transport starts, not tasks waiting for a connection slot.
-                    await self.limiter.acquire()
-                    reserved = self._reserve_budget(body)
-                    if reservation is not None:
-                        reservation.input_tokens += reserved
-                    self.requests += 1
-                    try:
-                        response = await self.http.post("/v1/systemone", content=body)
-                    finally:
-                        self.completed_requests += 1
+                response = await self._post(body, reservation)
             except httpx.RequestError as exc:
-                if attempt == self.config.retries:
-                    raise JevError(
-                        f"Jev connection failed after {attempt + 1} attempts ({type(exc).__name__})"
-                    ) from exc
-                await asyncio.sleep(self._backoff(attempt))
+                await self._retry_transport(exc, attempt)
                 continue
             if response.is_success:
                 return validate_response(response.content, questions)
-            rejection = _context_rejection(response)
-            if rejection is not None:
-                raise rejection
-            request_rejection = _request_rejection(response)
-            if request_rejection is not None:
-                signature = request_rejection.signature
-                count = self.request_rejection_counts.get(signature, 0) + 1
-                self.request_rejection_counts[signature] = count
-                if count >= 3:
-                    raise JevError(
-                        f"Jev rejected {count} equivalent requests (HTTP {response.status_code}); "
-                        "stopping because the failure appears systemic"
-                    )
-                raise request_rejection
-            retryable = response.status_code in {408, 429} or response.status_code >= 500
-            if not retryable or attempt == self.config.retries:
-                request_id = _safe_request_id(response) or "unavailable"
-                raise JevError(f"Jev HTTP {response.status_code}; request ID: {request_id}")
-            server_delay = _retry_after(response.headers)
-            delay = server_delay if server_delay is not None else self._backoff(attempt)
-            if delay > self.config.max_retry_delay:
-                raise JevError(
-                    "Jev requested a retry delay above jev.max_retry_delay; stopping rather than retrying early"
-                )
-            if response.status_code == 429:
-                self.limiter.defer(delay)
-            else:
-                await asyncio.sleep(delay)
+            self._raise_rejection(response)
+            await self._retry_response(response, attempt)
         raise AssertionError("retry loop must return or raise")
 
     def _backoff(self, attempt: int) -> float:

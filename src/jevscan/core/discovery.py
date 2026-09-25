@@ -2,7 +2,7 @@
 
 import os
 from collections.abc import Generator, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -61,6 +61,11 @@ def _initial_scopes(directory: Path, root: Path, respect: bool) -> tuple[IgnoreS
     return tuple(scope for item in reversed(chain) if (scope := _read_ignore(item)) is not None)
 
 
+def _local_scopes(directory: Path, inherited: tuple[IgnoreScope, ...], respect: bool) -> tuple[IgnoreScope, ...]:
+    local = _read_ignore(directory) if respect else None
+    return (*inherited, local) if local is not None else inherited
+
+
 def normalize_targets(targets: list[Path]) -> list[Path]:
     """Remove overlapping explicit targets, so the same file is never billed twice."""
     # resolve() would follow symlinks before discover() can enforce the no-symlink policy.
@@ -88,8 +93,75 @@ def discover(targets: list[Path], root: Path, config: ScanConfig) -> Generator[F
         except (OSError, UnicodeError) as exc:
             yield Diagnostic(str(directory), "gitignore-read-error", str(exc), Severity.ERROR)
             continue
-        # Iterators, not lists of every directory entry, keep wide trees bounded too.
         yield from _walk_target(target, root, scopes, config, include, exclude)
+
+
+@dataclass(slots=True)
+class _DirectoryWalk:
+    """Own the depth-first iterator stack and its inherited ignore scopes.
+
+    Opening a child changes the next frame visited. No sibling directory lists
+    are retained, and closing the walk releases every live directory descriptor.
+    """
+
+    root: Path
+    config: ScanConfig
+    include: GitIgnoreSpec
+    exclude: GitIgnoreSpec
+    frames: list[tuple[Path, tuple[IgnoreScope, ...], DirectoryEntries]] = field(default_factory=list)
+
+    def enter(self, directory: Path, inherited: tuple[IgnoreScope, ...]) -> None:
+        actual = _local_scopes(directory, inherited, self.config.respect_gitignore)
+        self.frames.append((directory, actual, os.scandir(directory)))
+
+    def leave(self) -> None:
+        _, _, entries = self.frames.pop()
+        entries.close()
+
+    def close(self) -> None:
+        while self.frames:
+            self.leave()
+
+    def entries(self) -> Iterator[tuple[os.DirEntry[str], tuple[IgnoreScope, ...]] | Diagnostic]:
+        while self.frames:
+            directory, scopes, entries = self.frames[-1]
+            try:
+                entry = next(entries)
+            except StopIteration:
+                self.leave()
+                continue
+            except OSError as exc:
+                self.leave()
+                yield Diagnostic(_display(directory, self.root), "discovery-error", str(exc), Severity.ERROR)
+                continue
+            yield entry, scopes
+
+    def visit(self, entry: os.DirEntry[str], scopes: tuple[IgnoreScope, ...]) -> Iterator[FileJob | Diagnostic]:
+        try:
+            if entry.is_symlink():
+                return
+            path = Path(entry.path)
+            if entry.is_dir(follow_symlinks=False):
+                relative = _display(path, self.root)
+                if not self.exclude.match_file(relative + "/") and not _ignored(path, True, scopes):
+                    self.enter(path, scopes)
+            elif entry.is_file(follow_symlinks=False):
+                yield from _file(path, self.root, scopes, self.include, self.exclude)
+        except (OSError, UnicodeError) as exc:
+            yield Diagnostic(entry.path, "discovery-error", str(exc), Severity.ERROR)
+
+    def walk(self, target: Path, scopes: tuple[IgnoreScope, ...]) -> Iterator[FileJob | Diagnostic]:
+        try:
+            self.enter(target, scopes)
+            for item in self.entries():
+                if isinstance(item, Diagnostic):
+                    yield item
+                else:
+                    yield from self.visit(*item)
+        except (OSError, UnicodeError) as exc:
+            yield Diagnostic(_display(target, self.root), "discovery-error", str(exc), Severity.ERROR)
+        finally:
+            self.close()
 
 
 def _walk_target(
@@ -101,55 +173,13 @@ def _walk_target(
     exclude: GitIgnoreSpec,
 ) -> Iterator[FileJob | Diagnostic]:
     if target.is_file():
-        # Explicit files still obey filters; print why rather than silently report a clean scan.
-        local = _read_ignore(target.parent) if config.respect_gitignore else None
-        actual = (*scopes, local) if local is not None else scopes
+        # Explicit files still obey filters and explain exclusions.
+        actual = _local_scopes(target.parent, scopes, config.respect_gitignore)
         yield from _file(target, root, actual, include, exclude, explicit=True)
-        return
-    if not target.is_dir():
+    elif target.is_dir():
+        yield from _DirectoryWalk(root, config, include, exclude).walk(target, scopes)
+    else:
         yield Diagnostic(str(target), "unsupported-target", "target is not a regular file or directory", Severity.ERROR)
-        return
-    # Keep one open directory iterator per depth, not a list of every sibling directory.
-    # Closing the generator releases all descriptors, including on scan cancellation.
-    frames: list[tuple[Path, tuple[IgnoreScope, ...], DirectoryEntries]] = []
-
-    def enter(directory: Path, inherited: tuple[IgnoreScope, ...]) -> None:
-        local = _read_ignore(directory) if config.respect_gitignore else None
-        actual = (*inherited, local) if local is not None else inherited
-        frames.append((directory, actual, os.scandir(directory)))
-
-    try:
-        enter(target, scopes)
-        while frames:
-            directory, actual, entries = frames[-1]
-            try:
-                entry = next(entries)
-            except StopIteration:
-                entries.close()
-                frames.pop()
-                continue
-            except OSError as exc:
-                yield Diagnostic(_display(directory, root), "discovery-error", str(exc), Severity.ERROR)
-                entries.close()
-                frames.pop()
-                continue
-            try:
-                if entry.is_symlink():
-                    continue
-                path = Path(entry.path)
-                if entry.is_dir(follow_symlinks=False):
-                    relative = _display(path, root)
-                    if not exclude.match_file(relative + "/") and not _ignored(path, True, actual):
-                        enter(path, actual)
-                elif entry.is_file(follow_symlinks=False):
-                    yield from _file(path, root, actual, include, exclude)
-            except (OSError, UnicodeError) as exc:
-                yield Diagnostic(entry.path, "discovery-error", str(exc), Severity.ERROR)
-    except (OSError, UnicodeError) as exc:
-        yield Diagnostic(_display(target, root), "discovery-error", str(exc), Severity.ERROR)
-    finally:
-        for _, _, entries in frames:
-            entries.close()
 
 
 def _file(

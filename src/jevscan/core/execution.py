@@ -30,6 +30,22 @@ class Attempt:
     final: bool = False
 
 
+async def _wait_for_requests(joined: asyncio.Task[None], tasks: list[asyncio.Task[None]]) -> None:
+    """Queue completion wins only when no worker failed at the same boundary."""
+    done, _ = await asyncio.wait([joined, *tasks], return_when=asyncio.FIRST_COMPLETED)
+    if joined in done:
+        await joined
+        for task in tasks:
+            if task.done() and not task.cancelled() and (error := task.exception()) is not None:
+                raise error
+        return
+    failed = next(task for task in done if task is not joined)
+    error = failed.exception()
+    if error is None:
+        raise RuntimeError("request worker stopped before its queue was drained")
+    raise error
+
+
 class FileExecutor:
     def __init__(self, planner: Planner, inference: Inference, results: FileResults) -> None:
         self.planner, self.inference, self.results = planner, inference, results
@@ -115,7 +131,6 @@ class FileExecutor:
             self.results.reject(request, exc)
             self.inference.summary.request_rejections += 1
             return "request_rejected"
-
         self._mark_accepted(attempt, request)
         response = prediction.response
         await self.inference.store_judgments(
@@ -158,7 +173,7 @@ class FileExecutor:
     def _pack(
         self, evidence: Evidence, checks: list[Check], round_number: int, registry: PromptRegistry
     ) -> list[Attempt]:
-        """Preserve shared-state batching when multiple rules choose identical compacted evidence."""
+        """Preserve shared-state batching when rules choose identical compacted evidence."""
         attempts = []
         pending: tuple[Check, ...] = ()
         for check in checks:
@@ -170,47 +185,59 @@ class FileExecutor:
             attempts.append(Attempt(self.planner.request(evidence, pending, registry), round_number))
         return attempts
 
-    async def _recover(self, attempt: Attempt, reason: str) -> list[Attempt]:
-        request = attempt.request
-        groups: dict[str, tuple[Evidence, list[Check]]] = {}
-        final_attempts = []
-        for check in request.checks:
+    def _omit_final(self, attempt: Attempt, reason: str) -> None:
+        for check in attempt.request.checks:
             trace = self.results.recovery(check)
             trace.setdefault("trigger", reason)
-            if attempt.final:
-                trace["outcome"] = "omitted"
-                self.results.omit(
-                    Omission(check, f"{reason}: complete target/context cannot be evaluated within bounded recovery")
-                )
-                continue
-            previous_bytes = len(self.planner.request(request.evidence, (check,), request.registry).body)
-            trace.setdefault("initial_request_bytes", previous_bytes)
-            trace.setdefault(
-                "initial_token_estimates",
-                self.planner.estimate(request.evidence, (check,), request.registry)[:2],
+            trace["outcome"] = "omitted"
+            self.results.omit(
+                Omission(check, f"{reason}: complete target/context cannot be evaluated within bounded recovery")
             )
-            evidence = None
-            if attempt.round < self.planner.compaction.max_rounds:
-                if self.compactor is None:
-                    self.compactor = Compactor(self.planner, self.inference)
-                evidence = await self.compactor.compact(check, previous_bytes, attempt.round, trace, request.registry)
-            if evidence is None:
-                target = check.target
-                bare = (
-                    request.evidence
-                    if self.planner.limits.oversized_context == "skip"
-                    else self.planner.context.envelope(target.start_byte, target.end_byte)
-                )
-                final_attempts.append(
-                    Attempt(self.planner.request(bare, (check,), request.registry), attempt.round, final=True)
-                )
-                continue
+
+    def _final_attempt(self, attempt: Attempt, check: Check) -> Attempt:
+        request = attempt.request
+        target = check.target
+        bare = (
+            request.evidence
+            if self.planner.limits.oversized_context == "skip"
+            else self.planner.context.envelope(target.start_byte, target.end_byte)
+        )
+        return Attempt(self.planner.request(bare, (check,), request.registry), attempt.round, final=True)
+
+    async def _compact_check(self, attempt: Attempt, check: Check, trace: dict[str, Any]) -> Evidence | None:
+        request = attempt.request
+        previous_bytes = len(self.planner.request(request.evidence, (check,), request.registry).body)
+        trace.setdefault("initial_request_bytes", previous_bytes)
+        trace.setdefault(
+            "initial_token_estimates", self.planner.estimate(request.evidence, (check,), request.registry)[:2]
+        )
+        if attempt.round >= self.planner.compaction.max_rounds:
+            return None
+        if self.compactor is None:
+            self.compactor = Compactor(self.planner, self.inference)
+        evidence = await self.compactor.compact(check, previous_bytes, attempt.round, trace, request.registry)
+        if evidence is not None:
             assert len(self.planner.request(evidence, (check,), request.registry).body) < previous_bytes
-            groups.setdefault(evidence.key, (evidence, []))[1].append(check)
+        return evidence
+
+    async def _recover(self, attempt: Attempt, reason: str) -> list[Attempt]:
+        if attempt.final:
+            self._omit_final(attempt, reason)
+            return []
+        groups: dict[str, tuple[Evidence, list[Check]]] = {}
+        final_attempts = []
+        for check in attempt.request.checks:
+            trace = self.results.recovery(check)
+            trace.setdefault("trigger", reason)
+            evidence = await self._compact_check(attempt, check, trace)
+            if evidence is None:
+                final_attempts.append(self._final_attempt(attempt, check))
+            else:
+                groups.setdefault(evidence.key, (evidence, []))[1].append(check)
         return [
             item
             for evidence, checks in groups.values()
-            for item in self._pack(evidence, checks, attempt.round + 1, request.registry)
+            for item in self._pack(evidence, checks, attempt.round + 1, attempt.request.registry)
         ] + final_attempts
 
     async def _preflight(self, attempt: Attempt) -> list[Attempt] | None:
@@ -227,7 +254,6 @@ class FileExecutor:
             for check in request.checks:
                 self.results.recovery(check)["known_rejection"] = known[1]
             return await self._recover(attempt, "related_request_rejection")
-
         violations = self.planner.violations(request.evidence, request.checks, request.registry)
         if not violations:
             return None
@@ -236,30 +262,27 @@ class FileExecutor:
         reason = "model_context_preflight" if "context" in violations else "request_limit_preflight"
         return await self._recover(attempt, reason)
 
-    async def _process(self, queue: asyncio.Queue[Attempt], attempt: Attempt) -> None:
+    async def _process(self, attempt: Attempt) -> list[Attempt]:
+        """Resolve an attempt into follow-up work; the worker owns queue mutation."""
         request = await self._without_cached_judgments(attempt.request)
         if request is None:
-            return
+            return []
         attempt = Attempt(request, attempt.round, attempt.final)
         recovery = await self._preflight(attempt)
         if recovery is not None:
-            for item in recovery:
-                queue.put_nowait(item)
-            return
+            return recovery
         if await self._send(attempt) != "size_rejected":
-            return
-        request = attempt.request
-        recovered = (
-            self._split(attempt) if len(request.checks) > 1 else await self._recover(attempt, "provider_context_limit")
-        )
-        for item in recovered:
-            queue.put_nowait(item)
+            return []
+        if len(request.checks) > 1:
+            return self._split(attempt)
+        return await self._recover(attempt, "provider_context_limit")
 
     async def _worker(self, queue: asyncio.Queue[Attempt]) -> None:
         while True:
             attempt = await queue.get()
             try:
-                await self._process(queue, attempt)
+                for pending in await self._process(attempt):
+                    queue.put_nowait(pending)
             finally:
                 queue.task_done()
 
@@ -270,25 +293,12 @@ class FileExecutor:
         queue: asyncio.Queue[Attempt] = asyncio.Queue()
         for attempt in initial:
             queue.put_nowait(attempt)
-
-        # Recovery can fan one oversized request back into many independent requests,
-        # so worker capacity must not be capped by the number of initial batches.
+        # Recovery can fan out beyond the initial batches; keep full worker capacity.
         count = self.inference.client.config.concurrency
         tasks = [asyncio.create_task(self._worker(queue)) for _ in range(count)]
         joined = asyncio.create_task(queue.join())
         try:
-            done, _ = await asyncio.wait([joined, *tasks], return_when=asyncio.FIRST_COMPLETED)
-            if joined in done:
-                await joined
-                for task in tasks:
-                    if task.done() and not task.cancelled() and (error := task.exception()) is not None:
-                        raise error
-                return
-            failed = next(task for task in done if task is not joined)
-            error = failed.exception()
-            if error is None:
-                raise RuntimeError("request worker stopped before its queue was drained")
-            raise error
+            await _wait_for_requests(joined, tasks)
         finally:
             joined.cancel()
             for task in tasks:
