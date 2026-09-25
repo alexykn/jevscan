@@ -265,8 +265,7 @@ class FileExecutor:
             return False
         minimum_question_bytes = known[0]
         return all(
-            len(attempt.request.question_wires[check.id]) >= minimum_question_bytes
-            for check in attempt.request.checks
+            len(attempt.request.question_wires[check.id]) >= minimum_question_bytes for check in attempt.request.checks
         )
 
     def _record_known_rejection(
