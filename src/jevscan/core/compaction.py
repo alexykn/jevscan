@@ -262,11 +262,7 @@ class Compactor:
     def _fallback_ranking(candidates: list[Candidate], trace: dict[str, Any]) -> list[tuple[float, Candidate]]:
         by_id = {candidate.id: candidate for candidate in candidates}
         return sorted(
-            (
-                (item["relevance"], by_id[item["id"]])
-                for item in trace["candidates"]
-                if item["id"] in by_id
-            ),
+            ((item["relevance"], by_id[item["id"]]) for item in trace["candidates"] if item["id"] in by_id),
             key=lambda pair: -pair[0],
         )
 
