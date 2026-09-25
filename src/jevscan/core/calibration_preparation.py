@@ -208,6 +208,7 @@ def _validate_group_split(
     if overlap:
         raise ValueError(f"development and heldout support groups overlap for {rule_id!r}: {', '.join(overlap)}")
 
+
 def _baseline_rule(
     authoritative: Rule | None,
     eligible: list[CalibrationCase],
@@ -383,6 +384,7 @@ def prepare_rule(
         material.development_mismatches,
         material.compatibility,
     )
+
 
 def _fit_rule_development(
     cases: list[CalibrationCase],
