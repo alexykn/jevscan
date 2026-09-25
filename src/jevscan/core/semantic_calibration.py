@@ -253,6 +253,7 @@ def _mark_non_comparable(
         marked = _mark_case_group(marked, case_id, conflicts)
     return marked, tuple(notices)
 
+
 def _count(records: Iterable[ReplayRecord], predicate: Callable[[ReplayRecord], bool]) -> int:
     return sum(predicate(record) for record in records)
 
@@ -417,6 +418,7 @@ def _make_report(rule_id: str, split: str, records: list[ReplayRecord]) -> RuleS
         tentative_severity_counts=tentative_counts,
         non_comparable=len(records) - len(usable),
     )
+
 
 def replay_cases(
     cases: Iterable[CalibrationCase],
