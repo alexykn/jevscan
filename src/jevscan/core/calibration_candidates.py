@@ -259,7 +259,7 @@ def candidate_policies(
     """
 
     material = sorted(cases, key=lambda case: (case.case_id, case.split))
-    policies, _, _ = _candidate_policies_with_metadata(
+    policies, _, _ = candidate_policies_with_metadata(
         rule,
         material,
         max_candidates=max_candidates,
@@ -274,7 +274,7 @@ def _limited_stream(stream: Iterator[ReportPolicy], limit: int) -> Iterator[Repo
         yield policy
 
 
-def _candidate_policies_with_metadata(
+def candidate_policies_with_metadata(
     rule: Rule,
     material: list[CalibrationCase],
     *,
