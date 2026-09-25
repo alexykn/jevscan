@@ -19,8 +19,18 @@ def _set_if(document: dict[str, Any], section: str, key: str, value: Any) -> Non
         document[section][key] = value
 
 
-def apply_overrides(loaded: LoadedConfig, args: Any) -> LoadedConfig:
-    document = loaded.config.model_dump(mode="json")
+_OVERRIDES = (
+    ("scan", "jobs", "jobs"),
+    ("scan", "max_full_file_lines", "max_full_file_lines"),
+    ("budget", "max_requests", "max_requests"),
+    ("budget", "max_input_tokens", "max_input_tokens"),
+    ("budget", "max_cost", "max_cost"),
+    ("jev", "concurrency", "concurrency"),
+    ("jev", "requests_per_minute", "rpm"),
+)
+
+
+def _enrichment_overrides(document: dict[str, Any], args: Any) -> None:
     if args.no_enrichment:
         document["enrichment"].update({"enabled": False, "mode": "off"})
     if args.enrichment_mode is not None:
@@ -29,20 +39,26 @@ def apply_overrides(loaded: LoadedConfig, args: Any) -> LoadedConfig:
             "enabled": args.enrichment_mode != "off",
         })
 
-    _set_if(document, "scan", "jobs", args.jobs)
-    _set_if(document, "scan", "max_full_file_lines", args.max_full_file_lines)
-    _set_if(document, "budget", "max_requests", args.max_requests)
-    _set_if(document, "budget", "max_input_tokens", args.max_input_tokens)
-    _set_if(document, "budget", "max_cost", args.max_cost)
-    _set_if(document, "jev", "concurrency", args.concurrency)
-    _set_if(document, "jev", "requests_per_minute", args.rpm)
-    model = args.model or os.environ.get("TYPESAFE_DEFAULT_MODEL", "").strip() or None
-    _set_if(document, "jev", "model", model)
 
+def _lint_overrides(document: dict[str, Any], args: Any) -> None:
     if args.rule:
         document["lint"]["select"] = args.rule
     if args.ignore:
         document["lint"]["ignore"] = [*document["lint"]["ignore"], *args.ignore]
+
+
+def _value_overrides(document: dict[str, Any], args: Any) -> None:
+    for section, key, attribute in _OVERRIDES:
+        _set_if(document, section, key, getattr(args, attribute))
+    model = args.model or os.environ.get("TYPESAFE_DEFAULT_MODEL", "").strip() or None
+    _set_if(document, "jev", "model", model)
+
+
+def apply_overrides(loaded: LoadedConfig, args: Any) -> LoadedConfig:
+    document = loaded.config.model_dump(mode="json")
+    _enrichment_overrides(document, args)
+    _value_overrides(document, args)
+    _lint_overrides(document, args)
     try:
         config = Config.model_validate(document)
     except ValidationError as exc:
@@ -79,6 +95,34 @@ def validate_report_output(output: Path | None, paths: list[Path], config_source
         raise ConfigError("output path overlaps source being scanned; choose a .json, .jsonl, or .txt report path")
 
 
+def _calibration_collisions(
+    capture: Path,
+    sidecar: Path,
+    report: Path | None,
+    paths: list[Path],
+    config_source: str,
+) -> tuple[tuple[bool, str], ...]:
+    aliases = {capture, sidecar}
+    return (
+        (
+            report is not None and report.resolve() in aliases,
+            "--calibration-output collides with the normal report output or its sidecar",
+        ),
+        (
+            config_source != "packaged default" and Path(config_source).resolve() in aliases,
+            "--calibration-output collides with the active configuration",
+        ),
+        (
+            any(any(_source_overlap(alias, target) for alias in aliases) for target in paths),
+            "--calibration-output collides with a scanned source",
+        ),
+        (
+            capture.exists() or sidecar.exists(),
+            "--calibration-output or its metadata sidecar already exists; choose a new path",
+        ),
+    )
+
+
 def validate_calibration_output(
     output: Path | None,
     report: Path | None,
@@ -89,32 +133,27 @@ def validate_calibration_output(
         return
     capture = output.resolve()
     sidecar = output.with_suffix(".meta.json").resolve()
-    aliases = {capture, sidecar}
-
-    report_collision = report is not None and report.resolve() in aliases
-    config_collision = config_source != "packaged default" and Path(config_source).resolve() in aliases
-    source_collision = any(any(_source_overlap(alias, target) for alias in aliases) for target in paths)
-    existing = capture.exists() or sidecar.exists()
-
-    if report_collision:
-        raise ConfigError("--calibration-output collides with the normal report output or its sidecar")
-    if config_collision:
-        raise ConfigError("--calibration-output collides with the active configuration")
-    if source_collision:
-        raise ConfigError("--calibration-output collides with a scanned source")
-    if existing:
-        raise ConfigError("--calibration-output or its metadata sidecar already exists; choose a new path")
+    for collision, message in _calibration_collisions(capture, sidecar, report, paths, config_source):
+        if collision:
+            raise ConfigError(message)
 
 
 def validate_scan_options(config: Config, args: Any) -> None:
-    if args.max_display < 0:
-        raise ConfigError("--max-display must be nonnegative")
-    if args.plan and args.offline:
-        raise ConfigError("--plan and --offline are separate modes; choose one")
-    if not args.offline and not config.selected_rules():
-        raise ConfigError("there are no enabled rules; use --offline for an inventory or enable a rule")
-    if args.calibration_output is not None and (args.offline or args.plan):
-        raise ConfigError("--calibration-output requires a live scan")
+    invalid = (
+        (args.max_display < 0, "--max-display must be nonnegative"),
+        (args.plan and args.offline, "--plan and --offline are separate modes; choose one"),
+        (
+            not args.offline and not config.selected_rules(),
+            "there are no enabled rules; use --offline for an inventory or enable a rule",
+        ),
+        (
+            args.calibration_output is not None and (args.offline or args.plan),
+            "--calibration-output requires a live scan",
+        ),
+    )
+    for failed, message in invalid:
+        if failed:
+            raise ConfigError(message)
 
 
 def _run_git(git: str, root: Path, *args: str) -> list[str]:
