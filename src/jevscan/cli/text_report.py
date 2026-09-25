@@ -171,13 +171,9 @@ class TextReport:
         if not rows or not self._admit():
             return
         self._target_header(event["target"], event["cached"])
-        findings = {
-            finding["rule"]: finding
-            for finding in [*event["findings"], *event["tentative_findings"]]
-        }
+        findings = {finding["rule"]: finding for finding in [*event["findings"], *event["tentative_findings"]]}
         labels = {
-            name: " ".join(part for part in (name, event["rule_metadata"][name]["title"]) if part)
-            for name, _ in rows
+            name: " ".join(part for part in (name, event["rule_metadata"][name]["title"]) if part) for name, _ in rows
         }
         width = max(map(len, labels.values()))
         for name, answer in rows:
