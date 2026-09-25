@@ -25,9 +25,11 @@ from jevscan.core.calibration_compatibility import (
 from jevscan.core.calibration_preparation import (
     PreparedRule,
     fit_development_cases,
-    heldout_metrics as evaluate_heldout_metrics,
     not_searched_selection,
     prepare_rule,
+)
+from jevscan.core.calibration_preparation import (
+    heldout_metrics as evaluate_heldout_metrics,
 )
 from jevscan.core.calibration_scoring import (
     CandidateMetrics,
