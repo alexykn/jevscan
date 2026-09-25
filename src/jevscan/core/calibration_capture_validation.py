@@ -11,7 +11,7 @@ from jevscan.core.enrichment import EVIDENCE_FAMILIES, routing_decision, routing
 from jevscan.core.protocol import Answer, Check, validate_answer
 
 if TYPE_CHECKING:
-    from jevscan.core.semantic_calibration import FinalCaptureMaterial
+    from jevscan.core.calibration_cases import FinalCaptureMaterial
 
 _ANSWER_ADAPTER = TypeAdapter(Answer)
 
