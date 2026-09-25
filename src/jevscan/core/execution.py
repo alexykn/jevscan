@@ -225,13 +225,11 @@ class FileExecutor:
         attempt: Attempt,
         check: Check,
         reason: str,
-    ) -> tuple[Evidence | None, Attempt | None]:
+    ) -> Evidence | Attempt:
         trace = self.results.recovery(check)
         trace.setdefault("trigger", reason)
         evidence = await self._compact_check(attempt, check, trace)
-        if evidence is not None:
-            return evidence, None
-        return None, self._final_attempt(attempt, check)
+        return evidence if evidence is not None else self._final_attempt(attempt, check)
 
     async def _recover(self, attempt: Attempt, reason: str) -> list[Attempt]:
         if attempt.final:
@@ -241,12 +239,11 @@ class FileExecutor:
         groups: dict[str, tuple[Evidence, list[Check]]] = {}
         final_attempts: list[Attempt] = []
         for check in attempt.request.checks:
-            evidence, final_attempt = await self._recover_check(attempt, check, reason)
-            if final_attempt is not None:
-                final_attempts.append(final_attempt)
+            recovered = await self._recover_check(attempt, check, reason)
+            if isinstance(recovered, Attempt):
+                final_attempts.append(recovered)
                 continue
-            assert evidence is not None
-            groups.setdefault(evidence.key, (evidence, []))[1].append(check)
+            groups.setdefault(recovered.key, (recovered, []))[1].append(check)
 
         compacted = [
             packed
