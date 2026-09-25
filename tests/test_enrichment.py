@@ -15,7 +15,7 @@ from jevscan.core.capture import FinalJudgmentRecorder
 from jevscan.core.client import JevClient
 from jevscan.core.config import Config, EnrichmentConfig, EvaluationConfig, JevConfig, load_config
 from jevscan.core.context import ContextBuilder
-from jevscan.core.enrichment import DISPOSITIONS, EVIDENCE_FAMILIES
+from jevscan.core.enrichment_routing import DISPOSITIONS, EVIDENCE_FAMILIES
 from jevscan.core.evaluation import evaluate_file
 from jevscan.core.models import FileJob, Kind, Summary, Target
 from jevscan.core.parser import parse_source
