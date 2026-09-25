@@ -55,34 +55,67 @@ __all__ = [
 ]
 
 
+def _baseline_reason(
+    prepared: PreparedRule,
+    baseline_metrics: CandidateMetrics,
+    objective: SelectionObjective,
+) -> str | None:
+    if prepared.development_mismatches:
+        return "question_mismatch"
+    if not prepared.development:
+        return "no_development_cases"
+    support = baseline_metrics.support
+    sufficient = (
+        support["positive_groups"] >= objective.min_positive_support
+        and support["negative_groups"] >= objective.min_negative_support
+    )
+    return None if sufficient else "insufficient_labeled_support"
+
+
+def _eligible_candidates(
+    metrics: list[CandidateMetrics],
+    requires_signal: bool,
+    objective: SelectionObjective,
+) -> list[CandidateMetrics]:
+    return [
+        candidate
+        for candidate in metrics
+        if candidate_is_eligible(
+            candidate,
+            require_positive_signal=requires_signal,
+            objective=objective,
+        )
+    ]
+
+
+def _selection_blocker(
+    metrics: list[CandidateMetrics],
+    eligible: list[CandidateMetrics],
+    requires_signal: bool,
+    objective: SelectionObjective,
+) -> str | None:
+    if requires_signal and not any(candidate.support["positive_signal"] > 0 for candidate in metrics):
+        return "no_positive_signal_candidate"
+    if objective.min_review_list_recall is not None and not eligible:
+        return "no_candidate_meets_review_list_recall"
+    return None
+
+
 def _choose_candidate(
     prepared: PreparedRule,
     metrics: list[CandidateMetrics],
     baseline_metrics: CandidateMetrics,
     objective: SelectionObjective,
 ) -> tuple[CandidateMetrics, str]:
-    if prepared.development_mismatches:
-        return baseline_metrics, "question_mismatch"
-    if not prepared.development:
-        return baseline_metrics, "no_development_cases"
-
-    sufficient = (
-        baseline_metrics.support["positive_groups"] >= objective.min_positive_support
-        and baseline_metrics.support["negative_groups"] >= objective.min_negative_support
-    )
-    if not sufficient:
-        return baseline_metrics, "insufficient_labeled_support"
+    baseline_reason = _baseline_reason(prepared, baseline_metrics, objective)
+    if baseline_reason is not None:
+        return baseline_metrics, baseline_reason
 
     requires_signal = baseline_metrics.label_counts["Agree"] > 0
-    eligible = [
-        candidate
-        for candidate in metrics
-        if candidate_is_eligible(candidate, require_positive_signal=requires_signal, objective=objective)
-    ]
-    if requires_signal and not any(candidate.support["positive_signal"] > 0 for candidate in metrics):
-        return baseline_metrics, "no_positive_signal_candidate"
-    if objective.min_review_list_recall is not None and not eligible:
-        return baseline_metrics, "no_candidate_meets_review_list_recall"
+    eligible = _eligible_candidates(metrics, requires_signal, objective)
+    blocker = _selection_blocker(metrics, eligible, requires_signal, objective)
+    if blocker is not None:
+        return baseline_metrics, blocker
     return (
         select_candidate(
             prepared.baseline,
@@ -92,7 +125,6 @@ def _choose_candidate(
         ),
         "selected",
     )
-
 
 def _evaluate_prepared_rule(prepared: PreparedRule, objective: SelectionObjective) -> RuleSelection:
     candidates, generated, truncated = candidate_policies_with_metadata(
