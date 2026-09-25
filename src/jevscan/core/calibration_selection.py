@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
-from jevscan.core.calibration_candidates import candidate_policies as candidate_policies
-from jevscan.core.calibration_candidates import candidate_policies_with_metadata, policy_hash
+from jevscan.core.calibration_candidates import candidate_policies, candidate_policies_with_metadata, policy_hash
 from jevscan.core.calibration_cases import CalibrationCase
 from jevscan.core.calibration_compatibility import (
     CompatibilityCheck,
@@ -36,9 +35,19 @@ from jevscan.core.calibration_scoring import (
 from jevscan.core.calibration_selection_models import (
     RuleSelection,
     SelectionAudit,
-    selected_policy_document as selected_policy_document,
+    selected_policy_document,
 )
 from jevscan.core.rules import ReportPolicy, Rule
+
+__all__ = [
+    "SelectionAudit",
+    "SelectionObjective",
+    "candidate_policies",
+    "policy_hash",
+    "select_policies",
+    "selected_policy_document",
+]
+
 
 
 def _choose_candidate(
