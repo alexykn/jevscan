@@ -374,11 +374,11 @@ def _preparation_material(
     _validate_group_split(rule_id, development, heldout, heldout_split)
     return _PreparationMaterial(
         eligible,
-        material.development,
-        material.heldout,
-        material.mismatches,
-        material.development_mismatches,
-        material.compatibility,
+        development,
+        heldout,
+        mismatches,
+        development_mismatches,
+        compatibility,
     )
 
 
