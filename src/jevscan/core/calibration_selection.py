@@ -49,7 +49,6 @@ __all__ = [
 ]
 
 
-
 def _choose_candidate(
     prepared: PreparedRule,
     metrics: list[CandidateMetrics],
