@@ -213,11 +213,7 @@ class _SearchBudget:
     @classmethod
     def for_dimensions(cls, dimensions: list[_ThresholdDimension], max_candidates: int) -> "_SearchBudget":
         limit = max(1, max_candidates)
-        pairs = tuple(
-            (index, other)
-            for index in range(len(dimensions))
-            for other in range(index + 1, len(dimensions))
-        )
+        pairs = tuple((index, other) for index in range(len(dimensions)) for other in range(index + 1, len(dimensions)))
         coordinate = 1 if limit == 1 else max(2, limit // max(1, 2 * len(dimensions)))
         pair = 1 if limit == 1 else max(2, limit // max(1, 2 * len(pairs)))
         truncated = (
@@ -262,8 +258,7 @@ def _budgeted_candidates(
         return tuple(unique.values()), len(unique), True
 
     pair_streams = (
-        _limited_stream(_dimension_stream(dimensions, indices, rule), budget.pair)
-        for indices in budget.pairs
+        _limited_stream(_dimension_stream(dimensions, indices, rule), budget.pair) for indices in budget.pairs
     )
     reached_limit = _collect_candidates(unique, pair_streams, budget.limit)
     return (
