@@ -199,6 +199,7 @@ class _DimensionBuilder:
 def _candidate_dimensions(rule: Rule, material: list[CalibrationCase]) -> list[_ThresholdDimension]:
     return _DimensionBuilder.create(rule, material).build()
 
+
 def _policy_from_changes(rule: Rule, changes: Mapping[tuple[str, str], Any]) -> ReportPolicy | None:
     report = rule.report
     warning, error = report.levels.warning.model_dump(mode="python"), report.levels.error.model_dump(mode="python")
