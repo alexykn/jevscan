@@ -88,6 +88,32 @@ def _target_cached(judgments: dict[str, Judgment], skipped: dict[str, str]) -> b
     return bool(judgments) and not skipped and all(item.fully_cached for item in judgments.values())
 
 
+@dataclass(frozen=True, slots=True)
+class JudgmentProjection:
+    answers: dict[str, Any]
+    rule_metadata: dict[str, dict[str, Any]]
+    reviews: dict[str, dict[str, Any]]
+    evidence: dict[str, dict[str, Any]]
+    models: dict[str, str]
+    inference: dict[str, dict[str, Any]]
+    cached_rules: list[str]
+    scales: dict[str, int]
+
+    @classmethod
+    def from_judgments(cls, judgments: dict[str, Judgment]) -> "JudgmentProjection":
+        ordered = dict(sorted(judgments.items()))
+        return cls(
+            answers={name: item.answer.model_dump(mode="json") for name, item in ordered.items()},
+            rule_metadata=_rule_metadata(judgments),
+            reviews={name: item.review for name, item in judgments.items() if item.review},
+            evidence={name: item.evidence for name, item in judgments.items()},
+            models={name: item.model for name, item in judgments.items()},
+            inference={name: item.inference for name, item in judgments.items()},
+            cached_rules=[name for name, item in judgments.items() if item.fully_cached],
+            scales=_scales(judgments),
+        )
+
+
 @dataclass(slots=True)
 class TargetResults:
     target: Target
@@ -97,26 +123,27 @@ class TargetResults:
     context_selection: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def event(self) -> dict[str, Any]:
-        projection = AssessmentProjection.from_judgments(self.judgments)
+        assessment = AssessmentProjection.from_judgments(self.judgments)
+        judgments = JudgmentProjection.from_judgments(self.judgments)
         return {
             "event": "evaluation",
             "target": self.target.metadata(),
-            "answers": {name: item.answer.model_dump(mode="json") for name, item in sorted(self.judgments.items())},
-            "rule_metadata": _rule_metadata(self.judgments),
-            "statuses": projection.statuses,
-            "uncertainty_reasons": projection.reasons,
-            "reviews": {name: item.review for name, item in self.judgments.items() if item.review},
-            "findings": projection.findings,
-            "tentative_findings": projection.tentative,
-            "evidence": {name: item.evidence for name, item in self.judgments.items()},
-            "models": {name: item.model for name, item in self.judgments.items()},
-            "inference": {name: item.inference for name, item in self.judgments.items()},
-            "cached_rules": [name for name, item in self.judgments.items() if item.fully_cached],
+            "answers": judgments.answers,
+            "rule_metadata": judgments.rule_metadata,
+            "statuses": assessment.statuses,
+            "uncertainty_reasons": assessment.reasons,
+            "reviews": judgments.reviews,
+            "findings": assessment.findings,
+            "tentative_findings": assessment.tentative,
+            "evidence": judgments.evidence,
+            "models": judgments.models,
+            "inference": judgments.inference,
+            "cached_rules": judgments.cached_rules,
             "cached": _target_cached(self.judgments, self.skipped),
             "skipped_rules": self.skipped,
             "applicability_skips": self.applicability,
             "context_selection": self.context_selection,
-            "scales": _scales(self.judgments),
+            "scales": judgments.scales,
         }
 
     def diagnostics(self, sink: EventSink, summary: Summary, aborted: bool) -> None:
