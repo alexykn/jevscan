@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import Any
 
 from jevscan.core.languages import SPECS
+from jevscan.core.lexical_ownership import owned_references
 from jevscan.core.models import CALLABLE_KINDS, Reference, SyntaxFact, Unit
 from jevscan.core.syntax_symbols import Symbol, node_text
 
@@ -219,20 +220,12 @@ def syntax_facts(symbol: Symbol, source: bytes, language: str) -> tuple[SyntaxFa
 
 
 def _calls_by_callable(units: list[Unit], occurrences: tuple[Reference, ...]) -> dict[str, set[str]]:
-    callables = iter(unit for unit in units if unit.kind in CALLABLE_KINDS and unit.has_implementation)
-    following = next(callables, None)
-    stack: list[Unit] = []
+    callables = (unit for unit in units if unit.kind in CALLABLE_KINDS and unit.has_implementation)
+    calls = (reference for reference in occurrences if reference.kind == "call")
     result: dict[str, set[str]] = defaultdict(set)
-    for reference in sorted((item for item in occurrences if item.kind == "call"), key=lambda item: item.start_byte):
-        while following is not None and following.start_byte <= reference.start_byte:
-            while stack and following.start_byte >= stack[-1].end_byte:
-                stack.pop()
-            stack.append(following)
-            following = next(callables, None)
-        while stack and reference.end_byte > stack[-1].end_byte:
-            stack.pop()
-        if stack:
-            result[stack[-1].id].add(reference.name)
+    for reference, owner in owned_references(callables, calls):
+        if owner is not None:
+            result[owner.id].add(reference.name)
     return result
 
 
