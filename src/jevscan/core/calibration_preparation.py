@@ -212,7 +212,7 @@ def _baseline_rule(
     source_rule = min(references, key=lambda case: encode(_semantic_contract(case.rule))).rule
     return Rule.model_validate({
         **source_rule.model_dump(mode="python"),
-        "report": _policy_document(baseline),
+        "report": baseline.model_dump(mode="json"),
     })
 
 
