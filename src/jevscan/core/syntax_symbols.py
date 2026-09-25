@@ -74,9 +74,8 @@ def _rust_tuple_binding(node: Any, source: bytes) -> tuple[str, Kind] | None:
     patterns = list(pattern.named_children)
     if len(expressions) != len(patterns) or any(item.type != "identifier" for item in patterns):
         return None
-    try:
-        position = next(index for index, item in enumerate(expressions) if item.id == node.id)
-    except StopIteration:
+    position = next((index for index, item in enumerate(expressions) if item.id == node.id), None)
+    if position is None:
         return None
     return node_text(patterns[position], source), Kind.FUNCTION
 
