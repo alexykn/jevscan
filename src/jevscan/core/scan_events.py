@@ -74,11 +74,7 @@ def _emit_file_limit(planner: Planner, config: Config, sink: EventSink, summary:
 def _selected_unit_ids(planner: Planner) -> set[str]:
     selected = {check.target.id for check in planner.checks if check.target.scope == "unit"}
     selected.update(item.check.target.id for item in planner.omissions if item.check.target.scope == "unit")
-    selected.update(
-        target_id
-        for target_id in planner.applicability_skips
-        if target_id != planner.context.file.id
-    )
+    selected.update(target_id for target_id in planner.applicability_skips if target_id != planner.context.file.id)
     return selected
 
 
