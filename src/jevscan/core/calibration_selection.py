@@ -38,6 +38,16 @@ def _policy_document(policy: ReportPolicy) -> dict[str, Any]:
 
 
 @dataclass(frozen=True, slots=True)
+class _PreparationMaterial:
+    eligible: list[CalibrationCase]
+    development: list[CalibrationCase]
+    heldout: list[CalibrationCase]
+    mismatches: tuple[dict[str, Any], ...]
+    development_mismatches: tuple[dict[str, Any], ...]
+    compatibility: CompatibilityCheck
+
+
+@dataclass(frozen=True, slots=True)
 class _PreparedRule:
     rule_id: str
     baseline: ReportPolicy
@@ -334,7 +344,7 @@ def _preparation_material(
     heldout_split: str | None,
     limit: int,
     allow_incompatible_model_prompt: bool,
-) -> tuple[list[CalibrationCase], list[CalibrationCase], list[CalibrationCase], tuple[dict[str, Any], ...], tuple[dict[str, Any], ...], CompatibilityCheck] | RuleSelection:
+) -> _PreparationMaterial | RuleSelection:
     baseline = reference.report
     mismatches = _rule_mismatches(reference, rule_cases)
     development_mismatches = _rule_mismatches(reference, development_all)
@@ -359,7 +369,14 @@ def _preparation_material(
             compatibility=compatibility,
         )
     _validate_group_split(rule_id, development, heldout, heldout_split)
-    return eligible, development, heldout, mismatches, development_mismatches, compatibility
+    return _PreparationMaterial(
+        eligible,
+        material.development,
+        material.heldout,
+        material.mismatches,
+        material.development_mismatches,
+        material.compatibility,
+    )
 
 
 def _prepare_rule(
@@ -389,17 +406,15 @@ def _prepare_rule(
     )
     if isinstance(material, RuleSelection):
         return material
-    eligible, development, heldout, mismatches, development_mismatches, compatibility = material
-
     baseline = reference.report
-    baseline_rule = _baseline_rule(authoritative, eligible, development_split, baseline)
+    baseline_rule = _baseline_rule(authoritative, material.eligible, development_split, baseline)
     if baseline_rule is None:
         return _not_searched_selection(
-            rule_id, baseline, "no_compatible_cases", mismatches, limit, retain_baseline=True
+            rule_id, baseline, "no_compatible_cases", material.mismatches, limit, retain_baseline=True
         )
-    if development and any(not support_key(case) for case in development):
+    if material.development and any(not support_key(case) for case in material.development):
         return _not_searched_selection(
-            rule_id, baseline, "missing_support_groups", mismatches, limit, retain_baseline=True
+            rule_id, baseline, "missing_support_groups", material.mismatches, limit, retain_baseline=True
         )
     return _PreparedRule(
         rule_id,
