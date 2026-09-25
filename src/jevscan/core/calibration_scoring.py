@@ -188,7 +188,7 @@ def _outcome(record: ReplayRecord) -> str:
     return "none"
 
 
-def _candidate_metrics(
+def candidate_metrics(
     policy: ReportPolicy,
     cases: list[CalibrationCase],
     objective: SelectionObjective,
@@ -258,7 +258,7 @@ def _policy_distance(left: Any, right: Any) -> int:
     return distance(_policy_document(left), _policy_document(right))
 
 
-def _candidate_is_eligible(
+def candidate_is_eligible(
     candidate: CandidateMetrics,
     *,
     require_positive_signal: bool,
@@ -273,7 +273,7 @@ def _candidate_is_eligible(
     )
 
 
-def _select_candidate(
+def select_candidate(
     baseline: ReportPolicy,
     candidates: list[CandidateMetrics],
     *,
@@ -284,7 +284,7 @@ def _select_candidate(
     eligible = [
         candidate
         for candidate in candidates
-        if _candidate_is_eligible(candidate, require_positive_signal=require_positive_signal, objective=objective)
+        if candidate_is_eligible(candidate, require_positive_signal=require_positive_signal, objective=objective)
     ]
     if not eligible:
         return next(candidate for candidate in candidates if candidate.policy_hash == baseline_hash)
