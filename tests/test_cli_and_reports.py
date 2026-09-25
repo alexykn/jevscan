@@ -434,7 +434,7 @@ def test_wrapping_keeps_hanging_indent_and_display_cell_width(width: int, color:
 def test_cli_verbose_flag_controls_only_text_details(flag: list[str], tmp_path: Path, monkeypatch, capsys) -> None:
     import importlib
 
-    cli = importlib.import_module("jevscan.cli.main")
+    scan_command = importlib.import_module("jevscan.cli.scan_command")
 
     async def scan(_paths, _loaded, sink, **_options):
         sink.emit(_evaluation_event("clean_target", "ok"))
@@ -444,7 +444,7 @@ def test_cli_verbose_flag_controls_only_text_details(flag: list[str], tmp_path: 
         return summary
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "run_scan", scan)
+    monkeypatch.setattr(scan_command, "run_scan", scan)
     assert main([".", *flag]) == 1
     text = capsys.readouterr().out
     assert ("clean_target" in text) == bool(flag)
@@ -697,7 +697,7 @@ def test_changed_and_staged_modes_filter_explicit_scan_targets(tmp_path: Path, m
     import shutil
     import subprocess
 
-    cli = importlib.import_module("jevscan.cli.main")
+    scan_command = importlib.import_module("jevscan.cli.scan_command")
     git = shutil.which("git")
     assert git is not None
     subprocess.run([git, "init", "-q", str(tmp_path)], check=True)  # noqa: S603
@@ -721,7 +721,7 @@ def test_changed_and_staged_modes_filter_explicit_scan_targets(tmp_path: Path, m
         return summary
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "run_scan", scan)
+    monkeypatch.setattr(scan_command, "run_scan", scan)
     assert main([".", "--changed", "--plan", "--format", "json"]) == 0
     capsys.readouterr()
     assert seen[-1] == ["a.py", "b.py", "new.py"]
