@@ -300,6 +300,7 @@ def _named_rules(entries: Any, source: str) -> dict[str, Any]:
         rules[name] = rule
     return rules
 
+
 def validate_config_path(path: Path) -> None:
     if path.suffix not in {".yaml", ".yml"}:
         raise ConfigError("configuration must be YAML (.yaml or .yml)")
