@@ -13,8 +13,8 @@ from jevscan.core.calibration_cases import (
     FinalCaptureMaterial,
     IdentityHashes,
     TargetRecord,
-    sha256_bytes,
     load_cases,
+    sha256_bytes,
 )
 from jevscan.core.models import Target
 from jevscan.core.protocol import Check, encode
