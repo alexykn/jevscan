@@ -37,6 +37,46 @@ class ReservationUsage:
     input_tokens: int = 0
 
 
+@dataclass(slots=True)
+class AttemptLedger:
+    """Own paid-attempt admission and the counters derived from it."""
+
+    budget: BudgetConfig
+    bytes_per_token: float
+    token_reserve: int
+    requests: int = 0
+    completed_requests: int = 0
+    retry_attempts: int = 0
+    estimated_input_tokens: int = 0
+    estimated_cost: float = 0.0
+
+    def admit(self, body: bytes) -> int:
+        estimated = math.ceil(len(body) / self.bytes_per_token) + self.token_reserve
+        next_requests = self.requests + 1
+        next_tokens = self.estimated_input_tokens + estimated
+        next_cost = next_tokens * self.budget.input_cost_per_million / 1_000_000
+        if self.budget.max_requests is not None and next_requests > self.budget.max_requests:
+            raise BudgetExhaustedError(f"request budget exhausted at {self.requests} requests")
+        if self.budget.max_input_tokens is not None and next_tokens > self.budget.max_input_tokens:
+            raise BudgetExhaustedError(
+                f"input-token budget would be exceeded ({next_tokens} > {self.budget.max_input_tokens})"
+            )
+        if self.budget.max_cost is not None and next_cost > self.budget.max_cost:
+            raise BudgetExhaustedError(
+                f"estimated cost budget would be exceeded ({next_cost:.4f} > {self.budget.max_cost:.4f})"
+            )
+        self.requests = next_requests
+        self.estimated_input_tokens = next_tokens
+        self.estimated_cost = next_cost
+        return estimated
+
+    def complete(self) -> None:
+        self.completed_requests += 1
+
+    def retry(self) -> None:
+        self.retry_attempts += 1
+
+
 def _safe_request_id(response: httpx.Response) -> str:
     value = response.headers.get("x-typesafe-request-id", "")[:100]
     return "".join(c for c in value if c.isalnum() or c in "-_")
@@ -109,6 +149,30 @@ def _request_rejection(response: httpx.Response) -> RequestRejectedError | None:
     )
 
 
+@dataclass(slots=True)
+class RejectionTracker:
+    """Classify provider rejections and own the repeated-rejection circuit."""
+
+    counts: dict[tuple[object, ...], int]
+
+    def classify(self, response: httpx.Response) -> Exception | None:
+        context_rejection = _context_rejection(response)
+        if context_rejection is not None:
+            return context_rejection
+        request_rejection = _request_rejection(response)
+        if request_rejection is None:
+            return None
+        signature = request_rejection.signature
+        count = self.counts.get(signature, 0) + 1
+        self.counts[signature] = count
+        if count >= 3:
+            return JevError(
+                f"Jev rejected {count} equivalent requests (HTTP {response.status_code}); "
+                "stopping because the failure appears systemic"
+            )
+        return request_rejection
+
+
 class RequestLimiter:
     def __init__(self, requests_per_minute: float) -> None:
         self.interval = 60.0 / requests_per_minute if requests_per_minute else 0.0
@@ -176,15 +240,8 @@ class JevClient:
         self.base_url = endpoint_from(base_url)
         self.limiter = RequestLimiter(config.requests_per_minute)
         self.semaphore = asyncio.Semaphore(config.concurrency)
-        self.budget = budget or BudgetConfig()
-        self.bytes_per_token = bytes_per_token
-        self.token_reserve = token_reserve
-        self.requests = 0
-        self.completed_requests = 0
-        self.retry_attempts = 0
-        self.estimated_input_tokens = 0
-        self.estimated_cost = 0.0
-        self.request_rejection_counts: dict[tuple[object, ...], int] = {}
+        self.ledger = AttemptLedger(budget or BudgetConfig(), bytes_per_token, token_reserve)
+        self.rejections = RejectionTracker({})
         self.http = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=config.timeout_seconds,
@@ -199,56 +256,37 @@ class JevClient:
             },
         )
 
-    def _reserve_attempt(self, body: bytes) -> int:
-        """Admit and count one paid attempt, committing all budget counters together."""
-        estimated = math.ceil(len(body) / self.bytes_per_token) + self.token_reserve
-        next_requests = self.requests + 1
-        next_tokens = self.estimated_input_tokens + estimated
-        next_cost = next_tokens * self.budget.input_cost_per_million / 1_000_000
-        if self.budget.max_requests is not None and next_requests > self.budget.max_requests:
-            raise BudgetExhaustedError(f"request budget exhausted at {self.requests} requests")
-        if self.budget.max_input_tokens is not None and next_tokens > self.budget.max_input_tokens:
-            raise BudgetExhaustedError(
-                f"input-token budget would be exceeded ({next_tokens} > {self.budget.max_input_tokens})"
-            )
-        if self.budget.max_cost is not None and next_cost > self.budget.max_cost:
-            raise BudgetExhaustedError(
-                f"estimated cost budget would be exceeded ({next_cost:.4f} > {self.budget.max_cost:.4f})"
-            )
-        # No await separates validation and commit; all callers share this event loop.
-        self.requests = next_requests
-        self.estimated_input_tokens = next_tokens
-        self.estimated_cost = next_cost
-        return estimated
+    @property
+    def requests(self) -> int:
+        return self.ledger.requests
 
-    async def _post(self, body: bytes, reservation: ReservationUsage | None) -> httpx.Response:
+    @property
+    def completed_requests(self) -> int:
+        return self.ledger.completed_requests
+
+    @property
+    def retry_attempts(self) -> int:
+        return self.ledger.retry_attempts
+
+    @property
+    def estimated_input_tokens(self) -> int:
+        return self.ledger.estimated_input_tokens
+
+    @property
+    def estimated_cost(self) -> float:
+        return self.ledger.estimated_cost
+
+    async def _execute_paid_attempt(self, body: bytes, reservation: ReservationUsage | None) -> httpx.Response:
         async with self.semaphore:
             # Pace actual transport starts, not tasks waiting for a connection slot.
             await self.limiter.acquire()
-            reserved = self._reserve_attempt(body)
+            reserved = self.ledger.admit(body)
             if reservation is not None:
                 reservation.input_tokens += reserved
             try:
                 return await self.http.post("/v1/systemone", content=body)
             finally:
-                self.completed_requests += 1
-
-    def _raise_rejection(self, response: httpx.Response) -> None:
-        rejection = _context_rejection(response)
-        if rejection is not None:
-            raise rejection
-        request_rejection = _request_rejection(response)
-        if request_rejection is None:
-            return
-        signature = request_rejection.signature
-        count = self.request_rejection_counts.get(signature, 0) + 1
-        self.request_rejection_counts[signature] = count
-        if count >= 3:
-            raise JevError(
-                f"Jev rejected {count} equivalent requests (HTTP {response.status_code}); "
-                "stopping because the failure appears systemic"
-            )
-        raise request_rejection
+                self.ledger.complete()
 
     async def _retry_transport(self, error: httpx.RequestError, attempt: int) -> None:
         if attempt == self.config.retries:
@@ -278,15 +316,17 @@ class JevClient:
     ) -> JevResponse:
         for attempt in range(self.config.retries + 1):
             if attempt:
-                self.retry_attempts += 1
+                self.ledger.retry()
             try:
-                response = await self._post(body, reservation)
+                response = await self._execute_paid_attempt(body, reservation)
             except httpx.RequestError as exc:
                 await self._retry_transport(exc, attempt)
                 continue
             if response.is_success:
                 return validate_response(response.content, questions)
-            self._raise_rejection(response)
+            rejection = self.rejections.classify(response)
+            if rejection is not None:
+                raise rejection
             await self._retry_response(response, attempt)
         raise AssertionError("retry loop must return or raise")
 
