@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Self
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 import httpx
 
@@ -228,11 +228,11 @@ def _retry_after(headers: httpx.Headers) -> float | None:
         return None
     return max(0.0, value) if math.isfinite(value) else None
 
-def _origin_only(parts: Any) -> bool:
+def _origin_only(parts: SplitResult) -> bool:
     return not any((parts.username, parts.password, parts.query, parts.fragment)) and parts.path in {"", "/"}
 
 
-def _allowed_scheme(parts: Any) -> bool:
+def _allowed_scheme(parts: SplitResult) -> bool:
     localhost = parts.hostname in {"localhost", "127.0.0.1", "::1"}
     return parts.scheme == "https" or (parts.scheme == "http" and localhost)
 
