@@ -182,9 +182,7 @@ def _compatibility_result(
     missing: tuple[dict[str, Any], ...],
 ) -> CompatibilityCheck:
     mismatches = missing + tuple(
-        mismatch
-        for case in complete
-        for mismatch in _compatibility_mismatches(authority, case)
+        mismatch for case in complete for mismatch in _compatibility_mismatches(authority, case)
     )
     status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
     return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
