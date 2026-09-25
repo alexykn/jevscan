@@ -7,6 +7,22 @@ from typing import Any
 from jevscan.core.languages import SPECS
 from jevscan.core.models import FileJob, Kind
 
+_BINDING_FIELDS = {
+    "variable_declarator": "name",
+    "assignment_expression": "left",
+    "let_declaration": "pattern",
+    "pair": "key",
+    "public_field_definition": "name",
+    "field_definition": "property",
+}
+_BINDING_WRAPPERS = frozenset({
+    "parenthesized_expression",
+    "as_expression",
+    "satisfies_expression",
+    "type_cast_expression",
+})
+_METHOD_BINDINGS = frozenset({"pair", "public_field_definition", "field_definition"})
+
 
 @dataclass(slots=True)
 class Symbol:
@@ -58,9 +74,8 @@ def _rust_tuple_binding(node: Any, source: bytes) -> tuple[str, Kind] | None:
     patterns = list(pattern.named_children)
     if len(expressions) != len(patterns) or any(item.type != "identifier" for item in patterns):
         return None
-    try:
-        position = next(index for index, item in enumerate(expressions) if item.id == node.id)
-    except StopIteration:
+    position = next((index for index, item in enumerate(expressions) if item.id == node.id), None)
+    if position is None:
         return None
     return node_text(patterns[position], source), Kind.FUNCTION
 
@@ -91,24 +106,25 @@ def _variable_name_for_value(declaration: Any, value: Any, source: bytes) -> str
     return node_text(name, source)
 
 
+def _single_argument_call(value: Any) -> Any | None:
+    arguments = value.parent
+    if arguments is None or arguments.type != "arguments" or len(arguments.named_children) != 1:
+        return None
+    if arguments.named_children[0].id != value.id:
+        return None
+    call = arguments.parent
+    return call if call is not None and call.type == "call_expression" else None
+
+
 def _typescript_outer_binding(node: Any, source: bytes) -> str | None:
     object_node = _typescript_property_object(node)
     if object_node is None:
         return None
-    container = object_node.parent
-    direct = _variable_name_for_value(container, object_node, source)
+    direct = _variable_name_for_value(object_node.parent, object_node, source)
     if direct is not None:
         return direct
-    call = container.parent if container.type == "arguments" else None
-    if (
-        container.type != "arguments"
-        or call is None
-        or call.type != "call_expression"
-        or len(container.named_children) != 1
-        or container.named_children[0].id != object_node.id
-    ):
-        return None
-    return _variable_name_for_value(call.parent, call, source)
+    call = _single_argument_call(object_node)
+    return _variable_name_for_value(call.parent, call, source) if call is not None else None
 
 
 def _binding(node: Any, source: bytes) -> tuple[str | None, Kind | None]:
@@ -116,35 +132,20 @@ def _binding(node: Any, source: bytes) -> tuple[str | None, Kind | None]:
     tuple_binding = _rust_tuple_binding(node, source)
     if tuple_binding is not None:
         return tuple_binding
+
     current = node.parent
     for _ in range(3):
         if current is None:
-            break
-        fields = {
-            "variable_declarator": "name",
-            "assignment_expression": "left",
-            "let_declaration": "pattern",
-            "pair": "key",
-            "public_field_definition": "name",
-            "field_definition": "property",
-        }
-        if current.type in fields:
-            name = current.child_by_field_name(fields[current.type])
-            if name is not None:
-                kind = (
-                    Kind.METHOD
-                    if current.type in {"pair", "public_field_definition", "field_definition"}
-                    else Kind.FUNCTION
-                )
-                return node_text(name, source).strip("\"'"), kind
-            break
-        if current.type not in {
-            "parenthesized_expression",
-            "as_expression",
-            "satisfies_expression",
-            "type_cast_expression",
-        }:
-            break
+            return None, None
+        field = _BINDING_FIELDS.get(current.type)
+        if field is not None:
+            name = current.child_by_field_name(field)
+            if name is None:
+                return None, None
+            kind = Kind.METHOD if current.type in _METHOD_BINDINGS else Kind.FUNCTION
+            return node_text(name, source).strip("\"'"), kind
+        if current.type not in _BINDING_WRAPPERS:
+            return None, None
         current = current.parent
     return None, None
 
@@ -160,37 +161,47 @@ def _rust_callable_start(node: Any) -> int:
     return start
 
 
-def _symbol(node: Any, kind: Kind, source: bytes, language: str) -> Symbol:
-    body = node_body(node)
-    start = _rust_callable_start(node)
-    if node.parent is not None and node.parent.type == "decorated_definition":
-        start = node.parent.start_byte
+def _symbol_kind(node: Any, kind: Kind) -> Kind:
+    if kind != Kind.METHOD or node.type != "function_signature_item":
+        return kind
+    declaration_list = node.parent
+    foreign_mod = declaration_list.parent if declaration_list is not None else None
     if (
-        kind == Kind.METHOD
-        and node.type == "function_signature_item"
-        and node.parent is not None
-        and node.parent.type == "declaration_list"
-        and node.parent.parent is not None
-        and node.parent.parent.type == "foreign_mod_item"
+        declaration_list is not None
+        and declaration_list.type == "declaration_list"
+        and foreign_mod is not None
+        and foreign_mod.type == "foreign_mod_item"
     ):
-        kind = Kind.FUNCTION
-    name_node = node.child_by_field_name("name")
-    bound_kind = None
-    outer_binding = None
+        return Kind.FUNCTION
+    return kind
+
+
+def _symbol_name(node: Any, kind: Kind, source: bytes, language: str) -> tuple[str, Kind | None, str | None]:
     if kind == Kind.IMPL:
         type_node = node.child_by_field_name("type")
         trait_node = node.child_by_field_name("trait")
         target = node_text(type_node, source) if type_node is not None else "<type>"
         trait = node_text(trait_node, source) + " for " if trait_node is not None else ""
-        name = f"impl {trait}{target}"
-    elif name_node is not None:
-        name = node_text(name_node, source)
-    else:
-        name, bound_kind = _binding(node, source)
-        if language == "typescript":
-            outer_binding = _typescript_outer_binding(node, source)
-        if name is None:
-            name = f"<anonymous@{node.start_point.row + 1}:{node.start_point.column + 1}>"
+        return f"impl {trait}{target}", None, None
+
+    name_node = node.child_by_field_name("name")
+    if name_node is not None:
+        return node_text(name_node, source), None, None
+
+    name, bound_kind = _binding(node, source)
+    outer_binding = _typescript_outer_binding(node, source) if language == "typescript" else None
+    if name is None:
+        name = f"<anonymous@{node.start_point.row + 1}:{node.start_point.column + 1}>"
+    return name, bound_kind, outer_binding
+
+
+def _symbol(node: Any, kind: Kind, source: bytes, language: str) -> Symbol:
+    body = node_body(node)
+    start = _rust_callable_start(node)
+    if node.parent is not None and node.parent.type == "decorated_definition":
+        start = node.parent.start_byte
+    kind = _symbol_kind(node, kind)
+    name, bound_kind, outer_binding = _symbol_name(node, kind, source, language)
     return Symbol(node, kind, name, start, node.end_byte, body, bound_kind, outer_binding)
 
 

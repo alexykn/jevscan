@@ -10,7 +10,8 @@ from jevscan.core.cache import AnswerCache
 from jevscan.core.capture import FinalJudgmentSink
 from jevscan.core.client import JevClient
 from jevscan.core.context import Evidence
-from jevscan.core.enrichment import REVIEW_PRIORITY, Enricher, review_trigger
+from jevscan.core.enrichment import Enricher
+from jevscan.core.enrichment_routing import REVIEW_PRIORITY, review_trigger
 from jevscan.core.execution import FileExecutor
 from jevscan.core.inference import Inference
 from jevscan.core.models import Diagnostic, EventSink, Severity, Summary, Target, emit_diagnostic

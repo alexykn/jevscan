@@ -17,7 +17,7 @@ from jevscan.core.compaction import Compactor
 from jevscan.core.context import Evidence
 from jevscan.core.inference import Inference
 from jevscan.core.planning import Omission, Planner, Request
-from jevscan.core.protocol import Check, ContextLimitError, PromptRegistry, RequestRejectedError
+from jevscan.core.protocol import Answer, Check, ContextLimitError, PromptRegistry, RequestRejectedError
 
 if TYPE_CHECKING:
     from jevscan.core.evaluation import FileResults
@@ -53,12 +53,12 @@ class FileExecutor:
         self.rejected: dict[str, tuple[int, dict[str, Any]]] = {}
         self.rejected_requests: set[str] = set()
 
-    async def _without_cached_judgments(self, request: Request) -> Request | None:
-        cached = await self.inference.cached_judgments(
-            request.state,
-            request.question_wires,
-            request.questions,
-        )
+    def _accept_cached_judgments(
+        self,
+        request: Request,
+        cached: dict[str, tuple[Answer, str]],
+    ) -> Request | None:
+        """Publish cached answers and return only the checks that still need inference."""
         missing: list[Check] = []
         for check in request.checks:
             item = cached.get(check.id)
@@ -78,13 +78,12 @@ class FileExecutor:
             trace = self.results.records[check.target.id].context_selection.get(check.rule_id)
             if trace:
                 trace["outcome"] = "judgment_cache"
+
         if not missing:
             return None
-        return (
-            request
-            if len(missing) == len(request.checks)
-            else self.planner.request(request.evidence, tuple(missing), request.registry)
-        )
+        if len(missing) == len(request.checks):
+            return request
+        return self.planner.request(request.evidence, tuple(missing), request.registry)
 
     def _record_size_rejection(self, request: Request, error: ContextLimitError) -> None:
         for check in request.checks:
@@ -220,25 +219,37 @@ class FileExecutor:
             assert len(self.planner.request(evidence, (check,), request.registry).body) < previous_bytes
         return evidence
 
+    async def _recover_check(
+        self,
+        attempt: Attempt,
+        check: Check,
+        reason: str,
+    ) -> Evidence | Attempt:
+        trace = self.results.recovery(check)
+        trace.setdefault("trigger", reason)
+        evidence = await self._compact_check(attempt, check, trace)
+        return evidence if evidence is not None else self._final_attempt(attempt, check)
+
     async def _recover(self, attempt: Attempt, reason: str) -> list[Attempt]:
         if attempt.final:
             self._omit_final(attempt, reason)
             return []
+
         groups: dict[str, tuple[Evidence, list[Check]]] = {}
-        final_attempts = []
+        final_attempts: list[Attempt] = []
         for check in attempt.request.checks:
-            trace = self.results.recovery(check)
-            trace.setdefault("trigger", reason)
-            evidence = await self._compact_check(attempt, check, trace)
-            if evidence is None:
-                final_attempts.append(self._final_attempt(attempt, check))
-            else:
-                groups.setdefault(evidence.key, (evidence, []))[1].append(check)
-        return [
-            item
+            recovered = await self._recover_check(attempt, check, reason)
+            if isinstance(recovered, Attempt):
+                final_attempts.append(recovered)
+                continue
+            groups.setdefault(recovered.key, (recovered, []))[1].append(check)
+
+        compacted = [
+            packed
             for evidence, checks in groups.values()
-            for item in self._pack(evidence, checks, attempt.round + 1, attempt.request.registry)
-        ] + final_attempts
+            for packed in self._pack(evidence, checks, attempt.round + 1, attempt.request.registry)
+        ]
+        return compacted + final_attempts
 
     async def _preflight(self, attempt: Attempt) -> list[Attempt] | None:
         request = attempt.request
@@ -264,7 +275,12 @@ class FileExecutor:
 
     async def _process(self, attempt: Attempt) -> list[Attempt]:
         """Resolve an attempt into follow-up work; the worker owns queue mutation."""
-        request = await self._without_cached_judgments(attempt.request)
+        cached = await self.inference.cached_judgments(
+            attempt.request.state,
+            attempt.request.question_wires,
+            attempt.request.questions,
+        )
+        request = self._accept_cached_judgments(attempt.request, cached)
         if request is None:
             return []
         attempt = Attempt(request, attempt.round, attempt.final)

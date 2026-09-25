@@ -106,3 +106,42 @@ def test_core_has_no_cli_dependency():
                 assert not (node.module or "").startswith("jevscan.cli"), path
             elif isinstance(node, ast.Import):
                 assert all(not alias.name.startswith("jevscan.cli") for alias in node.names), path
+
+
+def _imported_modules(path: Path) -> set[str]:
+    import ast
+
+    modules: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+        elif isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+    return modules
+
+
+def test_extracted_calibration_layers_do_not_depend_on_selection_facade():
+    core = Path(__file__).parents[1] / "src" / "jevscan" / "core"
+    layers = (
+        "calibration_cases.py",
+        "calibration_compatibility.py",
+        "calibration_candidates.py",
+        "calibration_scoring.py",
+        "calibration_preparation.py",
+        "calibration_selection_models.py",
+    )
+    for name in layers:
+        imports = _imported_modules(core / name)
+        assert "jevscan.core.calibration_selection" not in imports, name
+
+
+def test_enrichment_routing_stays_independent_of_live_refinement():
+    core = Path(__file__).parents[1] / "src" / "jevscan" / "core"
+    imports = _imported_modules(core / "enrichment_routing.py")
+    forbidden = {
+        "jevscan.core.enrichment",
+        "jevscan.core.inference",
+        "jevscan.core.retrieval",
+        "jevscan.core.evidence_merge",
+    }
+    assert not (imports & forbidden)

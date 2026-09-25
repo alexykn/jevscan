@@ -1068,14 +1068,21 @@ async def test_file_wide_rubrics_fit_calibrated_context_on_public_source() -> No
     assert json.loads(file_request.body)["state"] == state
     for check in file_request.checks:
         validate_prompt_registry(state, check.rule.question)
-    assert len(file_request.evidence.encoded) > 49_000
+    documents = file_request.evidence.state["documents"]
+    assert len(documents) == 1
+    assert documents[0]["start_byte"] == 0
+    assert documents[0]["end_byte"] == len(parsed.source)
+    assert documents[0]["content"] == parsed.source.decode("utf-8")
+    assert file_request.evidence.state["coverage"]["file_complete"] is True
     assert planner.budget.fits(file_request.state, file_request.question_wires)
     assert planner.estimate(file_request.evidence, file_request.checks)[0] < 28_000
 
     all_selected = PromptRegistry.from_rules(config.selected_rules())
     unscoped_state = all_selected.state_bytes(file_request.evidence.state)
-    assert len(json.loads(unscoped_state)["jevscan_prompt"]["rubrics"]) == len(config.selected_rules())
-    assert not planner.budget.fits(unscoped_state, file_request.question_wires)
+    unscoped_rubrics = json.loads(unscoped_state)["jevscan_prompt"]["rubrics"]
+    assert len(unscoped_rubrics) == len(config.selected_rules())
+    assert set(rubrics) < set(unscoped_rubrics)
+    assert len(file_request.state) < len(unscoped_state)
 
     selected = config.model_copy(
         update={"lint": config.lint.model_copy(update={"select": ["JEV01", "JEV07", "JEV09"]})}
