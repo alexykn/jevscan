@@ -15,6 +15,7 @@ from typing import Any
 from jevscan.core.config import EnrichmentConfig, ScanConfig
 from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.discovery import discover
+from jevscan.core.lexical_ownership import owned_references
 from jevscan.core.models import Diagnostic, FileJob, Kind, ParsedFile, Reference, Target
 from jevscan.core.parser import parse_source
 from jevscan.core.protocol import Check
@@ -22,20 +23,10 @@ from jevscan.core.source_snapshot import read_source as _read_source
 
 
 def _reference_targets(parsed: ParsedFile) -> Iterator[tuple[Reference, Target]]:
-    """Associate occurrences with their innermost lexical unit in a single sweep."""
-    units = iter(parsed.units)
-    following = next(units, None)
-    stack: list[Target] = []
-    file = Target.from_file(parsed)
-    for reference in sorted(parsed.references, key=lambda item: item.start_byte):
-        while following is not None and following.start_byte <= reference.start_byte:
-            while stack and following.start_byte >= stack[-1].end_byte:
-                stack.pop()
-            stack.append(Target.from_unit(following))
-            following = next(units, None)
-        while stack and reference.end_byte > stack[-1].end_byte:
-            stack.pop()
-        yield reference, stack[-1] if stack else file
+    """Associate occurrences with their innermost lexical unit."""
+    file_target = Target.from_file(parsed)
+    for reference, owner in owned_references(parsed.units, parsed.references):
+        yield reference, Target.from_unit(owner) if owner is not None else file_target
 
 
 def _test_path(path: str) -> bool:
