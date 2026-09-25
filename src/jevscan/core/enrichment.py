@@ -16,7 +16,7 @@ from jevscan.core.enrichment_routing import Routing, allowed_families, routing_d
 from jevscan.core.evidence_merge import augment_evidence
 from jevscan.core.inference import Inference, Prediction
 from jevscan.core.planning import RequestBudget
-from jevscan.core.protocol import Answer, Check, ChoiceAnswer, ContextLimitError, PromptRegistry, encode
+from jevscan.core.protocol import Answer, Check, ChoiceAnswer, ContextLimitError, NoulAnswer, PromptRegistry, encode
 from jevscan.core.retrieval import Candidate, SourceIndex
 from jevscan.core.rules import Question
 from jevscan.core.selection import rank_candidates
