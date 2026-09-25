@@ -93,5 +93,3 @@ def selected_policy_document(audit: SelectionAudit) -> dict[str, Any]:
             for rule_id, policy in sorted(audit.selected_policies.items())
         }
     }
-
-
