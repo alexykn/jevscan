@@ -107,6 +107,7 @@ def test_core_has_no_cli_dependency():
             elif isinstance(node, ast.Import):
                 assert all(not alias.name.startswith("jevscan.cli") for alias in node.names), path
 
+
 def _imported_modules(path: Path) -> set[str]:
     import ast
 
@@ -144,4 +145,3 @@ def test_enrichment_routing_stays_independent_of_live_refinement():
         "jevscan.core.evidence_merge",
     }
     assert not (imports & forbidden)
-
