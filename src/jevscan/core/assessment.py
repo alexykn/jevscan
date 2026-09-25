@@ -92,11 +92,8 @@ def _at_level(check: Check, reading: Reading, severity: Severity, reason: str) -
     return Assessment("error" if severity == Severity.ERROR else "warning", finding=finding)
 
 
-def assess(check: Check, answer: Answer, context_complete: bool = True) -> Assessment:
+def _indicated_assessment(check: Check, answer: Answer, ambiguity: str) -> Assessment | None:
     report = check.rule.report
-    if isinstance(answer, ChoiceAnswer) and answer.choice in report.uncertain_choices:
-        return Assessment("unknown", "missing_evidence")
-    ambiguity = "probability_ambiguous" if _probability_ambiguous(report, answer) else ""
     for severity, level in ((Severity.ERROR, report.levels.error), (Severity.WARNING, report.levels.warning)):
         reading = _reading(report, answer, level)
         if not reading.eligible or not _matches_signal(level, reading):
@@ -108,10 +105,34 @@ def assess(check: Check, answer: Answer, context_complete: bool = True) -> Asses
             reason = "low_confidence"
         # The strongest indicated level wins. Low confidence does not turn an error into a warning.
         return _at_level(check, reading, severity, reason)
+    return None
+
+
+def _nonfinding_assessment(
+    check: Check,
+    answer: Answer,
+    ambiguity: str,
+    context_complete: bool,
+) -> Assessment:
+    report = check.rule.report
     reading = _reading(report, answer, report.levels.warning)
     reason = ambiguity or _uncertainty(report, reading, answer)
-    if reason or not context_complete:
-        return Assessment("unknown", reason or "reduced_context")
+    if reason:
+        return Assessment("unknown", reason)
+    if not context_complete:
+        return Assessment("unknown", "reduced_context")
     if isinstance(answer, ChoiceAnswer) and answer.choice in report.not_applicable_choices:
         return Assessment("not_applicable", "rule_not_applicable")
     return Assessment("ok")
+
+
+def assess(check: Check, answer: Answer, context_complete: bool = True) -> Assessment:
+    report = check.rule.report
+    if isinstance(answer, ChoiceAnswer) and answer.choice in report.uncertain_choices:
+        return Assessment("unknown", "missing_evidence")
+
+    ambiguity = "probability_ambiguous" if _probability_ambiguous(report, answer) else ""
+    indicated = _indicated_assessment(check, answer, ambiguity)
+    if indicated is not None:
+        return indicated
+    return _nonfinding_assessment(check, answer, ambiguity, context_complete)
