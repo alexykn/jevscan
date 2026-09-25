@@ -30,7 +30,8 @@ from jevscan.core.calibration_compatibility import (
     compatibility_reason,
     support_key,
 )
-from jevscan.core.semantic_calibration import CalibrationCase, CalibrationReport, ReplayRecord, replay_cases
+from jevscan.core.calibration_cases import CalibrationCase
+from jevscan.core.semantic_calibration import CalibrationReport, replay_cases
 
 SELECTION_VERSION = 1
 
