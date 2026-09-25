@@ -38,6 +38,7 @@ CalibrationLabel = Literal["Agree", "Partial", "Disagree"]
 AdjudicatedSeverity = Literal["warning", "error"]
 Sha256Hash = Annotated[StrictStr, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
 
+
 def _sha256_bytes(value: bytes) -> str:
     return f"sha256:{hashlib.sha256(value).hexdigest()}"
 
@@ -442,7 +443,6 @@ class CalibrationCase(StrictModel):
             "model": metadata["model"],
         }
         return tuple(sorted(flattened.items()))
-
 
 
 def _computed_hashes(
