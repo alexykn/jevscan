@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Mapping
 from pydantic import TypeAdapter
 
 from jevscan.core.config import EnrichmentConfig
-from jevscan.core.enrichment import EVIDENCE_FAMILIES, routing_decision, routing_questions
+from jevscan.core.enrichment_routing import EVIDENCE_FAMILIES, routing_decision, routing_questions
 from jevscan.core.protocol import Answer, Check, validate_answer
 
 if TYPE_CHECKING:
