@@ -2,10 +2,8 @@
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from jevscan.core.assessment import Assessment, assess
 from jevscan.core.cache import AnswerCache
 from jevscan.core.capture import FinalJudgmentSink
 from jevscan.core.client import JevClient
@@ -14,149 +12,11 @@ from jevscan.core.enrichment import Enricher
 from jevscan.core.enrichment_routing import REVIEW_PRIORITY, review_trigger
 from jevscan.core.execution import FileExecutor
 from jevscan.core.inference import Inference
-from jevscan.core.models import Diagnostic, EventSink, Severity, Summary, Target, emit_diagnostic
+from jevscan.core.models import Diagnostic, EventSink, Severity, Summary, emit_diagnostic
 from jevscan.core.planning import Omission, Planner, Request
 from jevscan.core.protocol import Answer, Check, RequestRejectedError
+from jevscan.core.result_reporting import Judgment, TargetResults
 from jevscan.core.retrieval import SourceIndex
-from jevscan.core.rules import ScoreQuestion
-
-
-@dataclass(frozen=True, slots=True)
-class Judgment:
-    check: Check
-    answer: Answer
-    evidence: dict[str, Any]
-    model: str
-    cached: bool
-    context: Evidence
-    inference: dict[str, Any] = field(default_factory=dict)
-    review: dict[str, Any] = field(default_factory=dict)
-    wire_state: bytes = b""
-    question_wire: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def fully_cached(self) -> bool:
-        if not self.review:
-            return self.cached
-        return (
-            self.cached
-            and self.review["initial_cached"]
-            and all("cached" in item and item["cached"] for item in self.review["predictions"])
-        )
-
-    def assessment(self) -> Assessment:
-        if self.review.get("outcome") == "not_applicable":
-            return Assessment("not_applicable", "model_routed_not_applicable")
-        return assess(self.check, self.answer, self.evidence["context_complete"])
-
-
-@dataclass(slots=True)
-class TargetResults:
-    target: Target
-    judgments: dict[str, Judgment] = field(default_factory=dict)
-    skipped: dict[str, str] = field(default_factory=dict)
-    applicability: dict[str, str] = field(default_factory=dict)
-    context_selection: dict[str, dict[str, Any]] = field(default_factory=dict)
-
-    def event(self) -> dict[str, Any]:
-        statuses, reasons, findings, tentative = {}, {}, [], []
-        for name, result in sorted(self.judgments.items()):
-            decision = result.assessment()
-            statuses[name], reasons[name] = decision.status, decision.reason
-            if decision.finding:
-                findings.append(asdict(decision.finding))
-            if decision.tentative_finding:
-                tentative.append(asdict(decision.tentative_finding))
-        return {
-            "event": "evaluation",
-            "target": self.target.metadata(),
-            "answers": {name: item.answer.model_dump(mode="json") for name, item in sorted(self.judgments.items())},
-            "rule_metadata": {
-                name: {
-                    "title": item.check.rule.title,
-                    "ruleset": item.check.rule.ruleset,
-                    "blocks_exit": item.check.rule.report.blocks_exit,
-                }
-                for name, item in self.judgments.items()
-            },
-            "statuses": statuses,
-            "uncertainty_reasons": reasons,
-            "reviews": {name: item.review for name, item in self.judgments.items() if item.review},
-            "findings": findings,
-            "tentative_findings": tentative,
-            "evidence": {name: item.evidence for name, item in self.judgments.items()},
-            "models": {name: item.model for name, item in self.judgments.items()},
-            "inference": {name: item.inference for name, item in self.judgments.items()},
-            "cached_rules": [name for name, item in self.judgments.items() if item.fully_cached],
-            "cached": bool(self.judgments)
-            and not self.skipped
-            and all(item.fully_cached for item in self.judgments.values()),
-            "skipped_rules": self.skipped,
-            "applicability_skips": self.applicability,
-            "context_selection": self.context_selection,
-            "scales": {
-                name: len(item.check.rule.question.criteria) - 1
-                for name, item in self.judgments.items()
-                if isinstance(item.check.rule.question, ScoreQuestion)
-            },
-        }
-
-    def diagnostics(self, sink: EventSink, summary: Summary, aborted: bool) -> None:
-        reduced = [name for name, result in self.judgments.items() if not result.evidence["context_complete"]]
-        summary.context_reduced += len(reduced)
-        if reduced:
-            emit_diagnostic(
-                sink,
-                summary,
-                Diagnostic(
-                    self.target.path,
-                    "context-reduced",
-                    f"{self.target.qualified_name}: reduced surrounding evidence for {', '.join(reduced)}; target is complete",
-                    line=self.target.start_line,
-                    incomplete=False,
-                ),
-            )
-        if self.skipped:
-            summary.incomplete = True
-            file_limit = all(reason.startswith("full-file context is ") for reason in self.skipped.values())
-            if not aborted and not file_limit:
-                detail = "; ".join(dict.fromkeys(self.skipped.values()))
-                emit_diagnostic(
-                    sink,
-                    summary,
-                    Diagnostic(
-                        self.target.path,
-                        "evaluation-size-limit",
-                        f"{self.target.qualified_name}: {detail} ({', '.join(self.skipped)})",
-                        line=self.target.start_line,
-                    ),
-                )
-
-    def emit(self, sink: EventSink, summary: Summary, aborted: bool) -> None:
-        event = self.event()
-        summary.checks_evaluated += len(self.judgments)
-        summary.checks_skipped += len(self.skipped)
-        summary.applicability_skips += len(self.applicability)
-        summary.uncertain += sum(status == "unknown" for status in event["statuses"].values())
-        summary.not_applicable += len(self.applicability) + sum(
-            status == "not_applicable" for status in event["statuses"].values()
-        )
-        if self.target.scope == "unit":
-            summary.units_evaluated += bool(self.judgments)
-            summary.units_cached += event["cached"]
-            summary.units_skipped += bool(self.skipped) and not self.judgments and not aborted
-            summary.units_failed += bool(self.skipped) and aborted
-        else:
-            summary.file_targets_evaluated += bool(self.judgments)
-            summary.file_targets_skipped += bool(self.skipped) and not self.judgments
-        for finding in event["findings"]:
-            summary.findings[finding["severity"]] += 1
-            if not self.judgments[finding["rule"]].check.rule.report.blocks_exit:
-                summary.advisory_findings[finding["severity"]] += 1
-        for finding in event["tentative_findings"]:
-            summary.tentative_findings[finding["severity"]] += 1
-        self.diagnostics(sink, summary, aborted)
-        sink.emit(event)
 
 
 class FileResults:
