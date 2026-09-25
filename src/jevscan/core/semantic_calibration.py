@@ -8,12 +8,12 @@ from typing import Any, Callable, Iterable, Mapping, TextIO
 from jevscan.core.assessment import Assessment, assess
 from jevscan.core.calibration_cases import (
     CALIBRATION_VERSION,
-    CalibrationCase,
-    FinalCaptureMaterial,
+    CalibrationCase as CalibrationCase,
+    FinalCaptureMaterial as FinalCaptureMaterial,
     IdentityHashes,
-    TargetRecord,
+    TargetRecord as TargetRecord,
     _sha256_bytes,
-    load_cases,
+    load_cases as load_cases,
 )
 from jevscan.core.models import Target
 from jevscan.core.protocol import Check, encode
