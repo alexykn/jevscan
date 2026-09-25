@@ -36,7 +36,6 @@ SELECTION_VERSION = 1
 def _policy_document(policy: ReportPolicy) -> dict[str, Any]:
     return policy.model_dump(mode="json")
 
-
 @dataclass(frozen=True, slots=True)
 class _PreparationMaterial:
     eligible: list[CalibrationCase]
@@ -45,7 +44,6 @@ class _PreparationMaterial:
     mismatches: tuple[dict[str, Any], ...]
     development_mismatches: tuple[dict[str, Any], ...]
     compatibility: CompatibilityCheck
-
 
 @dataclass(frozen=True, slots=True)
 class _PreparedRule:
@@ -57,7 +55,6 @@ class _PreparedRule:
     mismatches: tuple[dict[str, Any], ...]
     development_mismatches: tuple[dict[str, Any], ...]
     compatibility: CompatibilityCheck
-
 
 @dataclass(frozen=True, slots=True)
 class RuleSelection:
@@ -93,7 +90,6 @@ class RuleSelection:
             "compatibility": self.compatibility.as_dict() if self.compatibility is not None else None,
         }
 
-
 @dataclass(frozen=True, slots=True)
 class SelectionAudit:
     development_split: str
@@ -128,7 +124,6 @@ class SelectionAudit:
             "rules": {rule_id: result.as_dict() for rule_id, result in sorted(self.rules.items())},
         }
 
-
 def selected_policy_document(audit: SelectionAudit) -> dict[str, Any]:
     """Return the mapping accepted by the existing ``--report-policy`` loader."""
     return {
@@ -137,7 +132,6 @@ def selected_policy_document(audit: SelectionAudit) -> dict[str, Any]:
             for rule_id, policy in sorted(audit.selected_policies.items())
         }
     }
-
 
 def _semantic_contract(rule: Rule) -> dict[str, Any]:
     document = rule.model_dump(mode="json")
@@ -163,7 +157,6 @@ def _semantic_contract(rule: Rule) -> dict[str, Any]:
     }
     return document
 
-
 def _mismatch(authoritative: Rule, case: CalibrationCase) -> dict[str, Any] | None:
     expected = encode(_semantic_contract(authoritative))
     actual = encode(_semantic_contract(case.rule))
@@ -175,7 +168,6 @@ def _mismatch(authoritative: Rule, case: CalibrationCase) -> dict[str, Any] | No
         "expected_hash": f"sha256:{hashlib.sha256(expected).hexdigest()}",
         "actual_hash": f"sha256:{hashlib.sha256(actual).hexdigest()}",
     }
-
 
 def _heldout_metrics(
     rule_id: str,
@@ -194,7 +186,6 @@ def _heldout_metrics(
         "non_comparable": list(report.non_comparable),
         "compatibility": compatibility.as_dict(),
     }
-
 
 def _not_searched_selection(
     rule_id: str,
@@ -220,7 +211,6 @@ def _not_searched_selection(
         compatibility,
     )
 
-
 def _reference_rule(
     development: list[CalibrationCase],
     authoritative: Rule | None,
@@ -230,7 +220,6 @@ def _reference_rule(
     if not development:
         return None
     return min(development, key=lambda case: encode(_semantic_contract(case.rule))).rule
-
 
 def _baseline_conflict(
     rule_id: str,
@@ -260,10 +249,8 @@ def _baseline_conflict(
         retain_baseline=False,
     )
 
-
 def _rule_mismatches(reference: Rule, cases: Iterable[CalibrationCase]) -> tuple[dict[str, Any], ...]:
     return tuple(mismatch for case in cases for mismatch in [_mismatch(reference, case)] if mismatch is not None)
-
 
 def _split_rule_cases(
     reference: Rule,
@@ -275,7 +262,6 @@ def _split_rule_cases(
     development = [case for case in eligible if case.split == development_split]
     heldout = [case for case in eligible if case.split == heldout_split] if heldout_split is not None else []
     return eligible, development, heldout
-
 
 def _validate_group_split(
     rule_id: str,
@@ -297,7 +283,6 @@ def _validate_group_split(
     if overlap:
         raise ValueError(f"development and heldout support groups overlap for {rule_id!r}: {', '.join(overlap)}")
 
-
 def _baseline_rule(
     authoritative: Rule | None,
     eligible: list[CalibrationCase],
@@ -315,7 +300,6 @@ def _baseline_rule(
         "report": _policy_document(baseline),
     })
 
-
 def _preparation_reference(
     rule_id: str,
     rule_cases: list[CalibrationCase],
@@ -332,7 +316,6 @@ def _preparation_reference(
         if conflict is not None:
             return conflict
     return reference, development
-
 
 def _preparation_material(
     rule_id: str,
@@ -377,7 +360,6 @@ def _preparation_material(
         material.development_mismatches,
         material.compatibility,
     )
-
 
 def _prepare_rule(
     rule_id: str,
@@ -427,7 +409,6 @@ def _prepare_rule(
         compatibility,
     )
 
-
 def _choose_candidate(
     prepared: _PreparedRule,
     metrics: list[CandidateMetrics],
@@ -465,7 +446,6 @@ def _choose_candidate(
         ),
         "selected",
     )
-
 
 def _evaluate_prepared_rule(prepared: _PreparedRule, objective: SelectionObjective) -> RuleSelection:
     candidates, generated, truncated = _candidate_policies_with_metadata(
@@ -511,7 +491,6 @@ def _validate_selection_splits(development_split: str, heldout_split: str | None
     if heldout_split == development_split:
         raise ValueError("development and heldout splits must differ")
 
-
 def _requested_rule_ids(
     material: list[CalibrationCase],
     rules: Mapping[str, Rule] | None,
@@ -520,7 +499,6 @@ def _requested_rule_ids(
     requested = set(rule_ids or ())
     available = rules.keys() if rules is not None else (case.rule_id for case in material)
     return sorted(requested or set(available))
-
 
 def _group_cases_by_rule(
     material: list[CalibrationCase],
@@ -532,7 +510,6 @@ def _group_cases_by_rule(
         if case.rule_id in requested:
             result[case.rule_id].append(case)
     return result
-
 
 def _fit_development_cases(
     cases_by_rule: Mapping[str, list[CalibrationCase]],
@@ -548,7 +525,6 @@ def _fit_development_cases(
         if reference is not None:
             result.extend(case for case in development if _mismatch(reference, case) is None)
     return result
-
 
 def _select_prepared_rule(
     rule_id: str,
@@ -573,7 +549,6 @@ def _select_prepared_rule(
         retain_baseline=False,
         compatibility=fit_compatibility,
     )
-
 
 def select_policies(
     cases: Iterable[CalibrationCase],
