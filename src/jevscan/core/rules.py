@@ -61,7 +61,10 @@ class TargetedEnrichmentPolicy(StrictModel):
 
     @model_validator(mode="after")
     def has_trigger(self) -> Self:
-        require(bool(self.when_choices or self.when_reasons), "targeted enrichment requires a choice or assessment reason trigger")
+        require(
+            bool(self.when_choices or self.when_reasons),
+            "targeted enrichment requires a choice or assessment reason trigger",
+        )
         require_unique(self.when_choices, "targeted enrichment trigger lists must not contain duplicates")
         require_unique(self.when_reasons, "targeted enrichment trigger lists must not contain duplicates")
         return self
