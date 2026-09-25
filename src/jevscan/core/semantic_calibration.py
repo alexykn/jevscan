@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, TextIO
 
 from jevscan.core.assessment import Assessment, assess
-from jevscan.core.calibration_capture_validation import (
-    has_canonical_not_applicable_route as _has_canonical_not_applicable_route,
-)
 from jevscan.core.calibration_cases import (
     CALIBRATION_VERSION,
     CalibrationCase,
