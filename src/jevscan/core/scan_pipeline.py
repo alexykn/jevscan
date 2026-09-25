@@ -117,6 +117,55 @@ async def _evaluate_worker(
         await evaluate_file(planner, client, cache, sink, summary, index, capture)
 
 
+async def _parse_stage(
+    targets: list[Path],
+    loaded: LoadedConfig,
+    parse: ParseFunction,
+    file_queue: asyncio.Queue[list[FileJob] | None],
+    work_queue: asyncio.Queue[ParsedFile | None],
+    parsers: int,
+    evaluators: int,
+    live: bool,
+    plan_only: bool,
+    sink: EventSink,
+    summary: Summary,
+) -> None:
+    async with asyncio.TaskGroup() as group:
+        group.create_task(_produce(targets, loaded, file_queue, parsers, sink, summary))
+        for _ in range(parsers):
+            group.create_task(
+                _parse_worker(file_queue, work_queue, parse, loaded, live, plan_only, sink, summary)
+            )
+    for _ in range(evaluators):
+        await work_queue.put(None)
+
+
+async def _evaluation_stage(
+    work_queue: asyncio.Queue[ParsedFile | None],
+    loaded: LoadedConfig,
+    client: JevClient,
+    cache: AnswerCache | None,
+    evaluators: int,
+    sink: EventSink,
+    summary: Summary,
+    index: SourceIndex | None,
+    calibration: TokenCalibration,
+    capture: FinalJudgmentSink | None,
+) -> None:
+    async with asyncio.TaskGroup() as group:
+        for _ in range(evaluators):
+            group.create_task(
+                _evaluate_worker(work_queue, loaded, client, cache, sink, summary, index, calibration, capture)
+            )
+
+
+def _source_index(loaded: LoadedConfig, client: JevClient | None) -> SourceIndex | None:
+    enrichment = loaded.config.enrichment
+    if client is None or not enrichment.enabled or enrichment.mode == "off":
+        return None
+    return SourceIndex(loaded.root, loaded.config.scan, enrichment)
+
+
 async def pipeline(
     targets: list[Path],
     loaded: LoadedConfig,
@@ -131,32 +180,40 @@ async def pipeline(
 ) -> None:
     config = loaded.config
     parsers = worker_count(config)
-    evaluators = config.jev.concurrency if client else 0
-    index = (
-        SourceIndex(loaded.root, config.scan, config.enrichment)
-        if client and config.enrichment.enabled and config.enrichment.mode != "off"
-        else None
-    )
-    calibration = TokenCalibration() if client else None
+    evaluators = config.jev.concurrency if client is not None else 0
     file_queue: asyncio.Queue[list[FileJob] | None] = asyncio.Queue(maxsize=parsers * 2)
     work_queue: asyncio.Queue[ParsedFile | None] = asyncio.Queue(maxsize=config.scan.queue_size)
 
-    async def parse_stage() -> None:
-        async with asyncio.TaskGroup() as group:
-            group.create_task(_produce(targets, loaded, file_queue, parsers, sink, summary))
-            for _ in range(parsers):
-                group.create_task(
-                    _parse_worker(file_queue, work_queue, parse, loaded, client is not None, plan_only, sink, summary)
-                )
-        for _ in range(evaluators):
-            await work_queue.put(None)
-
     async with asyncio.TaskGroup() as group:
-        group.create_task(parse_stage())
-        if client:
-            for _ in range(evaluators):
-                group.create_task(
-                    _evaluate_worker(work_queue, loaded, client, cache, sink, summary, index, calibration, capture)
+        group.create_task(
+            _parse_stage(
+                targets,
+                loaded,
+                parse,
+                file_queue,
+                work_queue,
+                parsers,
+                evaluators,
+                client is not None,
+                plan_only,
+                sink,
+                summary,
+            )
+        )
+        if client is not None:
+            group.create_task(
+                _evaluation_stage(
+                    work_queue,
+                    loaded,
+                    client,
+                    cache,
+                    evaluators,
+                    sink,
+                    summary,
+                    _source_index(loaded, client),
+                    TokenCalibration(),
+                    capture,
                 )
+            )
 
 
