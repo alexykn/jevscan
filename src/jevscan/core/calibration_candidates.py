@@ -283,6 +283,3 @@ def _candidate_policies_with_metadata(
     """Generate a balanced, bounded baseline/coordinate/pairwise family."""
     dimensions = _candidate_dimensions(rule, material)
     return _budgeted_candidates(rule, dimensions, max_candidates)
-
-
-
