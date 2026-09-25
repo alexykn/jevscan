@@ -78,6 +78,7 @@ def _matches_signal(level: ReportThreshold, reading: Reading) -> bool:
         return _probability_signal(level, reading)
     return _score_signal(level, reading)
 
+
 def _choice_uncertainty(report: ReportPolicy, reading: Reading) -> str:
     minimum = report.levels.warning.min_probability
     assert minimum is not None and reading.probability is not None
