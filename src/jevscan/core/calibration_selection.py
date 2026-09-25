@@ -126,6 +126,7 @@ def _choose_candidate(
         "selected",
     )
 
+
 def _evaluate_prepared_rule(prepared: PreparedRule, objective: SelectionObjective) -> RuleSelection:
     candidates, generated, truncated = candidate_policies_with_metadata(
         prepared.baseline_rule,
