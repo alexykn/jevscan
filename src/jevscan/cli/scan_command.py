@@ -54,7 +54,9 @@ def _metadata(paths: list[Path], loaded: LoadedConfig, args: Any) -> dict[str, A
 
 
 def prepare_scan(paths: list[Path], loaded: LoadedConfig, args: Any) -> PreparedScan:
-    selected_paths = git_selected_paths(loaded.root, paths, staged=args.staged) if args.changed or args.staged else paths
+    selected_paths = (
+        git_selected_paths(loaded.root, paths, staged=args.staged) if args.changed or args.staged else paths
+    )
     validate_scan_options(loaded.config, args)
     validate_report_output(args.output, selected_paths, loaded.source)
     validate_calibration_output(args.calibration_output, args.output, selected_paths, loaded.source)
