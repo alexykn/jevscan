@@ -27,8 +27,10 @@ _DEFAULT_UTILITY = {
     "Disagree": {"confirmed": -8.0, "tentative": -2.0, "none": 0.0},
 }
 
+
 def _policy_document(policy: ReportPolicy) -> dict[str, Any]:
     return policy.model_dump(mode="json")
+
 
 @dataclass(frozen=True, slots=True)
 class SelectionObjective:
@@ -110,10 +112,12 @@ class SelectionObjective:
             "min_review_list_recall": self.min_review_list_recall,
         }
 
+
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"selection objective {name} must be a positive integer")
     return value
+
 
 def _optional_fraction(value: Any, name: str) -> float | None:
     if value is None:
@@ -124,6 +128,7 @@ def _optional_fraction(value: Any, name: str) -> float | None:
     if not math.isfinite(result) or not 0.0 <= result <= 1.0:
         raise ValueError(f"selection objective {name} must be finite and between 0 and 1")
     return result
+
 
 @dataclass(frozen=True, slots=True)
 class CandidateMetrics:
@@ -150,6 +155,7 @@ class CandidateMetrics:
             "support": self.support,
         }
 
+
 def _review_list_recall(records: Iterable[ReplayRecord]) -> float | None:
     """Return group-normalized Agree review-list recall.
 
@@ -173,12 +179,14 @@ def _review_list_recall(records: Iterable[ReplayRecord]) -> float | None:
         return None
     return len(retained_groups) / len(positive_groups)
 
+
 def _outcome(record: ReplayRecord) -> str:
     if record.confirmed:
         return "confirmed"
     if record.assessment.tentative_finding is not None:
         return "tentative"
     return "none"
+
 
 def _candidate_metrics(
     policy: ReportPolicy,
@@ -237,6 +245,7 @@ def _candidate_metrics(
         },
     )
 
+
 def _policy_distance(left: Any, right: Any) -> int:
     def distance(first: Any, second: Any) -> int:
         if isinstance(first, Mapping) and isinstance(second, Mapping):
@@ -247,6 +256,7 @@ def _policy_distance(left: Any, right: Any) -> int:
         return int(first != second)
 
     return distance(_policy_document(left), _policy_document(right))
+
 
 def _candidate_is_eligible(
     candidate: CandidateMetrics,
@@ -261,6 +271,7 @@ def _candidate_is_eligible(
         candidate.support["review_list_recall"] is not None
         and candidate.support["review_list_recall"] >= minimum_recall
     )
+
 
 def _select_candidate(
     baseline: ReportPolicy,
@@ -294,6 +305,6 @@ def _select_candidate(
         ),
     )
 
+
 def _policy_sort_key(policy: Mapping[str, Any]) -> str:
     return json.dumps(policy, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
