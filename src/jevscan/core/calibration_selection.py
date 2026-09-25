@@ -202,9 +202,7 @@ def select_policies(
     )
     identifiers = _requested_rule_ids(material, rules, rule_ids)
     cases_by_rule = _group_cases_by_rule(material, identifiers)
-    fit_compatibility = compatibility_check(
-        fit_development_cases(cases_by_rule, identifiers, rules, development_split)
-    )
+    fit_compatibility = compatibility_check(fit_development_cases(cases_by_rule, identifiers, rules, development_split))
     selections: dict[str, RuleSelection] = {}
     for rule_id in identifiers:
         prepared = prepare_rule(
@@ -230,4 +228,3 @@ def select_policies(
         selections,
         SelectionCompatibility(allow_incompatible_model_prompt, fit_compatibility),
     )
-
