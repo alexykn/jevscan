@@ -1,7 +1,7 @@
-"""Bounded discovery, process-parser, and async-evaluator stages.
+"""One scan invocation: external resources, cancellation, progress, and final reporting.
 
-This module owns queues, workers, and invocation lifetimes. Stage accounting is
-in scan_events; parsing, planning, and evaluation retain their own contracts.
+Stage queues and worker scheduling live in :mod:`jevscan.core.scan_pipeline`.
+Parsing, planning, evaluation, and report accounting retain their own owners.
 """
 
 import asyncio
