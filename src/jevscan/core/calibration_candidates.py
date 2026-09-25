@@ -31,19 +31,28 @@ def policy_hash(policy: ReportPolicy) -> str:
     return f"sha256:{hashlib.sha256(encode(_policy_document(policy))).hexdigest()}"
 
 
+def _noul_probability(answer: NoulAnswer, policy: ReportPolicy) -> float:
+    return answer.noul if policy.expected else 1 - answer.noul
+
+
+def _choice_probability(answer: ChoiceAnswer, policy: ReportPolicy) -> float:
+    choices = set(policy.choices or ())
+    return answer.probabilities[answer.choice] if answer.choice in choices else 0.0
+
+
+def _score_probability(answer: ScoreAnswer, levels: Iterable[int] | None) -> float:
+    selected = tuple(levels or ())
+    return sum(answer.probabilities[str(level)] for level in selected)
+
+
 def _answer_probability(case: CalibrationCase, policy: ReportPolicy, levels: Iterable[int] | None = None) -> float:
     answer = case.answer
     if isinstance(answer, NoulAnswer):
-        return answer.noul if policy.expected else 1 - answer.noul
+        return _noul_probability(answer, policy)
     if isinstance(answer, ChoiceAnswer):
-        if not policy.choices:
-            return 0.0
-        return answer.probabilities[answer.choice] if answer.choice in policy.choices else 0.0
+        return _choice_probability(answer, policy)
     assert isinstance(answer, ScoreAnswer)
-    selected = list(levels or ())
-    if not selected:
-        return 0.0
-    return sum(answer.probabilities[str(level)] for level in selected)
+    return _score_probability(answer, levels)
 
 
 def _observed_values(values: Iterable[float], baseline: float | None = None) -> list[float]:
@@ -101,56 +110,96 @@ def _score_dimension_values(
     return values
 
 
-def _candidate_dimensions(rule: Rule, material: list[CalibrationCase]) -> list[_ThresholdDimension]:
-    report = rule.report
-    warning = report.levels.warning.model_dump(mode="python")
-    error = report.levels.error.model_dump(mode="python")
-    dimensions: list[_ThresholdDimension] = []
-    if warning["min_probability"] is not None:
-        if isinstance(rule.question, ScoreQuestion) and warning["score_levels"] is not None:
-            probabilities = [_answer_probability(case, report, warning["score_levels"]) for case in material] + [
-                _answer_probability(case, report, error["score_levels"]) for case in material
-            ]
-        else:
-            probabilities = [_answer_probability(case, report) for case in material]
-        probability_values = _observed_values(probabilities, warning["min_probability"])
-        probability_values = _observed_values(probability_values, error["min_probability"])
-        _add_dimension(
-            dimensions, warning, error, "warning_probability", "warning", "min_probability", probability_values
+@dataclass(slots=True)
+class _DimensionBuilder:
+    rule: Rule
+    material: list[CalibrationCase]
+    warning: dict[str, Any]
+    error: dict[str, Any]
+    dimensions: list[_ThresholdDimension]
+
+    @classmethod
+    def create(cls, rule: Rule, material: list[CalibrationCase]) -> "_DimensionBuilder":
+        report = rule.report
+        return cls(
+            rule,
+            material,
+            report.levels.warning.model_dump(mode="python"),
+            report.levels.error.model_dump(mode="python"),
+            [],
         )
 
-    observed_confidence = _observed_values(
-        case.answer.confidence for case in material if isinstance(case.answer, (ChoiceAnswer, ScoreAnswer))
-    )
-    if warning["min_confidence"] is not None:
-        confidence_values = _observed_values(observed_confidence, warning["min_confidence"])
-        confidence_values = _observed_values(confidence_values, error["min_confidence"])
-        _add_dimension(dimensions, warning, error, "warning_confidence", "warning", "min_confidence", confidence_values)
+    def _add(self, name: str, severity: str, field: str, values: Iterable[Any]) -> None:
+        _add_dimension(self.dimensions, self.warning, self.error, name, severity, field, values)
 
-    if isinstance(rule.question, ScoreQuestion) and warning["score_levels"] is None:
-        field = "min_score" if warning["min_score"] is not None else "max_score"
-        _add_dimension(
-            dimensions,
-            warning,
-            error,
+    def probability(self) -> None:
+        if self.warning["min_probability"] is None:
+            return
+        mass_levels = self.warning["score_levels"]
+        if isinstance(self.rule.question, ScoreQuestion) and mass_levels is not None:
+            values = [
+                _answer_probability(case, self.rule.report, levels)
+                for levels in (mass_levels, self.error["score_levels"])
+                for case in self.material
+            ]
+        else:
+            values = [_answer_probability(case, self.rule.report) for case in self.material]
+        observed = _observed_values(values, self.warning["min_probability"])
+        self._add(
+            "warning_probability",
+            "warning",
+            "min_probability",
+            _observed_values(observed, self.error["min_probability"]),
+        )
+
+    def confidence(self) -> None:
+        if self.warning["min_confidence"] is None:
+            return
+        answers = (
+            case.answer.confidence
+            for case in self.material
+            if isinstance(case.answer, (ChoiceAnswer, ScoreAnswer))
+        )
+        observed = _observed_values(answers, self.warning["min_confidence"])
+        self._add(
+            "warning_confidence",
+            "warning",
+            "min_confidence",
+            _observed_values(observed, self.error["min_confidence"]),
+        )
+
+    def scalar_score(self) -> None:
+        if not isinstance(self.rule.question, ScoreQuestion) or self.warning["score_levels"] is not None:
+            return
+        field = "min_score" if self.warning["min_score"] is not None else "max_score"
+        self._add(
             "warning_score",
             "warning",
             field,
-            _score_dimension_values(rule, material, warning, error),
+            _score_dimension_values(self.rule, self.material, self.warning, self.error),
         )
 
-    if isinstance(rule.question, ScoreQuestion) and warning["score_levels"] is not None:
-        _add_dimension(
-            dimensions,
-            warning,
-            error,
+    def score_mass(self) -> None:
+        levels = self.warning["score_levels"]
+        if not isinstance(self.rule.question, ScoreQuestion) or levels is None:
+            return
+        self._add(
             "warning_mass",
             "warning",
             "score_levels",
-            _ordered_subsets(tuple(warning["score_levels"])),
+            _ordered_subsets(tuple(levels)),
         )
-    return dimensions
 
+    def build(self) -> list[_ThresholdDimension]:
+        self.probability()
+        self.confidence()
+        self.scalar_score()
+        self.score_mass()
+        return self.dimensions
+
+
+def _candidate_dimensions(rule: Rule, material: list[CalibrationCase]) -> list[_ThresholdDimension]:
+    return _DimensionBuilder.create(rule, material).build()
 
 def _policy_from_changes(rule: Rule, changes: Mapping[tuple[str, str], Any]) -> ReportPolicy | None:
     report = rule.report
@@ -202,6 +251,28 @@ def _dimension_stream(
                 yield policy
 
 
+def _dimension_pairs(count: int) -> tuple[tuple[int, int], ...]:
+    return tuple((left, right) for left in range(count) for right in range(left + 1, count))
+
+
+def _search_width(limit: int, streams: int) -> int:
+    return 1 if limit == 1 else max(2, limit // max(1, 2 * streams))
+
+
+def _search_is_truncated(
+    dimensions: list[_ThresholdDimension],
+    pairs: tuple[tuple[int, int], ...],
+    coordinate: int,
+    pair: int,
+) -> bool:
+    coordinates_truncated = any(len(dimension.values) > coordinate for dimension in dimensions)
+    pairs_truncated = any(
+        len(dimensions[left].values) * len(dimensions[right].values) > pair
+        for left, right in pairs
+    )
+    return coordinates_truncated or pairs_truncated or len(dimensions) > 2
+
+
 @dataclass(frozen=True, slots=True)
 class _SearchBudget:
     limit: int
@@ -213,14 +284,10 @@ class _SearchBudget:
     @classmethod
     def for_dimensions(cls, dimensions: list[_ThresholdDimension], max_candidates: int) -> _SearchBudget:
         limit = max(1, max_candidates)
-        pairs = tuple((index, other) for index in range(len(dimensions)) for other in range(index + 1, len(dimensions)))
-        coordinate = 1 if limit == 1 else max(2, limit // max(1, 2 * len(dimensions)))
-        pair = 1 if limit == 1 else max(2, limit // max(1, 2 * len(pairs)))
-        truncated = (
-            any(len(dimension.values) > coordinate for dimension in dimensions)
-            or any(len(dimensions[left].values) * len(dimensions[right].values) > pair for left, right in pairs)
-            or len(dimensions) > 2
-        )
+        pairs = _dimension_pairs(len(dimensions))
+        coordinate = _search_width(limit, len(dimensions))
+        pair = _search_width(limit, len(pairs))
+        truncated = _search_is_truncated(dimensions, pairs, coordinate, pair)
         return cls(limit, coordinate, pair, pairs, truncated)
 
 
