@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
-from jevscan.core.calibration_candidates import candidate_policies, candidate_policies_with_metadata, policy_hash
+from jevscan.core.calibration_candidates import (
+    candidate_policies,
+    candidate_policies_with_metadata,
+    policy_hash,
+)
 from jevscan.core.calibration_cases import CalibrationCase
 from jevscan.core.calibration_compatibility import (
     CompatibilityCheck,
