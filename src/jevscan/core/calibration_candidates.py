@@ -96,18 +96,40 @@ def _add_dimension(
         dimensions.append(_ThresholdDimension(name, (severity, field), options))
 
 
-def _score_dimension_values(
-    rule: Rule, material: list[CalibrationCase], warning: dict[str, Any], error: dict[str, Any]
+def _score_field(warning: Mapping[str, Any]) -> str:
+    return "min_score" if warning["min_score"] is not None else "max_score"
+
+
+def _rubric_score_values(question: ScoreQuestion) -> set[float]:
+    return {float(level) for level in range(len(question.criteria))}
+
+
+def _observed_score_values(material: list[CalibrationCase]) -> set[float]:
+    return {float(case.answer.score) for case in material if isinstance(case.answer, ScoreAnswer)}
+
+
+def _declared_score_values(
+    warning: Mapping[str, Any],
+    error: Mapping[str, Any],
+    field: str,
 ) -> set[float]:
-    if not isinstance(rule.question, ScoreQuestion):
+    return {float(value) for value in (warning[field], error[field]) if value is not None}
+
+
+def _score_dimension_values(
+    rule: Rule,
+    material: list[CalibrationCase],
+    warning: dict[str, Any],
+    error: dict[str, Any],
+) -> set[float]:
+    question = rule.question
+    if not isinstance(question, ScoreQuestion):
         return set()
-    field = "min_score" if warning["min_score"] is not None else "max_score"
-    max_level = len(rule.question.criteria) - 1
-    values = {float(level) for level in range(max_level + 1)}
-    values.update(float(case.answer.score) for case in material if isinstance(case.answer, ScoreAnswer))
-    values = {value for value in values if 0 <= value <= max_level}
-    values.update(value for value in (warning[field], error[field]) if value is not None)
-    return values
+    field = _score_field(warning)
+    max_level = len(question.criteria) - 1
+    values = _rubric_score_values(question) | _observed_score_values(material)
+    bounded = {value for value in values if 0 <= value <= max_level}
+    return bounded | _declared_score_values(warning, error, field)
 
 
 @dataclass(slots=True)
@@ -132,19 +154,21 @@ class _DimensionBuilder:
     def _add(self, name: str, severity: str, field: str, values: Iterable[Any]) -> None:
         _add_dimension(self.dimensions, self.warning, self.error, name, severity, field, values)
 
-    def probability(self) -> None:
-        if self.warning["min_probability"] is None:
-            return
+    def _probability_values(self) -> list[float]:
         mass_levels = self.warning["score_levels"]
         if isinstance(self.rule.question, ScoreQuestion) and mass_levels is not None:
-            values = [
+            return [
                 _answer_probability(case, self.rule.report, levels)
                 for levels in (mass_levels, self.error["score_levels"])
                 for case in self.material
             ]
-        else:
-            values = [_answer_probability(case, self.rule.report) for case in self.material]
-        observed = _observed_values(values, self.warning["min_probability"])
+        return [_answer_probability(case, self.rule.report) for case in self.material]
+
+    def probability(self) -> None:
+        baseline = self.warning["min_probability"]
+        if baseline is None:
+            return
+        observed = _observed_values(self._probability_values(), baseline)
         self._add(
             "warning_probability",
             "warning",
@@ -230,25 +254,38 @@ def _interleave(streams: list[Iterator[ReportPolicy]]) -> Iterator[ReportPolicy]
         active = next_active
 
 
-def _dimension_stream(
-    dimensions: list[_ThresholdDimension],
-    indices: tuple[int, ...],
+def _single_dimension_stream(
+    dimension: _ThresholdDimension,
     rule: Rule,
 ) -> Iterator[ReportPolicy]:
-    if len(indices) == 1:
-        dimension = dimensions[indices[0]]
-        for value in dimension.values:
-            policy = _policy_from_changes(rule, {dimension.target: value})
-            if policy is not None:
-                yield policy
-        return
-    first, second = (dimensions[index] for index in indices)
+    for value in dimension.values:
+        policy = _policy_from_changes(rule, {dimension.target: value})
+        if policy is not None:
+            yield policy
+
+
+def _pair_dimension_stream(
+    first: _ThresholdDimension,
+    second: _ThresholdDimension,
+    rule: Rule,
+) -> Iterator[ReportPolicy]:
     for left in first.values:
         for right in second.values:
             policy = _policy_from_changes(rule, {first.target: left, second.target: right})
             if policy is not None:
                 yield policy
 
+
+def _dimension_stream(
+    dimensions: list[_ThresholdDimension],
+    indices: tuple[int, ...],
+    rule: Rule,
+) -> Iterator[ReportPolicy]:
+    if len(indices) == 1:
+        yield from _single_dimension_stream(dimensions[indices[0]], rule)
+        return
+    first, second = (dimensions[index] for index in indices)
+    yield from _pair_dimension_stream(first, second, rule)
 
 def _dimension_pairs(count: int) -> tuple[tuple[int, int], ...]:
     return tuple((left, right) for left in range(count) for right in range(left + 1, count))
