@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from jevscan.core.config import Config, EvaluationConfig
 from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.model_limits import TokenCalibration, limits_for_model
-from jevscan.core.models import CALLABLE_KINDS, Target
+from jevscan.core.models import CALLABLE_KINDS, Target, Unit
 from jevscan.core.protocol import Check, PromptRegistry, encode
-from jevscan.core.rules import Question, Rule
+from jevscan.core.rules import ApplicabilityPolicy, Question, Rule
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,18 +158,25 @@ class Planner:
             return frozenset(fact for unit in self.context.parsed.units for fact in unit.syntax_facts)
         return frozenset(self.context.units[target.id].syntax_facts)
 
+    @staticmethod
+    def _missing_applicability_facts(
+        policy: ApplicabilityPolicy,
+        facts: frozenset[str],
+    ) -> list[str]:
+        missing = [fact for fact in policy.requires_all if fact not in facts]
+        any_missing = policy.requires_any and not (facts & set(policy.requires_any))
+        if any_missing:
+            missing.extend(policy.requires_any)
+        return missing
+
     def _applicability_reason(self, target: Target, rule: Rule) -> str | None:
         policy = rule.applicability
         if policy is None:
             return None
-        facts = self._facts(target)
-        missing_all = [fact for fact in policy.requires_all if fact not in facts]
-        any_present = not policy.requires_any or bool(facts & set(policy.requires_any))
-        if not missing_all and any_present:
+        missing = self._missing_applicability_facts(policy, self._facts(target))
+        if not missing:
             return None
-        missing = [*missing_all, *(policy.requires_any if not any_present else [])]
-        declared = ", ".join(missing)
-        return f"applicability: declared syntax prerequisite absent ({declared})"
+        return f"applicability: declared syntax prerequisite absent ({', '.join(missing)})"
 
     def _owners_with_members(self) -> set[str | None]:
         return {
@@ -178,15 +185,21 @@ class Planner:
             if unit.kind in CALLABLE_KINDS and unit.has_implementation
         }
 
+    @staticmethod
+    def _unit_structural_match(unit: Unit, rule: Rule, has_members: bool) -> bool:
+        if unit.kind not in rule.applies_to:
+            return False
+        if rule.require_body and not (unit.has_body and unit.has_implementation):
+            return False
+        return not rule.require_members or has_members
+
     def _structural_match(self, target: Target, rule: Rule, owners_with_members: set[str | None]) -> bool:
         if rule.target != target.scope or target.language not in rule.languages:
             return False
         if target.scope == "file":
             return True
         unit = self.context.units[target.id]
-        body_ok = not rule.require_body or (unit.has_body and unit.has_implementation)
-        members_ok = not rule.require_members or target.id in owners_with_members
-        return unit.kind in rule.applies_to and body_ok and members_ok
+        return self._unit_structural_match(unit, rule, target.id in owners_with_members)
 
     def _record_applicability_skip(self, target: Target, rule_id: str, reason: str) -> None:
         self.applicability_skips.setdefault(target.id, {})[rule_id] = reason
@@ -270,17 +283,26 @@ class Planner:
             groups.setdefault(group_key, (evidence, []))[1].append(check)
         return list(groups.values())
 
-    def _pack_group(self, evidence: Evidence, checks: list[Check], registry: PromptRegistry) -> Iterator[Request]:
-        # Evidence that cannot fit even one question must reach recovery intact.
-        # Fragmenting it here would prevent recovery from regrouping sibling checks
-        # that converge on the same compacted evidence.
-        singleton_violations = self.violations(evidence, (checks[0],), registry)
-        if singleton_violations & {"context", "bytes"}:
-            step = self.limits.max_questions
-            for start in range(0, len(checks), step):
-                yield self.request(evidence, tuple(checks[start : start + step]), registry)
-            return
+    def _requires_recovery(self, evidence: Evidence, check: Check, registry: PromptRegistry) -> bool:
+        violations = self.violations(evidence, (check,), registry)
+        return bool(violations & {"context", "bytes"})
 
+    def _question_limited_batches(
+        self,
+        evidence: Evidence,
+        checks: list[Check],
+        registry: PromptRegistry,
+    ) -> Iterator[Request]:
+        step = self.limits.max_questions
+        for start in range(0, len(checks), step):
+            yield self.request(evidence, tuple(checks[start : start + step]), registry)
+
+    def _fitting_batches(
+        self,
+        evidence: Evidence,
+        checks: list[Check],
+        registry: PromptRegistry,
+    ) -> Iterator[Request]:
         pending: tuple[Check, ...] = ()
         for check in checks:
             candidate = (*pending, check)
@@ -290,6 +312,15 @@ class Planner:
             pending = (*pending, check)
         if pending:
             yield self.request(evidence, pending, registry)
+
+    def _pack_group(self, evidence: Evidence, checks: list[Check], registry: PromptRegistry) -> Iterator[Request]:
+        # Evidence that cannot fit even one question must reach recovery intact.
+        # Fragmenting it here would prevent recovery from regrouping sibling checks
+        # that converge on the same compacted evidence.
+        if self._requires_recovery(evidence, checks[0], registry):
+            yield from self._question_limited_batches(evidence, checks, registry)
+            return
+        yield from self._fitting_batches(evidence, checks, registry)
 
     def plan(self) -> Iterator[Request]:
         # Exact evidence and target scope define a shared group. Different targets
