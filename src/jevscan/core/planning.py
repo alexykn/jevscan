@@ -163,7 +163,7 @@ class Planner:
         policy: ApplicabilityPolicy,
         facts: frozenset[str],
     ) -> list[str]:
-        missing = [fact for fact in policy.requires_all if fact not in facts]
+        missing: list[str] = [fact for fact in policy.requires_all if fact not in facts]
         any_missing = policy.requires_any and not (facts & set(policy.requires_any))
         if any_missing:
             missing.extend(policy.requires_any)

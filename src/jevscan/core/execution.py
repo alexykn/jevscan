@@ -102,6 +102,7 @@ class FileExecutor:
             else:
                 self._publish_cached_judgment(request, check, item)
         return self._remaining_request(request, missing)
+
     def _record_size_rejection(self, request: Request, error: ContextLimitError) -> None:
         for check in request.checks:
             self.results.recovery(check)["rejections"].append({
@@ -279,6 +280,7 @@ class FileExecutor:
             return []
         groups, final_attempts = await self._recover_checks(attempt, reason)
         return [*self._pack_recovered(attempt, groups), *final_attempts]
+
     def _known_rejection(self, attempt: Attempt) -> tuple[str, tuple[int, dict[str, Any]] | None]:
         request = attempt.request
         state_key = hashlib.sha256(request.state).hexdigest()

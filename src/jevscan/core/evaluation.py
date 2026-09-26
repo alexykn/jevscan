@@ -235,6 +235,7 @@ class FileResults:
             if result is not None:
                 record.judgments[name] = self._reassessment_judgment(initial, result)
             self._record_resolution(initial, record, name, enricher)
+
     def capture_final(self, sink: FinalJudgmentSink, source_documents: dict[str, str]) -> None:
         for record in self.records.values():
             for rule_id, reason in record.applicability.items():
@@ -261,6 +262,7 @@ class FileResults:
     def _finalize_missing(self, aborted: bool) -> None:
         for check in self._planned_checks():
             self._finalize_check(check, aborted)
+
     def _emit_request_failures(self, sink: EventSink, summary: Summary) -> None:
         for failure in self.request_failures.values():
             fields = (
@@ -286,11 +288,7 @@ class FileResults:
             for record in self.records.values()
         )
         skipped = sum(len(record.skipped) for record in self.records.values())
-        file_skipped = sum(
-            len(record.skipped)
-            for record in self.records.values()
-            if record.target.scope == "file"
-        )
+        file_skipped = sum(len(record.skipped) for record in self.records.values() if record.target.scope == "file")
         return reduced_targets, skipped, file_skipped
 
     def _coverage_event(self, aborted: bool) -> dict[str, Any] | None:
@@ -311,6 +309,7 @@ class FileResults:
         event = self._coverage_event(aborted)
         if event is not None:
             sink.emit(event)
+
     def finish(self, sink: EventSink, summary: Summary, aborted: bool) -> None:
         self._finalize_missing(aborted)
         self._emit_request_failures(sink, summary)
