@@ -374,15 +374,14 @@ def _validate_score_answer(answer: Answer, question: Question, name: str) -> Non
     _validate_probability_map(answer, {str(index) for index in range(len(question.criteria))}, name)
 
 
-_ANSWER_VALIDATORS = {
-    NoulQuestion: _validate_noul_answer,
-    ChoiceQuestion: _validate_choice_answer,
-    ScoreQuestion: _validate_score_answer,
-}
-
-
 def validate_answer(answer: Answer, question: Question, name: str) -> None:
-    _ANSWER_VALIDATORS[type(question)](answer, question, name)
+    if isinstance(question, NoulQuestion):
+        _validate_noul_answer(answer, question, name)
+    elif isinstance(question, ChoiceQuestion):
+        _validate_choice_answer(answer, question, name)
+    else:
+        assert isinstance(question, ScoreQuestion)
+        _validate_score_answer(answer, question, name)
 
 
 def validate_response(raw: bytes | str, questions: dict[str, Question]) -> JevResponse:
