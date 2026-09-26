@@ -92,7 +92,7 @@ class Inference:
 
     async def _cached_response(
         self,
-        key: bytes,
+        key: str,
         body: bytes,
         questions: dict[str, Question],
         *,
@@ -136,7 +136,7 @@ class Inference:
         finally:
             self._reserve_phase(phase, reservation)
 
-    async def _cache_response(self, key: bytes, response: JevResponse) -> None:
+    async def _cache_response(self, key: str, response: JevResponse) -> None:
         if self.cache is not None:
             await self.cache.put(key, response.model_dump_json().encode())
 
