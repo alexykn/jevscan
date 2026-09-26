@@ -48,15 +48,13 @@ def _score_reading(_report: ReportPolicy, answer: ScoreAnswer, level: ReportThre
     return Reading(answer.score, probability, answer.confidence)
 
 
-_READING_BUILDERS = {
-    NoulAnswer: _noul_reading,
-    ChoiceAnswer: _choice_reading,
-    ScoreAnswer: _score_reading,
-}
-
-
 def _reading(report: ReportPolicy, answer: Answer, level: ReportThreshold | None = None) -> Reading:
-    return _READING_BUILDERS[type(answer)](report, answer, level)
+    if isinstance(answer, NoulAnswer):
+        return _noul_reading(report, answer, level)
+    if isinstance(answer, ChoiceAnswer):
+        return _choice_reading(report, answer, level)
+    assert isinstance(answer, ScoreAnswer)
+    return _score_reading(report, answer, level)
 
 
 def _probability_signal(level: ReportThreshold, reading: Reading) -> bool:
