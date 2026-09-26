@@ -9,8 +9,8 @@ from jevscan.core.validation import (
     require,
     require_disjoint,
     require_exactly_one,
-    require_nonempty,
     require_none,
+    require_nonempty,
     require_subset,
     require_unique,
 )
