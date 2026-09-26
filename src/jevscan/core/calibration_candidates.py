@@ -119,7 +119,7 @@ class _DimensionBuilder:
     dimensions: list[_ThresholdDimension]
 
     @classmethod
-    def create(cls, rule: Rule, material: list[CalibrationCase]) -> "_DimensionBuilder":
+    def create(cls, rule: Rule, material: list[CalibrationCase]) -> _DimensionBuilder:
         report = rule.report
         return cls(
             rule,
