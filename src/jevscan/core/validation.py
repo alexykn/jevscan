@@ -4,10 +4,7 @@ These helpers keep validation code declarative: callers state an invariant and
 its error message instead of repeatedly spelling control-flow plumbing.
 """
 
-from collections.abc import Collection, Iterable, Sequence
-from typing import TypeVar
-
-T = TypeVar("T")
+from collections.abc import Collection, Hashable, Iterable, Sequence
 
 
 def require(condition: bool, message: str) -> None:
@@ -15,7 +12,7 @@ def require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
-def require_unique(values: Sequence[T], message: str) -> None:
+def require_unique[T: Hashable](values: Sequence[T], message: str) -> None:
     require(len(values) == len(set(values)), message)
 
 
@@ -23,11 +20,11 @@ def require_nonempty(values: Collection[object], message: str) -> None:
     require(bool(values), message)
 
 
-def require_subset(values: Collection[T], allowed: Collection[T], message: str) -> None:
+def require_subset[T: Hashable](values: Collection[T], allowed: Collection[T], message: str) -> None:
     require(not (set(values) - set(allowed)), message)
 
 
-def require_disjoint(groups: Iterable[Collection[T]], message: str) -> None:
+def require_disjoint[T: Hashable](groups: Iterable[Collection[T]], message: str) -> None:
     seen: set[T] = set()
     for group in groups:
         current = set(group)
