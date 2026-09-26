@@ -80,29 +80,29 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_policy(path: Path) -> tuple[dict[str, Any] | None, dict[str, dict[str, Any]] | None]:
+def _load_yaml_mapping(path: Path, message: str) -> dict[str, Any]:
     with path.open(encoding="utf-8") as stream:
         value = yaml.safe_load(stream)
     if not isinstance(value, dict):
-        raise TypeError("report policy must be a YAML mapping")
+        raise TypeError(message)
+    return value
+
+
+def _load_policy(path: Path) -> tuple[dict[str, Any] | None, dict[str, dict[str, Any]] | None]:
+    value = _load_yaml_mapping(path, "report policy must be a YAML mapping")
     if "levels" in value:
         return value, None
-    if "rules" in value:
-        value = value["rules"]
-    if not isinstance(value, dict) or any(not isinstance(policy, dict) for policy in value.values()):
+    policies = value.get("rules", value)
+    if not isinstance(policies, dict) or any(not isinstance(policy, dict) for policy in policies.values()):
         raise ValueError("report policy must be one policy or a rule-ID-to-policy mapping")
-    return None, value
+    return None, policies
 
 
 def _load_objective(path: Path | None) -> SelectionObjective:
     if path is None:
         return SelectionObjective.default()
-    with path.open(encoding="utf-8") as stream:
-        value = yaml.safe_load(stream)
-    if not isinstance(value, dict):
-        raise TypeError("selection objective must be a YAML mapping")
+    value = _load_yaml_mapping(path, "selection objective must be a YAML mapping")
     return SelectionObjective.from_mapping(value)
-
 
 def _write_selection_audit(audit: SelectionAudit, destination: Path | None, *, writeback: dict[str, Any]) -> None:
     value = audit.as_dict()
@@ -121,14 +121,28 @@ def _write_selected_policy(audit: SelectionAudit, destination: Path) -> None:
         yaml.safe_dump(selected_policy_document(audit), stream, sort_keys=False, allow_unicode=True)
 
 
-def _reject_selection_output_collisions(args: argparse.Namespace) -> None:
+def _selection_output_pairs(args: argparse.Namespace) -> list[tuple[Path, Path]]:
     destinations = [path for path in (args.output, args.selected_policy) if path is not None]
-    protected = [args.input, args.rules_path, args.objective]
-    for index, destination in enumerate(destinations):
-        for other in destinations[index + 1 :] + protected:
-            if other is not None and _paths_alias(destination, other):
-                raise ValueError(f"selection output {destination} aliases {other}; choose distinct paths")
+    protected = [path for path in (args.input, args.rules_path, args.objective) if path is not None]
+    return [
+        (destination, other)
+        for index, destination in enumerate(destinations)
+        for other in [*destinations[index + 1 :], *protected]
+    ]
 
+
+def _reject_selection_output_collisions(args: argparse.Namespace) -> None:
+    collision = next(
+        (
+            (destination, other)
+            for destination, other in _selection_output_pairs(args)
+            if _paths_alias(destination, other)
+        ),
+        None,
+    )
+    if collision is not None:
+        destination, other = collision
+        raise ValueError(f"selection output {destination} aliases {other}; choose distinct paths")
 
 def _reject_replay_output_collisions(args: argparse.Namespace) -> None:
     if args.output is None:
@@ -149,35 +163,51 @@ def _validate_selection_arguments(args: argparse.Namespace) -> None:
         raise ValueError("--rule-id requires --rules")
 
 
-def _select(args: argparse.Namespace, cases: list[CalibrationCase]) -> None:
-    _validate_selection_arguments(args)
-    objective = _load_objective(args.objective)
-    supplied = SuppliedRules.load(args.rules_path, args.rule_ids) if args.rules_path else None
-    audit = select_policies(
+def _supplied_rules(args: argparse.Namespace) -> SuppliedRules | None:
+    if args.rules_path is None:
+        return None
+    return SuppliedRules.load(args.rules_path, args.rule_ids)
+
+
+def _selection_audit(
+    args: argparse.Namespace,
+    cases: list[CalibrationCase],
+    supplied: SuppliedRules | None,
+) -> SelectionAudit:
+    return select_policies(
         cases,
         development_split=args.development_split,
         heldout_split=args.heldout_split,
-        objective=objective,
+        objective=_load_objective(args.objective),
         rules=supplied.rules if supplied is not None else None,
         rule_ids=args.rule_ids or None,
         allow_incompatible_model_prompt=args.allow_incompatible_model_prompt,
     )
+
+
+def _apply_selection(args: argparse.Namespace, supplied: SuppliedRules | None, audit: SelectionAudit) -> bool:
+    if not args.apply:
+        return False
+    assert supplied is not None
+    return supplied.apply(audit)
+
+
+def _selection_writeback(args: argparse.Namespace, applied: bool) -> dict[str, Any]:
+    return {
+        "path": str(args.rules_path) if args.rules_path else None,
+        "requested": args.apply,
+        "applied": applied,
+    }
+
+
+def _select(args: argparse.Namespace, cases: list[CalibrationCase]) -> None:
+    _validate_selection_arguments(args)
+    supplied = _supplied_rules(args)
+    audit = _selection_audit(args, cases, supplied)
     if args.selected_policy:
         _write_selected_policy(audit, args.selected_policy)
-    applied = False
-    if args.apply:
-        assert supplied is not None
-        applied = supplied.apply(audit)
-    _write_selection_audit(
-        audit,
-        args.output,
-        writeback={
-            "path": str(args.rules_path) if args.rules_path else None,
-            "requested": args.apply,
-            "applied": applied,
-        },
-    )
-
+    applied = _apply_selection(args, supplied, audit)
+    _write_selection_audit(audit, args.output, writeback=_selection_writeback(args, applied))
 
 def _replay_overrides(args: argparse.Namespace, cases: list[CalibrationCase]) -> dict[str, dict[str, Any]] | None:
     if args.report_policy is None:
