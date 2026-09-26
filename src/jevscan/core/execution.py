@@ -32,11 +32,7 @@ class Attempt:
 
 def _completed_worker_error(tasks: list[asyncio.Task[None]]) -> BaseException | None:
     return next(
-        (
-            error
-            for task in tasks
-            if task.done() and not task.cancelled() and (error := task.exception()) is not None
-        ),
+        (error for task in tasks if task.done() and not task.cancelled() and (error := task.exception()) is not None),
         None,
     )
 
@@ -390,4 +386,3 @@ class FileExecutor:
             await _wait_for_requests(joined, tasks)
         finally:
             await self._stop_workers(joined, tasks)
-
