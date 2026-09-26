@@ -38,27 +38,58 @@ def _routing_config(capture: FinalCaptureMaterial) -> tuple[tuple[str, ...], Enr
     return families, limits
 
 
+def _route_predictions(capture: FinalCaptureMaterial) -> list[Mapping[str, Any]]:
+    return [
+        prediction
+        for prediction in capture.review.get("predictions", [])
+        if isinstance(prediction, Mapping) and prediction.get("phase") == "route"
+    ]
+
+
+def _prediction_material(prediction: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    wires = prediction.get("question_wires")
+    answers = prediction.get("answers")
+    if not isinstance(wires, Mapping) or not isinstance(answers, Mapping):
+        raise TypeError("final not-applicable capture has incomplete route prediction")
+    return wires, answers
+
+
+def _captured_answer(
+    name: str,
+    raw_wire: Any,
+    raw_answers: Mapping[str, Any],
+    check: Check,
+    questions: Mapping[str, Any],
+) -> Answer:
+    if name not in questions or raw_wire != check.auxiliary(questions[name]):
+        raise ValueError("final not-applicable capture has a non-canonical route wire")
+    if name not in raw_answers:
+        raise ValueError("final not-applicable capture route answer is missing")
+    answer = _ANSWER_ADAPTER.validate_python(raw_answers[name])
+    validate_answer(answer, questions[name], name)
+    return answer
+
+
+def _prediction_answers(
+    prediction: Mapping[str, Any],
+    check: Check,
+    questions: Mapping[str, Any],
+) -> dict[str, Answer]:
+    wires, raw_answers = _prediction_material(prediction)
+    return {
+        name: _captured_answer(name, raw_wire, raw_answers, check, questions)
+        for name, raw_wire in wires.items()
+    }
+
+
 def _captured_route_answers(
     capture: FinalCaptureMaterial,
     check: Check,
     questions: Mapping[str, Any],
 ) -> dict[str, Answer]:
     answers: dict[str, Answer] = {}
-    for prediction in capture.review.get("predictions", []):
-        if not isinstance(prediction, Mapping) or prediction.get("phase") != "route":
-            continue
-        wires = prediction.get("question_wires")
-        raw_answers = prediction.get("answers")
-        if not isinstance(wires, Mapping) or not isinstance(raw_answers, Mapping):
-            raise TypeError("final not-applicable capture has incomplete route prediction")
-        for name, raw_wire in wires.items():
-            if name not in questions or raw_wire != check.auxiliary(questions[name]):
-                raise ValueError("final not-applicable capture has a non-canonical route wire")
-            if name not in raw_answers:
-                raise ValueError("final not-applicable capture route answer is missing")
-            answer = _ANSWER_ADAPTER.validate_python(raw_answers[name])
-            validate_answer(answer, questions[name], name)
-            answers[name] = answer
+    for prediction in _route_predictions(capture):
+        answers.update(_prediction_answers(prediction, check, questions))
     if set(answers) != set(questions):
         raise ValueError("final not-applicable capture does not contain the complete route decision")
     return answers
