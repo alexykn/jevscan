@@ -196,24 +196,35 @@ class Config(StrictModel):
         }
 
 
-def _validate_catalogue(config: Config) -> None:
+def _invalid_catalogue_name(config: Config) -> str | None:
     names = (*config.rules, *config.rulesets)
-    invalid = next((name for name in names if not IDENTIFIER.fullmatch(name) or name == "ALL"), None)
-    require(invalid is None, f"invalid or reserved rule/ruleset name: {invalid!r}")
-    require(not (config.rules.keys() & config.rulesets.keys()), "rule and ruleset names must not overlap")
+    return next((name for name in names if not IDENTIFIER.fullmatch(name) or name == "ALL"), None)
 
-    unknown_ruleset = next(
+
+def _unknown_ruleset(config: Config) -> tuple[str, str] | None:
+    return next(
         ((name, rule.ruleset) for name, rule in config.rules.items() if rule.ruleset not in config.rulesets),
         None,
     )
+
+
+def _unknown_selectors(config: Config) -> set[str]:
+    known = {*config.rules, *config.rulesets, "ALL"}
+    return set(config.lint.select + config.lint.ignore) - known
+
+
+def _validate_catalogue(config: Config) -> None:
+    invalid = _invalid_catalogue_name(config)
+    require(invalid is None, f"invalid or reserved rule/ruleset name: {invalid!r}")
+    require(not (config.rules.keys() & config.rulesets.keys()), "rule and ruleset names must not overlap")
+
+    unknown_ruleset = _unknown_ruleset(config)
     require(
         unknown_ruleset is None,
         f"{unknown_ruleset[0]}: unknown ruleset {unknown_ruleset[1]!r}" if unknown_ruleset else "",
     )
-    known = {*config.rules, *config.rulesets, "ALL"}
-    unknown = set(config.lint.select + config.lint.ignore) - known
+    unknown = _unknown_selectors(config)
     require(not unknown, f"unknown rule/ruleset selectors: {', '.join(sorted(unknown))}")
-
 
 def _selected_rule_names(config: Config, selectors: set[str]) -> set[str]:
     return {name for name, rule in config.rules.items() if {name, rule.ruleset, "ALL"} & selectors}
@@ -263,22 +274,31 @@ def _unique_mapping(loader: UniqueLoader, node: yaml.MappingNode, deep: bool = F
 UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_mapping)
 
 
-def _decode_yaml(text: str, source: str) -> dict[str, Any]:
-    if len(text.encode("utf-8")) > MAX_CONFIG_BYTES:
-        raise ConfigError(f"{source}: config exceeds {MAX_CONFIG_BYTES} bytes")
+def _parse_yaml(text: str, source: str) -> dict[str, Any]:
     try:
         document = yaml.load(text, Loader=UniqueLoader)  # noqa: S506 -- SafeLoader, no object constructors
     except (yaml.YAMLError, RecursionError) as exc:
         raise ConfigError(f"{source}: invalid YAML: {exc}") from exc
     if document is None:
-        document = {}  # An empty project adds nothing; packaged rules remain active.
+        return {}
     if not isinstance(document, dict):
         raise ConfigError(f"{source}: expected a YAML mapping")
-    if type(document.get("version", 4)) is not int or document.get("version", 4) != 4:
-        raise ConfigError("configuration version 4 is required; see docs/CONFIGURATION.md for migration")
-    document["rules"] = _named_rules(document.get("rules", []), source)
     return document
 
+
+def _validate_config_version(document: Mapping[str, Any]) -> None:
+    version = document.get("version", 4)
+    if type(version) is not int or version != 4:
+        raise ConfigError("configuration version 4 is required; see docs/CONFIGURATION.md for migration")
+
+
+def _decode_yaml(text: str, source: str) -> dict[str, Any]:
+    if len(text.encode("utf-8")) > MAX_CONFIG_BYTES:
+        raise ConfigError(f"{source}: config exceeds {MAX_CONFIG_BYTES} bytes")
+    document = _parse_yaml(text, source)
+    _validate_config_version(document)
+    document["rules"] = _named_rules(document.get("rules", []), source)
+    return document
 
 def _named_rule(entry: Any, source: str) -> tuple[str, dict[str, Any]]:
     if not isinstance(entry, dict):
@@ -328,19 +348,23 @@ def _merge(base: dict[str, Any], overrides: Mapping[str, Any], depth: int = 0) -
     return result
 
 
+def _directory_config(directory: Path) -> Path | None:
+    matches = [directory / name for name in CONFIG_NAMES if (directory / name).is_file()]
+    if len(matches) > 1:
+        raise ConfigError(f"both jevscan.yaml and jevscan.yml exist in {directory}; keep only one")
+    return matches[0] if matches else None
+
+
 def find_config(start: Path) -> Path | None:
     """Find the nearest config, without inheriting one from outside a Git worktree."""
     start = start.resolve()
     for directory in (start, *start.parents):
-        matches = [directory / name for name in CONFIG_NAMES if (directory / name).is_file()]
-        if len(matches) > 1:
-            raise ConfigError(f"both jevscan.yaml and jevscan.yml exist in {directory}; keep only one")
-        if matches:
-            return matches[0]
+        selected = _directory_config(directory)
+        if selected is not None:
+            return selected
         if (directory / ".git").exists():
             break
     return None
-
 
 def _project_root(start: Path) -> Path:
     for directory in (start, *start.parents):
