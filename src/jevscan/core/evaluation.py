@@ -8,7 +8,7 @@ from jevscan.core.cache import AnswerCache
 from jevscan.core.capture import FinalJudgmentSink
 from jevscan.core.client import JevClient
 from jevscan.core.context import Evidence
-from jevscan.core.enrichment import Enricher
+from jevscan.core.enrichment import Enricher, Reassessment
 from jevscan.core.enrichment_routing import REVIEW_PRIORITY, review_trigger
 from jevscan.core.execution import FileExecutor
 from jevscan.core.inference import Inference
@@ -170,50 +170,71 @@ class FileResults:
         # Schedule across the whole file before consuming either budget. Emission stays in source order.
         return sorted(pending, key=lambda item: (item[0], item[2].check.target.start_byte, item[2].check.rule_id))
 
+    @staticmethod
+    def _initial_capture_state(initial: Judgment) -> dict[str, Any]:
+        return json.loads(initial.wire_state) if initial.wire_state else initial.context.state
+
+    def _remember_initial_capture(self, initial: Judgment, name: str, capture: FinalJudgmentSink | None) -> None:
+        if capture is None:
+            return
+        self._capture_reviews[(initial.check.target.id, name)] = {
+            "initial_evidence_state": self._initial_capture_state(initial),
+            "initial_question_wire": initial.question_wire or initial.check.question(),
+        }
+
+    def _prepare_review(
+        self,
+        initial: Judgment,
+        trigger: str,
+        capture: FinalJudgmentSink | None,
+    ) -> tuple[TargetResults, str]:
+        record = self.records[initial.check.target.id]
+        name = initial.check.rule_id
+        initial.review.update({
+            "trigger": trigger,
+            "initial_reason": initial.assessment().reason,
+            "initial_model": initial.model,
+            "initial_cached": initial.cached,
+            "initial_evidence": initial.evidence,
+        })
+        self._remember_initial_capture(initial, name, capture)
+        return record, name
+
+    def _reassessment_judgment(self, initial: Judgment, result: Reassessment) -> Judgment:
+        response = result.prediction.response
+        return Judgment(
+            initial.check,
+            response.answers[initial.check.id],
+            self.planner.context.describe(initial.check, result.evidence),
+            response.model,
+            result.prediction.cached,
+            result.evidence,
+            {
+                "phase": "reassess",
+                "question_id": initial.check.id,
+                "question_bytes": len(self.planner.question_wires[initial.check.id]),
+                "shared_request": False,
+                "cached": result.prediction.cached,
+                "request": result.prediction.metrics,
+            },
+            initial.review,
+            result.wire_state,
+            result.question_wire,
+        )
+
+    @staticmethod
+    def _record_resolution(initial: Judgment, record: TargetResults, name: str, enricher: Enricher) -> None:
+        final = record.judgments[name].assessment()
+        initial.review["final_status"] = final.status
+        enricher.inference.summary.enrichment_resolved += final.status != "unknown"
+
     async def enrich(self, enricher: Enricher, capture: FinalJudgmentSink | None = None) -> None:
         for _, trigger, initial in self._review_queue():
-            record = self.records[initial.check.target.id]
-            name = initial.check.rule_id
-            initial.review.update({
-                "trigger": trigger,
-                "initial_reason": initial.assessment().reason,
-                "initial_model": initial.model,
-                "initial_cached": initial.cached,
-                "initial_evidence": initial.evidence,
-            })
-            if capture is not None:
-                self._capture_reviews[(initial.check.target.id, name)] = {
-                    "initial_evidence_state": json.loads(initial.wire_state)
-                    if initial.wire_state
-                    else initial.context.state,
-                    "initial_question_wire": initial.question_wire or initial.check.question(),
-                }
+            record, name = self._prepare_review(initial, trigger, capture)
             result = await enricher.refine(initial.check, initial.answer, initial.context, initial.review)
             if result is not None:
-                response = result.prediction.response
-                record.judgments[name] = Judgment(
-                    initial.check,
-                    response.answers[initial.check.id],
-                    self.planner.context.describe(initial.check, result.evidence),
-                    response.model,
-                    result.prediction.cached,
-                    result.evidence,
-                    {
-                        "phase": "reassess",
-                        "question_id": initial.check.id,
-                        "question_bytes": len(self.planner.question_wires[initial.check.id]),
-                        "shared_request": False,
-                        "cached": result.prediction.cached,
-                        "request": result.prediction.metrics,
-                    },
-                    initial.review,
-                    result.wire_state,
-                    result.question_wire,
-                )
-            final = record.judgments[name].assessment()
-            initial.review["final_status"] = final.status
-            enricher.inference.summary.enrichment_resolved += final.status != "unknown"
-
+                record.judgments[name] = self._reassessment_judgment(initial, result)
+            self._record_resolution(initial, record, name, enricher)
     def capture_final(self, sink: FinalJudgmentSink, source_documents: dict[str, str]) -> None:
         for record in self.records.values():
             for rule_id, reason in record.applicability.items():
@@ -227,14 +248,19 @@ class FileResults:
                 }
                 sink.record(judgment, judgment.assessment(), source_documents, review)
 
-    def _finalize_missing(self, aborted: bool) -> None:
-        for check in [*self.planner.checks, *(item.check for item in self.planner.omissions)]:
-            record = self.records[check.target.id]
-            if check.rule_id in record.judgments or check.rule_id in record.skipped:
-                continue
-            assert aborted, "every planned check must have an answer or explicit omission"
-            record.skipped[check.rule_id] = "scan aborted before an answer was received"
+    def _planned_checks(self) -> list[Check]:
+        return [*self.planner.checks, *(item.check for item in self.planner.omissions)]
 
+    def _finalize_check(self, check: Check, aborted: bool) -> None:
+        record = self.records[check.target.id]
+        if check.rule_id in record.judgments or check.rule_id in record.skipped:
+            return
+        assert aborted, "every planned check must have an answer or explicit omission"
+        record.skipped[check.rule_id] = "scan aborted before an answer was received"
+
+    def _finalize_missing(self, aborted: bool) -> None:
+        for check in self._planned_checks():
+            self._finalize_check(check, aborted)
     def _emit_request_failures(self, sink: EventSink, summary: Summary) -> None:
         for failure in self.request_failures.values():
             fields = (
@@ -254,16 +280,24 @@ class FileResults:
                 ),
             )
 
-    def _emit_coverage(self, sink: EventSink, aborted: bool) -> None:
+    def _coverage_counts(self) -> tuple[int, int, int]:
         reduced_targets = sum(
             any(not item.evidence["context_complete"] for item in record.judgments.values())
             for record in self.records.values()
         )
         skipped = sum(len(record.skipped) for record in self.records.values())
+        file_skipped = sum(
+            len(record.skipped)
+            for record in self.records.values()
+            if record.target.scope == "file"
+        )
+        return reduced_targets, skipped, file_skipped
+
+    def _coverage_event(self, aborted: bool) -> dict[str, Any] | None:
+        reduced_targets, skipped, file_skipped = self._coverage_counts()
         if not reduced_targets and not skipped:
-            return
-        file_skipped = sum(len(record.skipped) for record in self.records.values() if record.target.scope == "file")
-        sink.emit({
+            return None
+        return {
             "event": "coverage",
             "path": self.planner.context.parsed.path,
             "context_reduced_targets": reduced_targets,
@@ -271,8 +305,12 @@ class FileResults:
             "skipped_file_checks": file_skipped,
             "request_rejected_checks": self.request_rejected_checks,
             "aborted": aborted,
-        })
+        }
 
+    def _emit_coverage(self, sink: EventSink, aborted: bool) -> None:
+        event = self._coverage_event(aborted)
+        if event is not None:
+            sink.emit(event)
     def finish(self, sink: EventSink, summary: Summary, aborted: bool) -> None:
         self._finalize_missing(aborted)
         self._emit_request_failures(sink, summary)
