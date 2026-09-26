@@ -76,10 +76,7 @@ def _prediction_answers(
     questions: Mapping[str, Any],
 ) -> dict[str, Answer]:
     wires, raw_answers = _prediction_material(prediction)
-    return {
-        name: _captured_answer(name, raw_wire, raw_answers, check, questions)
-        for name, raw_wire in wires.items()
-    }
+    return {name: _captured_answer(name, raw_wire, raw_answers, check, questions) for name, raw_wire in wires.items()}
 
 
 def _captured_route_answers(
