@@ -30,20 +30,32 @@ class Attempt:
     final: bool = False
 
 
+def _completed_worker_error(tasks: list[asyncio.Task[None]]) -> BaseException | None:
+    return next(
+        (
+            error
+            for task in tasks
+            if task.done() and not task.cancelled() and (error := task.exception()) is not None
+        ),
+        None,
+    )
+
+
+def _stopped_worker_error(done: set[asyncio.Task[None]], joined: asyncio.Task[None]) -> BaseException:
+    failed = next(task for task in done if task is not joined)
+    error = failed.exception()
+    return error or RuntimeError("request worker stopped before its queue was drained")
+
+
 async def _wait_for_requests(joined: asyncio.Task[None], tasks: list[asyncio.Task[None]]) -> None:
     """Queue completion wins only when no worker failed at the same boundary."""
     done, _ = await asyncio.wait([joined, *tasks], return_when=asyncio.FIRST_COMPLETED)
-    if joined in done:
-        await joined
-        for task in tasks:
-            if task.done() and not task.cancelled() and (error := task.exception()) is not None:
-                raise error
-        return
-    failed = next(task for task in done if task is not joined)
-    error = failed.exception()
-    if error is None:
-        raise RuntimeError("request worker stopped before its queue was drained")
-    raise error
+    if joined not in done:
+        raise _stopped_worker_error(done, joined)
+    await joined
+    error = _completed_worker_error(tasks)
+    if error is not None:
+        raise error
 
 
 class FileExecutor:
@@ -52,6 +64,33 @@ class FileExecutor:
         self.compactor: Compactor | None = None
         self.rejected: dict[str, tuple[int, dict[str, Any]]] = {}
         self.rejected_requests: set[str] = set()
+
+    def _publish_cached_judgment(
+        self,
+        request: Request,
+        check: Check,
+        item: tuple[Answer, str],
+    ) -> None:
+        answer, model = item
+        self.results.accept_answer(
+            check,
+            request.evidence,
+            answer,
+            model,
+            True,
+            wire_state=request.state,
+            question_wire=json.loads(request.question_wires[check.id]),
+        )
+        trace = self.results.records[check.target.id].context_selection.get(check.rule_id)
+        if trace:
+            trace["outcome"] = "judgment_cache"
+
+    def _remaining_request(self, request: Request, missing: list[Check]) -> Request | None:
+        if not missing:
+            return None
+        if len(missing) == len(request.checks):
+            return request
+        return self.planner.request(request.evidence, tuple(missing), request.registry)
 
     def _accept_cached_judgments(
         self,
@@ -64,27 +103,9 @@ class FileExecutor:
             item = cached.get(check.id)
             if item is None:
                 missing.append(check)
-                continue
-            answer, model = item
-            self.results.accept_answer(
-                check,
-                request.evidence,
-                answer,
-                model,
-                True,
-                wire_state=request.state,
-                question_wire=json.loads(request.question_wires[check.id]),
-            )
-            trace = self.results.records[check.target.id].context_selection.get(check.rule_id)
-            if trace:
-                trace["outcome"] = "judgment_cache"
-
-        if not missing:
-            return None
-        if len(missing) == len(request.checks):
-            return request
-        return self.planner.request(request.evidence, tuple(missing), request.registry)
-
+            else:
+                self._publish_cached_judgment(request, check, item)
+        return self._remaining_request(request, missing)
     def _record_size_rejection(self, request: Request, error: ContextLimitError) -> None:
         for check in request.checks:
             self.results.recovery(check)["rejections"].append({
@@ -230,27 +251,38 @@ class FileExecutor:
         evidence = await self._compact_check(attempt, check, trace)
         return evidence if evidence is not None else self._final_attempt(attempt, check)
 
-    async def _recover(self, attempt: Attempt, reason: str) -> list[Attempt]:
-        if attempt.final:
-            self._omit_final(attempt, reason)
-            return []
-
+    async def _recover_checks(
+        self,
+        attempt: Attempt,
+        reason: str,
+    ) -> tuple[dict[str, tuple[Evidence, list[Check]]], list[Attempt]]:
         groups: dict[str, tuple[Evidence, list[Check]]] = {}
         final_attempts: list[Attempt] = []
         for check in attempt.request.checks:
             recovered = await self._recover_check(attempt, check, reason)
             if isinstance(recovered, Attempt):
                 final_attempts.append(recovered)
-                continue
-            groups.setdefault(recovered.key, (recovered, []))[1].append(check)
+            else:
+                groups.setdefault(recovered.key, (recovered, []))[1].append(check)
+        return groups, final_attempts
 
-        compacted = [
+    def _pack_recovered(
+        self,
+        attempt: Attempt,
+        groups: dict[str, tuple[Evidence, list[Check]]],
+    ) -> list[Attempt]:
+        return [
             packed
             for evidence, checks in groups.values()
             for packed in self._pack(evidence, checks, attempt.round + 1, attempt.request.registry)
         ]
-        return compacted + final_attempts
 
+    async def _recover(self, attempt: Attempt, reason: str) -> list[Attempt]:
+        if attempt.final:
+            self._omit_final(attempt, reason)
+            return []
+        groups, final_attempts = await self._recover_checks(attempt, reason)
+        return [*self._pack_recovered(attempt, groups), *final_attempts]
     def _known_rejection(self, attempt: Attempt) -> tuple[str, tuple[int, dict[str, Any]] | None]:
         request = attempt.request
         state_key = hashlib.sha256(request.state).hexdigest()
@@ -328,21 +360,34 @@ class FileExecutor:
             finally:
                 queue.task_done()
 
+    @staticmethod
+    def _initial_queue(initial: list[Attempt]) -> asyncio.Queue[Attempt]:
+        queue: asyncio.Queue[Attempt] = asyncio.Queue()
+        for attempt in initial:
+            queue.put_nowait(attempt)
+        return queue
+
+    def _workers(self, queue: asyncio.Queue[Attempt]) -> list[asyncio.Task[None]]:
+        count = self.inference.client.config.concurrency
+        return [asyncio.create_task(self._worker(queue)) for _ in range(count)]
+
+    @staticmethod
+    async def _stop_workers(joined: asyncio.Task[None], tasks: list[asyncio.Task[None]]) -> None:
+        joined.cancel()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(joined, *tasks, return_exceptions=True)
+
     async def run(self) -> None:
         initial = [Attempt(request) for request in self.planner.plan()]
         if not initial:
             return
-        queue: asyncio.Queue[Attempt] = asyncio.Queue()
-        for attempt in initial:
-            queue.put_nowait(attempt)
+        queue = self._initial_queue(initial)
         # Recovery can fan out beyond the initial batches; keep full worker capacity.
-        count = self.inference.client.config.concurrency
-        tasks = [asyncio.create_task(self._worker(queue)) for _ in range(count)]
+        tasks = self._workers(queue)
         joined = asyncio.create_task(queue.join())
         try:
             await _wait_for_requests(joined, tasks)
         finally:
-            joined.cancel()
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(joined, *tasks, return_exceptions=True)
+            await self._stop_workers(joined, tasks)
+
