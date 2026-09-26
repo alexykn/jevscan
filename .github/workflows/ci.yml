@@ -41,7 +41,7 @@ jobs:
       - name: Complexity report
         shell: bash
         run: |
-          uv run --no-sync radon cc -s -n C src
+          uv run --no-sync radon cc -s -n B src
           uv run --no-sync radon cc -a src | tail -n 1
 
   test-and-package:
