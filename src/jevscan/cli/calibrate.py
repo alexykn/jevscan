@@ -104,6 +104,7 @@ def _load_objective(path: Path | None) -> SelectionObjective:
     value = _load_yaml_mapping(path, "selection objective must be a YAML mapping")
     return SelectionObjective.from_mapping(value)
 
+
 def _write_selection_audit(audit: SelectionAudit, destination: Path | None, *, writeback: dict[str, Any]) -> None:
     value = audit.as_dict()
     value["writeback"] = writeback
@@ -143,6 +144,7 @@ def _reject_selection_output_collisions(args: argparse.Namespace) -> None:
     if collision is not None:
         destination, other = collision
         raise ValueError(f"selection output {destination} aliases {other}; choose distinct paths")
+
 
 def _reject_replay_output_collisions(args: argparse.Namespace) -> None:
     if args.output is None:
@@ -208,6 +210,7 @@ def _select(args: argparse.Namespace, cases: list[CalibrationCase]) -> None:
         _write_selected_policy(audit, args.selected_policy)
     applied = _apply_selection(args, supplied, audit)
     _write_selection_audit(audit, args.output, writeback=_selection_writeback(args, applied))
+
 
 def _replay_overrides(args: argparse.Namespace, cases: list[CalibrationCase]) -> dict[str, dict[str, Any]] | None:
     if args.report_policy is None:
