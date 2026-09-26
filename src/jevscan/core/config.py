@@ -226,6 +226,7 @@ def _validate_catalogue(config: Config) -> None:
     unknown = _unknown_selectors(config)
     require(not unknown, f"unknown rule/ruleset selectors: {', '.join(sorted(unknown))}")
 
+
 def _selected_rule_names(config: Config, selectors: set[str]) -> set[str]:
     return {name for name, rule in config.rules.items() if {name, rule.ruleset, "ALL"} & selectors}
 
@@ -300,6 +301,7 @@ def _decode_yaml(text: str, source: str) -> dict[str, Any]:
     document["rules"] = _named_rules(document.get("rules", []), source)
     return document
 
+
 def _named_rule(entry: Any, source: str) -> tuple[str, dict[str, Any]]:
     if not isinstance(entry, dict):
         raise ConfigError(f"{source}: each rule must be a mapping")
@@ -365,6 +367,7 @@ def find_config(start: Path) -> Path | None:
         if (directory / ".git").exists():
             break
     return None
+
 
 def _project_root(start: Path) -> Path:
     for directory in (start, *start.parents):
