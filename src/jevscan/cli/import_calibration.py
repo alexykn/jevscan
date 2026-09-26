@@ -24,26 +24,34 @@ def _sha256_text(value: str) -> str:
     return _sha256(value.encode("utf-8"))
 
 
+def _jsonl_row(path: Path, line_number: int, line: str) -> dict[str, Any]:
+    try:
+        value = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path}:{line_number}: invalid JSON") from exc
+    if not isinstance(value, dict):
+        raise TypeError(f"{path}:{line_number}: expected an object")
+    return value
+
+
+def _case_id(path: Path, line_number: int, row: dict[str, Any], seen: set[str]) -> str:
+    case_id = row.get("case_id")
+    if not isinstance(case_id, str) or case_id in seen:
+        raise ValueError(f"{path}:{line_number}: duplicate or missing case_id")
+    return case_id
+
+
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
     with path.open(encoding="utf-8") as stream:
-        rows = []
-        seen: set[str] = set()
         for line_number, line in enumerate(stream, 1):
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path}:{line_number}: invalid JSON") from exc
-            if not isinstance(value, dict):
-                raise TypeError(f"{path}:{line_number}: expected an object")
-            case_id = value.get("case_id")
-            if not isinstance(case_id, str) or case_id in seen:
-                raise ValueError(f"{path}:{line_number}: duplicate or missing case_id")
-            seen.add(case_id)
-            rows.append(value)
+            row = _jsonl_row(path, line_number, line)
+            seen.add(_case_id(path, line_number, row, seen))
+            rows.append(row)
     if not rows:
         raise ValueError(f"{path}: capture is empty")
     return rows
-
 
 def _capture_metadata(path: Path) -> dict[str, Any]:
     metadata_path = path.with_suffix(".meta.json")
@@ -137,16 +145,19 @@ def _validate_label_ids(row_ids: set[str | None], label_ids: set[str]) -> None:
         raise ValueError(f"label case IDs do not match capture (missing={missing}, extra={extra})")
 
 
-def _require_complete(metadata: dict[str, Any], allow_incomplete: bool) -> None:
+def _validate_capture_metadata_shape(metadata: dict[str, Any]) -> None:
     if type(metadata.get("complete")) is not bool:
         raise ValueError("capture metadata.complete must be a boolean")
     if type(metadata.get("records")) is not int:
         raise ValueError("capture metadata.records must be an integer")
     if not isinstance(metadata.get("capture_sha256"), str):
         raise TypeError("capture metadata.capture_sha256 is required")
+
+
+def _require_complete(metadata: dict[str, Any], allow_incomplete: bool) -> None:
+    _validate_capture_metadata_shape(metadata)
     if not metadata["complete"] and not allow_incomplete:
         raise ValueError("capture is incomplete; pass --allow-incomplete to import it explicitly")
-
 
 def _verify_capture_metadata(path: Path, metadata: dict[str, Any], rows: list[dict[str, Any]]) -> None:
     if metadata["records"] != len(rows):
