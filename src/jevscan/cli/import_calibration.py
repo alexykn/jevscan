@@ -53,6 +53,7 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
         raise ValueError(f"{path}: capture is empty")
     return rows
 
+
 def _capture_metadata(path: Path) -> dict[str, Any]:
     metadata_path = path.with_suffix(".meta.json")
     try:
@@ -158,6 +159,7 @@ def _require_complete(metadata: dict[str, Any], allow_incomplete: bool) -> None:
     _validate_capture_metadata_shape(metadata)
     if not metadata["complete"] and not allow_incomplete:
         raise ValueError("capture is incomplete; pass --allow-incomplete to import it explicitly")
+
 
 def _verify_capture_metadata(path: Path, metadata: dict[str, Any], rows: list[dict[str, Any]]) -> None:
     if metadata["records"] != len(rows):
