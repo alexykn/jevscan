@@ -98,7 +98,7 @@ def _validate_source_document(document: dict[str, Any], source_documents: Mappin
         raise TypeError(f"final judgment evidence content is invalid for {path!r}")
     start, end = document.get("start_byte"), document.get("end_byte")
     if not isinstance(start, int) or not isinstance(end, int):
-        raise ValueError(f"final judgment evidence is not a slice of its authoritative source snapshot: {path}")
+        raise TypeError(f"final judgment evidence byte offsets are invalid for {path!r}")
     source = source_documents[path].encode("utf-8")
     if source[start:end].decode("utf-8") != content:
         raise ValueError(f"final judgment evidence is not a slice of its authoritative source snapshot: {path}")
