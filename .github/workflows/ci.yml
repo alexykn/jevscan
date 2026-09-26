@@ -39,7 +39,10 @@ jobs:
       - name: Type-check (whole project)
         run: uv run --no-sync ty check
       - name: Complexity report
-        run: uv run --no-sync radon cc -s -n C src
+        shell: bash
+        run: |
+          uv run --no-sync radon cc -s -n C src
+          uv run --no-sync radon cc -a src | tail -n 1
 
   test-and-package:
     name: Test/package (${{ matrix.os }}, Python ${{ matrix.python }})
