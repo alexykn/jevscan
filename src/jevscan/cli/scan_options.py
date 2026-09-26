@@ -90,8 +90,9 @@ def validate_report_output(output: Path | None, paths: list[Path], config_source
     absolute = output.resolve()
     if str(absolute) == config_source:
         raise ConfigError("output path would overwrite the active configuration")
-    overlaps_source = any(_source_overlap(absolute, target) and language_for(absolute) for target in paths)
-    if overlaps_source:
+    if any(absolute == target.resolve() for target in paths) or (
+        language_for(absolute) is not None and any(_source_overlap(absolute, target) for target in paths)
+    ):
         raise ConfigError("output path overlaps source being scanned; choose a .json, .jsonl, or .txt report path")
 
 
