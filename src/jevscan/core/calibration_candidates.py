@@ -287,6 +287,7 @@ def _dimension_stream(
     first, second = (dimensions[index] for index in indices)
     yield from _pair_dimension_stream(first, second, rule)
 
+
 def _dimension_pairs(count: int) -> tuple[tuple[int, int], ...]:
     return tuple((left, right) for left in range(count) for right in range(left + 1, count))
 
