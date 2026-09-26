@@ -58,23 +58,16 @@ class AttemptLedger:
         return estimated, requests, tokens, cost
 
     def _validate_projection(self, requests: int, tokens: int, cost: float) -> None:
-        limits = (
-            (
-                self.budget.max_requests is None or requests <= self.budget.max_requests,
-                f"request budget exhausted at {self.requests} requests",
-            ),
-            (
-                self.budget.max_input_tokens is None or tokens <= self.budget.max_input_tokens,
-                f"input-token budget would be exceeded ({tokens} > {self.budget.max_input_tokens})",
-            ),
-            (
-                self.budget.max_cost is None or cost <= self.budget.max_cost,
-                f"estimated cost budget would be exceeded ({cost:.4f} > {self.budget.max_cost:.4f})",
-            ),
-        )
-        for valid, message in limits:
-            if not valid:
-                raise BudgetExhaustedError(message)
+        if self.budget.max_requests is not None and requests > self.budget.max_requests:
+            raise BudgetExhaustedError(f"request budget exhausted at {self.requests} requests")
+        if self.budget.max_input_tokens is not None and tokens > self.budget.max_input_tokens:
+            raise BudgetExhaustedError(
+                f"input-token budget would be exceeded ({tokens} > {self.budget.max_input_tokens})"
+            )
+        if self.budget.max_cost is not None and cost > self.budget.max_cost:
+            raise BudgetExhaustedError(
+                f"estimated cost budget would be exceeded ({cost:.4f} > {self.budget.max_cost:.4f})"
+            )
 
     def admit(self, body: bytes) -> int:
         estimated, requests, tokens, cost = self._project(body)
