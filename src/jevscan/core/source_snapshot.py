@@ -8,13 +8,21 @@ from pathlib import Path
 from typing import BinaryIO
 
 
+def _safe_open_supported() -> bool:
+    return hasattr(os, "O_NOFOLLOW") and os.open in os.supports_dir_fd
+
+
+def _project_relative(path: Path) -> bool:
+    return bool(path.parts) and not path.is_absolute() and all(part not in {"..", "."} for part in path.parts)
+
+
 def _relative_components(path: str) -> tuple[str, ...]:
-    parts = Path(path).parts
-    if not parts or Path(path).is_absolute() or any(part in {"..", "."} for part in parts):
+    candidate = Path(path)
+    if not _project_relative(candidate):
         raise OSError("evidence path is not project-relative")
-    if not hasattr(os, "O_NOFOLLOW") or os.open not in os.supports_dir_fd:
+    if not _safe_open_supported():
         raise OSError("safe evidence reads require no-follow, directory-relative file access")
-    return parts
+    return candidate.parts
 
 
 @contextmanager

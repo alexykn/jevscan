@@ -94,6 +94,54 @@ async def _progress_reporting(
         await asyncio.gather(task, return_exceptions=True)
 
 
+def _scan_mode(offline: bool, plan_only: bool) -> str:
+    if offline:
+        return "offline"
+    return "plan" if plan_only else "live"
+
+
+async def _execute_pipeline(
+    targets: list[Path],
+    loaded: LoadedConfig,
+    sink: EventSink,
+    summary: Summary,
+    runtime: _ScanResources,
+    *,
+    offline: bool,
+    plan_only: bool,
+    no_cache: bool,
+    api_key: str,
+    base_url: str,
+    capture: FinalJudgmentSink | None,
+    started: float,
+) -> None:
+    async with AsyncExitStack() as resources:
+        await runtime.open(
+            resources,
+            live=not offline and not plan_only,
+            no_cache=no_cache,
+            api_key=api_key,
+            base_url=base_url,
+        )
+        async with _progress_reporting(runtime.client, sink, summary, started):
+            await pipeline(
+                targets,
+                loaded,
+                runtime.parse,
+                sink,
+                summary,
+                runtime.client,
+                runtime.cache,
+                plan_only=plan_only,
+                capture=capture,
+            )
+
+
+def _operational_diagnostic(exc: Exception) -> Diagnostic:
+    code = "budget-exhausted" if _contains_exception(exc, BudgetExhaustedError) else "scan-failed"
+    return Diagnostic("", code, _exception_message(exc), Severity.ERROR)
+
+
 async def run_scan(
     targets: list[Path],
     loaded: LoadedConfig,
@@ -106,39 +154,34 @@ async def run_scan(
     base_url: str = "https://api.typesafe.ai",
     capture: FinalJudgmentSink | None = None,
 ) -> Summary:
-    summary = Summary(mode="offline" if offline else "plan" if plan_only else "live")
+    summary = Summary(mode=_scan_mode(offline, plan_only))
     started = time.monotonic()
     runtime = _ScanResources(loaded)
     try:
         require_parser_runtime()
-        async with AsyncExitStack() as resources:
-            await runtime.open(
-                resources,
-                live=not offline and not plan_only,
-                no_cache=no_cache,
-                api_key=api_key,
-                base_url=base_url,
-            )
-            async with _progress_reporting(runtime.client, sink, summary, started):
-                await pipeline(
-                    targets,
-                    loaded,
-                    runtime.parse,
-                    sink,
-                    summary,
-                    runtime.client,
-                    runtime.cache,
-                    plan_only=plan_only,
-                    capture=capture,
-                )
+        await _execute_pipeline(
+            targets,
+            loaded,
+            sink,
+            summary,
+            runtime,
+            offline=offline,
+            plan_only=plan_only,
+            no_cache=no_cache,
+            api_key=api_key,
+            base_url=base_url,
+            capture=capture,
+            started=started,
+        )
     except asyncio.CancelledError:
         emit_diagnostic(
-            sink, summary, Diagnostic("", "cancelled", "scan interrupted; results are incomplete", Severity.ERROR)
+            sink,
+            summary,
+            Diagnostic("", "cancelled", "scan interrupted; results are incomplete", Severity.ERROR),
         )
         raise
     except Exception as exc:  # noqa: BLE001 -- Preserve an incomplete report on operational failure.
-        code = "budget-exhausted" if _contains_exception(exc, BudgetExhaustedError) else "scan-failed"
-        emit_diagnostic(sink, summary, Diagnostic("", code, _exception_message(exc), Severity.ERROR))
+        emit_diagnostic(sink, summary, _operational_diagnostic(exc))
     finally:
         await runtime.close_pool()
         report_summary(summary, runtime.client, loaded.config, sink, started, plan_only=plan_only)

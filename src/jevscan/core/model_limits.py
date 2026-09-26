@@ -37,14 +37,20 @@ class TokenCalibration:
     bytes_per_token: float | None = None
     observations: int = 0
 
-    def observe(self, body_bytes: int, input_tokens: int | None) -> None:
-        if not input_tokens or input_tokens <= 0 or body_bytes <= 0:
-            return
+    @staticmethod
+    def _candidate(body_bytes: int, input_tokens: int | None) -> float | None:
+        if input_tokens is None or input_tokens <= 0 or body_bytes <= 0:
+            return None
         observed = body_bytes / input_tokens
         if not math.isfinite(observed) or observed <= 0:
+            return None
+        return max(1.0, min(8.0, observed * 0.90))
+
+    def observe(self, body_bytes: int, input_tokens: int | None) -> None:
+        candidate = self._candidate(body_bytes, input_tokens)
+        if candidate is None:
             return
         # Keep ten percent headroom and only move toward more conservative estimates.
-        candidate = max(1.0, min(8.0, observed * 0.90))
         self.bytes_per_token = candidate if self.bytes_per_token is None else min(self.bytes_per_token, candidate)
         self.observations += 1
 

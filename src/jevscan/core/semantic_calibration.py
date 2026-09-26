@@ -180,51 +180,77 @@ def _value_key(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+_COMPARABILITY_FIELDS = ("question", "evidence", "prompt", "endpoint", "model")
+
+
+def _records_by_case(records: list[ReplayRecord]) -> dict[str, list[ReplayRecord]]:
+    grouped: dict[str, list[ReplayRecord]] = defaultdict(list)
+    for record in records:
+        grouped[record.case.case_id].append(record)
+    return grouped
+
+
+def _field_conflict(group: list[ReplayRecord], field: str) -> dict[str, Any] | None:
+    values = [_comparability_value(record, field) for record in group]
+    if len({_value_key(value) for value in values}) <= 1:
+        return None
+    return {
+        "field": field,
+        "records": [
+            {
+                "record_index": record.record_index,
+                "case_id": record.case.case_id,
+                "rule_id": record.case.rule_id,
+                "split": record.case.split,
+                "value": _comparability_value(record, field),
+            }
+            for record in group
+        ],
+    }
+
+
+def _case_conflicts(group: list[ReplayRecord]) -> tuple[dict[str, Any], ...]:
+    return tuple(conflict for field in _COMPARABILITY_FIELDS if (conflict := _field_conflict(group, field)) is not None)
+
+
+def _mark_case_group(
+    records: list[ReplayRecord],
+    case_id: str,
+    conflicts: tuple[dict[str, Any], ...],
+) -> list[ReplayRecord]:
+    return [
+        ReplayRecord(
+            record.record_index,
+            record.case,
+            record.assessment,
+            record.effective_rule,
+            record.effective_hashes,
+            record.comparable and record.case.case_id != case_id,
+            conflicts if record.case.case_id == case_id else record.mismatches,
+        )
+        for record in records
+    ]
+
+
+def _conflict_notice(case_id: str, conflicts: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+    return {
+        "case_id": case_id,
+        "fields": [item["field"] for item in conflicts],
+        "conflicts": list(conflicts),
+    }
+
+
 def _mark_non_comparable(
     records: list[ReplayRecord],
 ) -> tuple[list[ReplayRecord], tuple[dict[str, Any], ...]]:
-    by_case: dict[str, list[ReplayRecord]] = defaultdict(list)
-    for record in records:
-        by_case[record.case.case_id].append(record)
-
-    notices: list[dict[str, Any]] = []
     marked = list(records)
-    fields = ("question", "evidence", "prompt", "endpoint", "model")
-    for case_id, group in sorted(by_case.items()):
-        conflicts: list[dict[str, Any]] = []
-        for field in fields:
-            values = [_comparability_value(record, field) for record in group]
-            if len({_value_key(value) for value in values}) <= 1:
-                continue
-            conflicts.append({
-                "field": field,
-                "records": [
-                    {
-                        "record_index": record.record_index,
-                        "case_id": record.case.case_id,
-                        "rule_id": record.case.rule_id,
-                        "split": record.case.split,
-                        "value": _comparability_value(record, field),
-                    }
-                    for record in group
-                ],
-            })
+    notices: list[dict[str, Any]] = []
+    for case_id, group in sorted(_records_by_case(records).items()):
+        conflicts = _case_conflicts(group)
         if not conflicts:
             continue
-        notices.append({"case_id": case_id, "fields": [item["field"] for item in conflicts], "conflicts": conflicts})
-        conflict_tuple = tuple(conflicts)
-        marked = [
-            ReplayRecord(
-                record.record_index,
-                record.case,
-                record.assessment,
-                record.effective_rule,
-                record.effective_hashes,
-                record.comparable and record.case.case_id != case_id,
-                conflict_tuple if record.case.case_id == case_id else record.mismatches,
-            )
-            for record in marked
-        ]
+        notices.append(_conflict_notice(case_id, conflicts))
+        marked = _mark_case_group(marked, case_id, conflicts)
     return marked, tuple(notices)
 
 
@@ -310,57 +336,86 @@ def _severity_confusion(records: list[ReplayRecord]) -> dict[str, dict[str, int]
     }
 
 
+def _label_fractions(records: list[ReplayRecord]) -> dict[str, Fraction]:
+    return {
+        "strict_supported_warning": _fraction(
+            records,
+            lambda record: record.case.label == "Agree" and record.confirmed,
+            lambda record: record.confirmed,
+        ),
+        "confirmed_recall": _fraction(
+            records,
+            lambda record: record.case.label == "Agree" and record.confirmed,
+            lambda record: record.case.label == "Agree",
+        ),
+        "review_list_recall": _fraction(
+            records,
+            lambda record: record.case.label == "Agree" and record.signal,
+            lambda record: record.case.label == "Agree",
+        ),
+        "disagree_confirmed": _fraction(
+            records,
+            lambda record: record.case.label == "Disagree" and record.confirmed,
+            lambda record: record.case.label == "Disagree",
+        ),
+        "partial_confirmed": _fraction(
+            records,
+            lambda record: record.case.label == "Partial" and record.confirmed,
+            lambda record: record.case.label == "Partial",
+        ),
+        "partial_any_signal": _fraction(
+            records,
+            lambda record: record.case.label == "Partial" and record.signal,
+            lambda record: record.case.label == "Partial",
+        ),
+    }
+
+
+def _severity_fractions(records: list[ReplayRecord]) -> tuple[Fraction, Fraction]:
+    has_adjudicated_severity = lambda record: record.case.adjudicated_severity is not None
+    return (
+        _fraction(
+            records,
+            lambda record: _severity_agreement(record, include_tentative=False),
+            has_adjudicated_severity,
+        ),
+        _fraction(
+            records,
+            lambda record: _severity_agreement(record, include_tentative=True),
+            has_adjudicated_severity,
+        ),
+    )
+
+
+def _severity_counts(records: list[ReplayRecord]) -> tuple[dict[str, int], dict[str, int]]:
+    confirmed = {
+        status: _status_count(records, status) for status in ("ok", "warning", "error", "unknown", "not_applicable")
+    }
+    tentative = {severity: _tentative_count(records, severity) for severity in ("warning", "error")}
+    return confirmed, tentative
+
+
 def _make_report(rule_id: str, split: str, records: list[ReplayRecord]) -> RuleSplitReport:
     usable = [record for record in records if record.comparable]
-    has_adjudicated_severity = lambda record: record.case.adjudicated_severity is not None
+    fractions = _label_fractions(usable)
+    confirmed_agreement, review_agreement = _severity_fractions(usable)
+    severity_counts, tentative_counts = _severity_counts(usable)
     return RuleSplitReport(
         rule_id=rule_id,
         split=split,
         total=len(usable),
         label_counts={label: _label_count(usable, label) for label in ("Agree", "Partial", "Disagree")},
-        strict_supported_warning=_fraction(
-            usable, lambda record: record.case.label == "Agree" and record.confirmed, lambda record: record.confirmed
-        ),
-        confirmed_recall=_fraction(
-            usable,
-            lambda record: record.case.label == "Agree" and record.confirmed,
-            lambda record: record.case.label == "Agree",
-        ),
-        review_list_recall=_fraction(
-            usable,
-            lambda record: record.case.label == "Agree" and record.signal,
-            lambda record: record.case.label == "Agree",
-        ),
-        disagree_confirmed=_fraction(
-            usable,
-            lambda record: record.case.label == "Disagree" and record.confirmed,
-            lambda record: record.case.label == "Disagree",
-        ),
-        partial_confirmed=_fraction(
-            usable,
-            lambda record: record.case.label == "Partial" and record.confirmed,
-            lambda record: record.case.label == "Partial",
-        ),
-        partial_any_signal=_fraction(
-            usable,
-            lambda record: record.case.label == "Partial" and record.signal,
-            lambda record: record.case.label == "Partial",
-        ),
-        confirmed_severity_agreement=_fraction(
-            usable,
-            lambda record: _severity_agreement(record, include_tentative=False),
-            has_adjudicated_severity,
-        ),
-        review_list_severity_agreement=_fraction(
-            usable,
-            lambda record: _severity_agreement(record, include_tentative=True),
-            has_adjudicated_severity,
-        ),
+        strict_supported_warning=fractions["strict_supported_warning"],
+        confirmed_recall=fractions["confirmed_recall"],
+        review_list_recall=fractions["review_list_recall"],
+        disagree_confirmed=fractions["disagree_confirmed"],
+        partial_confirmed=fractions["partial_confirmed"],
+        partial_any_signal=fractions["partial_any_signal"],
+        confirmed_severity_agreement=confirmed_agreement,
+        review_list_severity_agreement=review_agreement,
         severity_confusion=_severity_confusion(usable),
-        severity_counts={
-            status: _status_count(usable, status) for status in ("ok", "warning", "error", "unknown", "not_applicable")
-        },
-        tentative_severity_counts={severity: _tentative_count(usable, severity) for severity in ("warning", "error")},
+        severity_counts=severity_counts,
+        tentative_severity_counts=tentative_counts,
         non_comparable=len(records) - len(usable),
     )
 

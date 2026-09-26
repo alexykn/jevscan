@@ -250,18 +250,19 @@ class Summary:
     tentative_findings: dict[str, int] = field(default_factory=lambda: {"warning": 0, "error": 0})
     elapsed_seconds: float = 0.0
 
+    def _has_blocking_finding(self, threshold: int) -> bool:
+        return any(
+            count > self.advisory_findings[level] and SEVERITY_RANK[Severity(level)] >= threshold
+            for level, count in self.findings.items()
+        )
+
     def exit_code(self, fail_on: str) -> int:
         if self.incomplete:
             return 2
         if fail_on == "never" or self.mode == "offline":
             return 0
         threshold = SEVERITY_RANK[Severity(fail_on)]
-        return int(
-            any(
-                count > self.advisory_findings[level] and SEVERITY_RANK[Severity(level)] >= threshold
-                for level, count in self.findings.items()
-            )
-        )
+        return int(self._has_blocking_finding(threshold))
 
 
 def emit_diagnostic(sink: EventSink, summary: Summary, diagnostic: Diagnostic) -> None:

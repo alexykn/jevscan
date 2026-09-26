@@ -39,7 +39,21 @@ jobs:
       - name: Type-check (whole project)
         run: uv run --no-sync ty check
       - name: Complexity report
-        run: uv run --no-sync radon cc -s -n C src
+        shell: bash
+        run: |
+          uv run --no-sync radon cc -s -n B src
+          uv run --no-sync radon cc -a src | tail -n 1
+          uv run --no-sync python - <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          report = json.loads(subprocess.check_output([sys.executable, "-m", "radon", "cc", "-j", "src"]))
+          blocks = [block for file_blocks in report.values() for block in file_blocks]
+          average = sum(block["complexity"] for block in blocks) / len(blocks)
+          if average > 3.5:
+              raise SystemExit(f"Radon average {average:.4f} exceeds the 3.5 project ceiling")
+          PY
 
   test-and-package:
     name: Test/package (${{ matrix.os }}, Python ${{ matrix.python }})

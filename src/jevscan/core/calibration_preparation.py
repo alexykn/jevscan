@@ -177,6 +177,18 @@ def _split_rule_cases(
     return eligible, development, heldout
 
 
+def _support_groups(cases: list[CalibrationCase]) -> tuple[set[str], list[str]]:
+    groups: set[str] = set()
+    missing: list[str] = []
+    for case in cases:
+        key = support_key(case)
+        if key:
+            groups.add(key)
+        else:
+            missing.append(case.case_id)
+    return groups, missing
+
+
 def _validate_group_split(
     rule_id: str,
     development: list[CalibrationCase],
@@ -185,14 +197,13 @@ def _validate_group_split(
 ) -> None:
     if heldout_split is None:
         return
-    missing_heldout = [case.case_id for case in heldout if not support_key(case)]
+    development_groups, _ = _support_groups(development)
+    heldout_groups, missing_heldout = _support_groups(heldout)
     if missing_heldout:
         raise ValueError(
             "heldout cases require explicit support groups for strict split validation: "
             + ", ".join(sorted(missing_heldout))
         )
-    development_groups = {support_key(case) for case in development if support_key(case)}
-    heldout_groups = {support_key(case) for case in heldout if support_key(case)}
     overlap = sorted(development_groups & heldout_groups)
     if overlap:
         raise ValueError(f"development and heldout support groups overlap for {rule_id!r}: {', '.join(overlap)}")
@@ -279,6 +290,47 @@ def _preparation_material(
     )
 
 
+def _prepared_baseline_rule(
+    rule_id: str,
+    reference: Rule,
+    material: PreparationMaterial,
+    authoritative: Rule | None,
+    development_split: str,
+    limit: int,
+) -> Rule | RuleSelection:
+    baseline = reference.report
+    baseline_rule = _baseline_rule(authoritative, material.eligible, development_split, baseline)
+    if baseline_rule is None:
+        return not_searched_selection(
+            rule_id,
+            baseline,
+            "no_compatible_cases",
+            material.mismatches,
+            limit,
+            retain_baseline=True,
+        )
+    return baseline_rule
+
+
+def _missing_development_support(
+    rule_id: str,
+    baseline: ReportPolicy,
+    material: PreparationMaterial,
+    limit: int,
+) -> RuleSelection | None:
+    _, missing = _support_groups(material.development)
+    if not missing:
+        return None
+    return not_searched_selection(
+        rule_id,
+        baseline,
+        "missing_support_groups",
+        material.mismatches,
+        limit,
+        retain_baseline=True,
+    )
+
+
 def prepare_rule(
     rule_id: str,
     rule_cases: list[CalibrationCase],
@@ -306,19 +358,25 @@ def prepare_rule(
     )
     if isinstance(material, RuleSelection):
         return material
-    baseline = reference.report
-    baseline_rule = _baseline_rule(authoritative, material.eligible, development_split, baseline)
-    if baseline_rule is None:
-        return not_searched_selection(
-            rule_id, baseline, "no_compatible_cases", material.mismatches, limit, retain_baseline=True
-        )
-    if material.development and any(not support_key(case) for case in material.development):
-        return not_searched_selection(
-            rule_id, baseline, "missing_support_groups", material.mismatches, limit, retain_baseline=True
-        )
+
+    baseline_rule = _prepared_baseline_rule(
+        rule_id,
+        reference,
+        material,
+        authoritative,
+        development_split,
+        limit,
+    )
+    if isinstance(baseline_rule, RuleSelection):
+        return baseline_rule
+
+    missing_support = _missing_development_support(rule_id, reference.report, material, limit)
+    if missing_support is not None:
+        return missing_support
+
     return PreparedRule(
         rule_id,
-        baseline,
+        reference.report,
         baseline_rule,
         material.development,
         material.heldout,
@@ -326,6 +384,18 @@ def prepare_rule(
         material.development_mismatches,
         material.compatibility,
     )
+
+
+def _fit_rule_development(
+    cases: list[CalibrationCase],
+    authoritative: Rule | None,
+    development_split: str,
+) -> list[CalibrationCase]:
+    development = [case for case in cases if case.split == development_split]
+    reference = _reference_rule(development, authoritative)
+    if reference is None:
+        return []
+    return [case for case in development if _mismatch(reference, case) is None]
 
 
 def fit_development_cases(
@@ -336,9 +406,6 @@ def fit_development_cases(
 ) -> list[CalibrationCase]:
     result: list[CalibrationCase] = []
     for rule_id in identifiers:
-        development = [case for case in cases_by_rule[rule_id] if case.split == development_split]
         authoritative = rules.get(rule_id) if rules is not None else None
-        reference = _reference_rule(development, authoritative)
-        if reference is not None:
-            result.extend(case for case in development if _mismatch(reference, case) is None)
+        result.extend(_fit_rule_development(cases_by_rule[rule_id], authoritative, development_split))
     return result

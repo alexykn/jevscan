@@ -97,35 +97,45 @@ class LocalContext:
             frontier = next_names - visited
         return related
 
-    def _owner_state(self, parents: list[Unit]) -> list[Candidate]:
-        owners = [parent for parent in parents if parent.kind not in CALLABLE_KINDS]
-        owner_ids = {owner.id for owner in owners}
-        candidates = []
-        for candidate in self.declarations:
-            item = candidate.target
-            if (
-                candidate.relation
-                in {
-                    "local_import_statement",
-                    "local_import_from_statement",
-                    "local_use_declaration",
-                    "local_use_statement",
-                }
-                or candidate.relation
-                in {
-                    "local_field_definition",
-                    "local_public_field_definition",
-                    "local_field_declaration",
-                }
-                and any(owner.start_byte < item.start_byte and item.end_byte < owner.end_byte for owner in owners)
-            ):
-                candidates.append(candidate)
-        candidates.extend(
+    @staticmethod
+    def _owner_units(parents: list[Unit]) -> list[Unit]:
+        return [parent for parent in parents if parent.kind not in CALLABLE_KINDS]
+
+    @staticmethod
+    def _owner_contains(candidate: Candidate, owners: list[Unit]) -> bool:
+        item = candidate.target
+        return any(owner.start_byte < item.start_byte and item.end_byte < owner.end_byte for owner in owners)
+
+    def _owner_declarations(self, owners: list[Unit]) -> list[Candidate]:
+        imports = {
+            "local_import_statement",
+            "local_import_from_statement",
+            "local_use_declaration",
+            "local_use_statement",
+        }
+        fields = {
+            "local_field_definition",
+            "local_public_field_definition",
+            "local_field_declaration",
+        }
+        return [
+            candidate
+            for candidate in self.declarations
+            if candidate.relation in imports
+            or (candidate.relation in fields and self._owner_contains(candidate, owners))
+        ]
+
+    def _owner_constructors(self, owner_ids: set[str]) -> list[Candidate]:
+        return [
             Candidate(self.snapshot, Target.from_unit(unit), "owner_constructor")
             for unit in self.context.parsed.units
             if unit.parent_id in owner_ids and unit.name in {"constructor", "__init__", "new"}
-        )
-        return candidates
+        ]
+
+    def _owner_state(self, parents: list[Unit]) -> list[Candidate]:
+        owners = self._owner_units(parents)
+        owner_ids = {owner.id for owner in owners}
+        return [*self._owner_declarations(owners), *self._owner_constructors(owner_ids)]
 
     def _outline(self, parents: list[Unit]) -> tuple[dict[str, Any], ...]:
         owner_ids = {parent.id for parent in parents if parent.kind not in CALLABLE_KINDS}
@@ -248,26 +258,60 @@ class Compactor:
         }
         return Evidence(state, encode(state))
 
-    async def _prioritize(
-        self, check: Check, base: Evidence, candidates: list[Candidate], budget: RequestBudget, trace: dict[str, Any]
-    ) -> list[Candidate]:
+    @staticmethod
+    def _fallback_ranking(candidates: list[Candidate], trace: dict[str, Any]) -> list[tuple[float, Candidate]]:
+        by_id = {candidate.id: candidate for candidate in candidates}
+        return sorted(
+            ((item["relevance"], by_id[item["id"]]) for item in trace["candidates"] if item["id"] in by_id),
+            key=lambda pair: -pair[0],
+        )
+
+    async def _rank_candidates(
+        self,
+        check: Check,
+        base: Evidence,
+        candidates: list[Candidate],
+        budget: RequestBudget,
+        trace: dict[str, Any],
+    ) -> list[tuple[float, Candidate]]:
         try:
-            ranked = await rank_candidates(
-                check, base, candidates, budget, self._predict, trace, PromptRegistry.for_question(check.rule.question)
+            return await rank_candidates(
+                check,
+                base,
+                candidates,
+                budget,
+                self._predict,
+                trace,
+                PromptRegistry.for_question(check.rule.question),
             )
-        except (SelectionStoppedError, ContextLimitError) as exc:
-            trace["selection_stop"] = "provider_context_limit" if isinstance(exc, ContextLimitError) else str(exc)
-            by_id = {candidate.id: candidate for candidate in candidates}
-            ranked = sorted(
-                ((item["relevance"], by_id[item["id"]]) for item in trace["candidates"]), key=lambda pair: -pair[0]
-            )
+        except SelectionStoppedError as exc:
+            trace["selection_stop"] = str(exc)
+        except ContextLimitError:
+            trace["selection_stop"] = "provider_context_limit"
+        return self._fallback_ranking(candidates, trace)
+
+    @staticmethod
+    def _complete_ranking(
+        ranked: list[tuple[float, Candidate]],
+        candidates: list[Candidate],
+    ) -> list[Candidate]:
+        scored = {item.id for _, item in ranked}
+        return [item for _, item in ranked] + [item for item in candidates if item.id not in scored]
+
+    async def _prioritize(
+        self,
+        check: Check,
+        base: Evidence,
+        candidates: list[Candidate],
+        budget: RequestBudget,
+        trace: dict[str, Any],
+    ) -> list[Candidate]:
+        ranked = await self._rank_candidates(check, base, candidates, budget, trace)
         if not ranked:
             trace.setdefault("selection_stop", "selection_budget")
             return candidates
-        # Low relevance is not proof of irrelevance; keep remaining candidates in syntax order.
-        scored = {item.id for _, item in ranked}
         trace["method"] = "rule_relevance"
-        return [item for _, item in ranked] + [item for item in candidates if item.id not in scored]
+        return self._complete_ranking(ranked, candidates)
 
     def _prepare_round(
         self,

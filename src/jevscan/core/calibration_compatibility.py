@@ -80,13 +80,15 @@ def compatibility_reason(check: CompatibilityCheck, scope: str) -> str:
     if check.has_missing_metadata:
         return f"{scope}_compatibility_metadata_missing"
     fields = {str(item["field"]) for item in check.mismatches}
-    model = "returned_model" in fields
-    prompt = bool(fields & {"prompt.version", "prompt.policy"})
-    if model and not prompt:
-        return f"{scope}_model_mismatch"
-    if prompt and not model:
-        return f"{scope}_prompt_mismatch"
-    return f"{scope}_model_prompt_mismatch"
+    flags = (
+        "returned_model" in fields,
+        bool(fields & {"prompt.version", "prompt.policy"}),
+    )
+    suffix = {
+        (True, False): "model_mismatch",
+        (False, True): "prompt_mismatch",
+    }.get(flags, "model_prompt_mismatch")
+    return f"{scope}_{suffix}"
 
 
 def support_key(case: CalibrationCase) -> str:
@@ -167,6 +169,25 @@ def _compatibility_mismatches(
     ]
 
 
+def _authority_from_case(case: CalibrationCase) -> CompatibilityAuthority:
+    returned_model, prompt_version, prompt_policy = _compatibility_values(case)
+    assert returned_model is not None and prompt_version is not None and prompt_policy is not None
+    return CompatibilityAuthority(returned_model, prompt_version, prompt_policy)
+
+
+def _compatibility_result(
+    authority: CompatibilityAuthority,
+    checked_case_ids: tuple[str, ...],
+    complete: list[CalibrationCase],
+    missing: tuple[dict[str, Any], ...],
+) -> CompatibilityCheck:
+    mismatches = missing + tuple(
+        mismatch for case in complete for mismatch in _compatibility_mismatches(authority, case)
+    )
+    status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
+    return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
+
+
 def compatibility_check(cases: Iterable[CalibrationCase]) -> CompatibilityCheck:
     material = sorted(cases, key=lambda case: (case.case_id, case.split))
     checked_case_ids = tuple(case.case_id for case in material)
@@ -175,15 +196,7 @@ def compatibility_check(cases: Iterable[CalibrationCase]) -> CompatibilityCheck:
     complete, missing = _partition_compatibility_cases(material)
     if not complete:
         return CompatibilityCheck("missing_metadata", None, checked_case_ids, missing)
-    first = complete[0]
-    returned_model, prompt_version, prompt_policy = _compatibility_values(first)
-    assert returned_model is not None and prompt_version is not None and prompt_policy is not None
-    authority = CompatibilityAuthority(returned_model, prompt_version, prompt_policy)
-    mismatches = missing + tuple(
-        mismatch for case in complete for mismatch in _compatibility_mismatches(authority, case)
-    )
-    status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
-    return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
+    return _compatibility_result(_authority_from_case(complete[0]), checked_case_ids, complete, missing)
 
 
 def compatibility_check_against(
@@ -195,8 +208,4 @@ def compatibility_check_against(
     if authority is None:
         return CompatibilityCheck("no_development_authority", None, checked_case_ids)
     complete, missing = _partition_compatibility_cases(material)
-    mismatches = missing + tuple(
-        mismatch for case in complete for mismatch in _compatibility_mismatches(authority, case)
-    )
-    status = "missing_metadata" if missing else "compatible" if not mismatches else "mismatch"
-    return CompatibilityCheck(status, authority, checked_case_ids, mismatches)
+    return _compatibility_result(authority, checked_case_ids, complete, missing)

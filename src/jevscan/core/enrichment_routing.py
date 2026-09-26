@@ -23,15 +23,20 @@ REVIEW_PRIORITY: dict[EnrichmentTrigger, int] = {
 }
 
 
-def review_trigger(check: Check, decision: Assessment, context_complete: bool) -> EnrichmentTrigger | None:
-    """Admit actionable uncertainty, prioritizing evidence gaps even when confidence is also low."""
-    if decision.status != "unknown" or not check.rule.enrich:
-        return None
+def _review_reasons(check: Check, decision: Assessment, context_complete: bool) -> set[str]:
     reasons = {decision.reason}
     if not context_complete:
         reasons.add("reduced_context")
     if check.rule.report.not_applicable_choices:
         reasons.add("applicability")
+    return reasons
+
+
+def review_trigger(check: Check, decision: Assessment, context_complete: bool) -> EnrichmentTrigger | None:
+    """Admit actionable uncertainty, prioritizing evidence gaps even when confidence is also low."""
+    if decision.status != "unknown" or not check.rule.enrich:
+        return None
+    reasons = _review_reasons(check, decision, context_complete)
     return next((reason for reason in REVIEW_PRIORITY if reason in reasons and reason in check.rule.enrich_on), None)
 
 
@@ -55,19 +60,20 @@ class Routing:
     families: tuple[str, ...] = ()
 
 
+_FAMILY_ALIASES = {"callees": "definitions"}
+
+
+def _normalized_family(name: str) -> str:
+    return _FAMILY_ALIASES.get(name, name)
+
+
 def allowed_families(check: Check, limits: EnrichmentConfig) -> tuple[str, ...]:
     if not limits.enabled or limits.mode == "off":
         return ()
     if limits.mode == "full":
         return tuple(EVIDENCE_FAMILIES)
-    aliases = {"callees": "definitions"}
-    return tuple(
-        dict.fromkeys(
-            aliases.get(configured, configured)
-            for configured in check.rule.enrichment_families
-            if aliases.get(configured, configured) in EVIDENCE_FAMILIES
-        )
-    )
+    normalized = (_normalized_family(name) for name in check.rule.enrichment_families)
+    return tuple(dict.fromkeys(name for name in normalized if name in EVIDENCE_FAMILIES))
 
 
 def routing_questions(_check: Check, families: tuple[str, ...]) -> dict[str, Question]:
@@ -98,6 +104,28 @@ def routing_questions(_check: Check, families: tuple[str, ...]) -> dict[str, Que
     return questions
 
 
+def _evidence_scores(answers: dict[str, Answer], families: tuple[str, ...]) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    for name in families:
+        answer = answers[name]
+        assert isinstance(answer, NoulAnswer)
+        scores[name] = answer.noul
+    return scores
+
+
+def _route_is_confident(
+    disposition: ChoiceAnswer,
+    min_confidence: float,
+    min_probability: float,
+) -> bool:
+    return disposition.confidence >= min_confidence and disposition.probabilities[disposition.choice] >= min_probability
+
+
+def _selected_families(scores: dict[str, float], minimum: float) -> tuple[str, ...]:
+    ordered = sorted(scores, key=lambda name: (-scores[name], name))
+    return tuple(name for name in ordered if scores[name] >= minimum)
+
+
 def routing_decision(
     answers: dict[str, Answer],
     families: tuple[str, ...],
@@ -108,23 +136,11 @@ def routing_decision(
 ) -> Routing:
     disposition = answers["disposition"]
     assert isinstance(disposition, ChoiceAnswer)
-    scores = {}
-    for name in families:
-        answer = answers[name]
-        assert isinstance(answer, NoulAnswer)
-        scores[name] = answer.noul
-    if (
-        disposition.confidence < min_route_confidence
-        or disposition.probabilities[disposition.choice] < min_route_probability
-    ):
+    if not _route_is_confident(disposition, min_route_confidence, min_route_probability):
         return Routing(None)
     if disposition.choice != "local_evidence":
         return Routing(disposition.choice)
     return Routing(
         disposition.choice,
-        tuple(
-            name
-            for name in sorted(scores, key=lambda name: (-scores[name], name))
-            if scores[name] >= min_evidence_probability
-        ),
+        _selected_families(_evidence_scores(answers, families), min_evidence_probability),
     )

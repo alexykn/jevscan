@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from jevscan.core.config import Config, EvaluationConfig
 from jevscan.core.context import ContextBuilder, Evidence
 from jevscan.core.model_limits import TokenCalibration, limits_for_model
-from jevscan.core.models import CALLABLE_KINDS, Target
+from jevscan.core.models import CALLABLE_KINDS, Target, Unit
 from jevscan.core.protocol import Check, PromptRegistry, encode
-from jevscan.core.rules import Question, Rule
+from jevscan.core.rules import ApplicabilityPolicy, Question, Rule
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,16 +79,16 @@ class RequestBudget:
 
     def violations(self, state: bytes, questions: dict[str, bytes]) -> frozenset[str]:
         estimate = self.budget(state, questions)
-        problems = set()
-        if estimate.questions > self.limits.max_questions:
-            problems.add("questions")
-        if self.max_context_tokens is not None and estimate.context_tokens > self.max_context_tokens:
-            problems.add("context")
-        if self.max_total_tokens is not None and estimate.total_tokens > self.max_total_tokens:
-            problems.add("total")
-        if estimate.body_bytes > self.limits.max_request_bytes:
-            problems.add("bytes")
-        return frozenset(problems)
+        limits = (
+            ("questions", estimate.questions > self.limits.max_questions),
+            (
+                "context",
+                self.max_context_tokens is not None and estimate.context_tokens > self.max_context_tokens,
+            ),
+            ("total", self.max_total_tokens is not None and estimate.total_tokens > self.max_total_tokens),
+            ("bytes", estimate.body_bytes > self.limits.max_request_bytes),
+        )
+        return frozenset(name for name, exceeded in limits if exceeded)
 
     def fits(self, state: bytes, questions: dict[str, bytes]) -> bool:
         return not self.violations(state, questions)
@@ -111,78 +111,110 @@ class Planner:
         self.limits = config.evaluation
         self.compaction = config.compaction
         self.budget = RequestBudget(config.evaluation, config.jev.model, calibration)
-        self.targets = (self.context.file, *(Target.from_unit(unit) for unit in self.context.parsed.units))
+        self.targets = self._targets()
         self.applicability_skips: dict[str, dict[str, str]] = {}
         checks = self._checks(config)
-        self.omissions: tuple[Omission, ...] = ()
-        line_limit = config.scan.max_full_file_lines
-        self.full_file_limited = line_limit is not None and self.context.file.end_line > line_limit
-        if self.full_file_limited:
-            kept: list[Check] = []
-            omitted: list[Omission] = []
-            for check in checks:
-                # Explicit file judgments and rules that explicitly require file context
-                # are not approximated. Top-level owner-context unit checks may fall
-                # back to their complete target and are marked context-reduced.
-                if check.target.scope == "file" or check.rule.context == "file":
-                    omitted.append(
-                        Omission(
-                            check,
-                            f"full-file context is {self.context.file.end_line} lines; configured limit is {line_limit}",
-                        )
-                    )
-                else:
-                    kept.append(check)
-            checks = tuple(kept)
-            self.omissions = tuple(omitted)
-        self.checks = checks
+        self.checks, self.omissions, self.full_file_limited = self._apply_full_file_limit(
+            checks,
+            config.scan.max_full_file_lines,
+        )
         self.question_wires = {check.id: encode(check.question()) for check in self.checks}
         self._groups = self._evidence_groups()
-        self._registry_by_check: dict[str, PromptRegistry] = {}
-        for _, group_checks in self._groups:
-            registry = PromptRegistry.from_questions(check.rule.question for check in group_checks)
-            self._registry_by_check.update({check.id: registry for check in group_checks})
+        self._registry_by_check = self._registries()
+
+    def _targets(self) -> tuple[Target, ...]:
+        units = (Target.from_unit(unit) for unit in self.context.parsed.units)
+        return (self.context.file, *units)
+
+    def _apply_full_file_limit(
+        self,
+        checks: tuple[Check, ...],
+        line_limit: int | None,
+    ) -> tuple[tuple[Check, ...], tuple[Omission, ...], bool]:
+        limited = line_limit is not None and self.context.file.end_line > line_limit
+        if not limited:
+            return checks, (), False
+        kept: list[Check] = []
+        omitted: list[Omission] = []
+        for check in checks:
+            if check.target.scope == "file" or check.rule.context == "file":
+                omitted.append(Omission(check, self._full_file_omission(line_limit)))
+            else:
+                kept.append(check)
+        return tuple(kept), tuple(omitted), True
+
+    def _full_file_omission(self, line_limit: int | None) -> str:
+        return f"full-file context is {self.context.file.end_line} lines; configured limit is {line_limit}"
+
+    def _registries(self) -> dict[str, PromptRegistry]:
+        registries: dict[str, PromptRegistry] = {}
+        for _, checks in self._groups:
+            registry = PromptRegistry.from_questions(check.rule.question for check in checks)
+            registries.update({check.id: registry for check in checks})
+        return registries
 
     def _facts(self, target: Target) -> frozenset[str]:
         if target.scope == "file":
             return frozenset(fact for unit in self.context.parsed.units for fact in unit.syntax_facts)
         return frozenset(self.context.units[target.id].syntax_facts)
 
+    @staticmethod
+    def _missing_applicability_facts(
+        policy: ApplicabilityPolicy,
+        facts: frozenset[str],
+    ) -> list[str]:
+        missing: list[str] = [fact for fact in policy.requires_all if fact not in facts]
+        any_missing = policy.requires_any and not (facts & set(policy.requires_any))
+        if any_missing:
+            missing.extend(policy.requires_any)
+        return missing
+
     def _applicability_reason(self, target: Target, rule: Rule) -> str | None:
         policy = rule.applicability
         if policy is None:
             return None
-        facts = self._facts(target)
-        missing_all = [fact for fact in policy.requires_all if fact not in facts]
-        any_present = not policy.requires_any or bool(facts & set(policy.requires_any))
-        if not missing_all and any_present:
+        missing = self._missing_applicability_facts(policy, self._facts(target))
+        if not missing:
             return None
-        missing = [*missing_all, *(policy.requires_any if not any_present else [])]
-        declared = ", ".join(missing)
-        return f"applicability: declared syntax prerequisite absent ({declared})"
+        return f"applicability: declared syntax prerequisite absent ({', '.join(missing)})"
 
-    def _checks(self, config: Config) -> tuple[Check, ...]:
-        checks = []
-        rules = sorted(config.selected_rules().items())
-        owners_with_members = {
+    def _owners_with_members(self) -> set[str | None]:
+        return {
             unit.parent_id
             for unit in self.context.parsed.units
             if unit.kind in CALLABLE_KINDS and unit.has_implementation
         }
+
+    @staticmethod
+    def _unit_structural_match(unit: Unit, rule: Rule, has_members: bool) -> bool:
+        if unit.kind not in rule.applies_to:
+            return False
+        if rule.require_body and not (unit.has_body and unit.has_implementation):
+            return False
+        return not rule.require_members or has_members
+
+    def _structural_match(self, target: Target, rule: Rule, owners_with_members: set[str | None]) -> bool:
+        if rule.target != target.scope or target.language not in rule.languages:
+            return False
+        if target.scope == "file":
+            return True
+        unit = self.context.units[target.id]
+        return self._unit_structural_match(unit, rule, target.id in owners_with_members)
+
+    def _record_applicability_skip(self, target: Target, rule_id: str, reason: str) -> None:
+        self.applicability_skips.setdefault(target.id, {})[rule_id] = reason
+
+    def _checks(self, config: Config) -> tuple[Check, ...]:
+        checks: list[Check] = []
+        rules = sorted(config.selected_rules().items())
+        owners_with_members = self._owners_with_members()
         for target in self.targets:
             for name, rule in rules:
-                if rule.target != target.scope or target.language not in rule.languages:
+                if not self._structural_match(target, rule, owners_with_members):
                     continue
-                if target.scope == "unit":
-                    unit = self.context.units[target.id]
-                    if unit.kind not in rule.applies_to or (
-                        rule.require_body and (not unit.has_body or not unit.has_implementation)
-                    ):
-                        continue
-                    if rule.require_members and target.id not in owners_with_members:
-                        continue
-                if (reason := self._applicability_reason(target, rule)) is not None:
-                    self.applicability_skips.setdefault(target.id, {})[name] = reason
+                reason = self._applicability_reason(target, rule)
+                if reason is not None:
+                    self._record_applicability_skip(target, name, reason)
                     continue
                 checks.append(Check(f"q{len(checks):05d}", target, name, rule))
         return tuple(checks)
@@ -251,17 +283,26 @@ class Planner:
             groups.setdefault(group_key, (evidence, []))[1].append(check)
         return list(groups.values())
 
-    def _pack_group(self, evidence: Evidence, checks: list[Check], registry: PromptRegistry) -> Iterator[Request]:
-        # Evidence that cannot fit even one question must reach recovery intact.
-        # Fragmenting it here would prevent recovery from regrouping sibling checks
-        # that converge on the same compacted evidence.
-        singleton_violations = self.violations(evidence, (checks[0],), registry)
-        if singleton_violations & {"context", "bytes"}:
-            step = self.limits.max_questions
-            for start in range(0, len(checks), step):
-                yield self.request(evidence, tuple(checks[start : start + step]), registry)
-            return
+    def _requires_recovery(self, evidence: Evidence, check: Check, registry: PromptRegistry) -> bool:
+        violations = self.violations(evidence, (check,), registry)
+        return bool(violations & {"context", "bytes"})
 
+    def _question_limited_batches(
+        self,
+        evidence: Evidence,
+        checks: list[Check],
+        registry: PromptRegistry,
+    ) -> Iterator[Request]:
+        step = self.limits.max_questions
+        for start in range(0, len(checks), step):
+            yield self.request(evidence, tuple(checks[start : start + step]), registry)
+
+    def _fitting_batches(
+        self,
+        evidence: Evidence,
+        checks: list[Check],
+        registry: PromptRegistry,
+    ) -> Iterator[Request]:
         pending: tuple[Check, ...] = ()
         for check in checks:
             candidate = (*pending, check)
@@ -271,6 +312,15 @@ class Planner:
             pending = (*pending, check)
         if pending:
             yield self.request(evidence, pending, registry)
+
+    def _pack_group(self, evidence: Evidence, checks: list[Check], registry: PromptRegistry) -> Iterator[Request]:
+        # Evidence that cannot fit even one question must reach recovery intact.
+        # Fragmenting it here would prevent recovery from regrouping sibling checks
+        # that converge on the same compacted evidence.
+        if self._requires_recovery(evidence, checks[0], registry):
+            yield from self._question_limited_batches(evidence, checks, registry)
+            return
+        yield from self._fitting_batches(evidence, checks, registry)
 
     def plan(self) -> Iterator[Request]:
         # Exact evidence and target scope define a shared group. Different targets
