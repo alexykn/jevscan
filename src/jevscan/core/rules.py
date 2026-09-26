@@ -165,7 +165,7 @@ class Rule(StrictModel):
     @model_validator(mode="after")
     def compatible_report(self) -> Self:
         _validate_target(self)
-        _QUESTION_VALIDATORS[type(self.question)](self.question, self.report)
+        _validate_question_report(self.question, self.report)
         _validate_targeted_enrichment(self)
         require(
             isinstance(self.question, NoulQuestion) or self.report.uncertain_range is None,
@@ -328,8 +328,11 @@ def _validate_level_order(levels: ReportLevels) -> None:
     )
 
 
-_QUESTION_VALIDATORS = {
-    ScoreQuestion: _validate_score,
-    ChoiceQuestion: _validate_choice,
-    NoulQuestion: _validate_noul,
-}
+def _validate_question_report(question: Question, report: ReportPolicy) -> None:
+    if isinstance(question, ScoreQuestion):
+        _validate_score(question, report)
+    elif isinstance(question, ChoiceQuestion):
+        _validate_choice(question, report)
+    else:
+        assert isinstance(question, NoulQuestion)
+        _validate_noul(question, report)
